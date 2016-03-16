@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
+import io
 import pytest
-from s3fs import S3FileSystem
+from s3fs.core import S3FileSystem
 from s3fs.utils import seek_delimiter, ignoring
+import moto
 
 from botocore.exceptions import NoCredentialsError
 
-# These get mirrored on s3://distributed-test/
-test_bucket_name = 'distributed-test'
+test_bucket_name = 'test'
 files = {'test/accounts.1.json':  (b'{"amount": 100, "name": "Alice"}\n'
                                    b'{"amount": 200, "name": "Bob"}\n'
                                    b'{"amount": 300, "name": "Charlie"}\n'
@@ -25,21 +26,63 @@ csv_files = {'2014-01-01.csv': (b'name,amount,id\n'
                                 b'Dennis,400,4\n'
                                 b'Edith,500,5\n'
                                 b'Frank,600,6\n')}
+text_files = {'nested/file1': b'hello\n',
+              'nested/file2': b'world',
+              'nested/nested2/file1': b'hello\n',
+              'nested/nested2/file2': b'world'}
+a = test_bucket_name+'/tmp/test/a'
+b = test_bucket_name+'/tmp/test/b'
+c = test_bucket_name+'/tmp/test/c'
+d = test_bucket_name+'/tmp/test/d'
+
 
 @pytest.yield_fixture
 def s3():
-    # could do with a bucket with write privileges.
-    yield S3FileSystem(anon=True)
+    # writable local S3 system
+    m = moto.mock_s3()
+    m.start()
+    import boto3
+    client = boto3.client('s3')
+    client.create_bucket(Bucket=test_bucket_name)
+    for k in [a, b, c, d]:
+        try:
+            client.delete_object(Bucket=test_bucket_name, Key=k)
+        except:
+            pass
+    for flist in [files, csv_files, text_files]:
+        for f, data in flist.items():
+            client.put_object(Bucket=test_bucket_name, Key=f, Body=data)
+    s3 = S3FileSystem(anon=False)
+    s3.connect(refresh=True)
+    s3._ls('test', refresh=True)
+    yield s3
+    for flist in [files, csv_files, text_files]:
+        for f, data in flist.items():
+            try:
+                client.delete_object(Bucket=test_bucket_name, Key=f)
+            except:
+                pass
+    for k in [a, b, c, d]:
+        try:
+            client.delete_object(Bucket=test_bucket_name, Key=k)
+        except:
+            pass
+    m.stop()
+
+
+def test_idempotent_connect(s3):
+    s3.connect()
+    s3.connect()
 
 
 def test_non_anonymous_access():
     with ignoring(NoCredentialsError):
         fs = S3FileSystem(anon=False)
-        fs.ls('distributed-test')
+        fs.ls(test_bucket_name)
 
 
 def test_s3_file_access(s3):
-    fn = 'distributed-test/nested/file1'
+    fn = test_bucket_name+'/nested/file1'
     data = b'hello\n'
     assert s3.cat(fn) == data
     assert s3.head(fn, 3) == data[:3]
@@ -48,9 +91,9 @@ def test_s3_file_access(s3):
 
 
 def test_s3_file_info(s3):
-    fn = 'distributed-test/nested/file1'
+    fn = test_bucket_name+'/nested/file1'
     data = b'hello\n'
-    assert fn in s3.walk('distributed-test')
+    assert fn in s3.walk(test_bucket_name)
     assert s3.exists(fn)
     assert not s3.exists(fn+'another')
     assert s3.info(fn)['Size'] == len(data)
@@ -61,33 +104,33 @@ def test_s3_file_info(s3):
 def test_du(s3):
     d = s3.du(test_bucket_name, deep=True)
     assert all(isinstance(v, int) and v >= 0 for v in d.values())
-    assert 'distributed-test/nested/file1' in d
+    assert test_bucket_name+'/nested/file1' in d
 
     assert s3.du(test_bucket_name + '/test/', total=True) ==\
            sum(map(len, files.values()))
 
 
 def test_s3_ls(s3):
-    fn = 'distributed-test/nested/file1'
-    assert fn not in s3.ls('distributed-test/')
-    assert fn in s3.ls('distributed-test/nested/')
-    assert fn in s3.ls('distributed-test/nested')
-    assert s3.ls('s3://distributed-test/nested/') == s3.ls('distributed-test/nested')
+    fn = test_bucket_name+'/nested/file1'
+    assert fn not in s3.ls(test_bucket_name+'/')
+    assert fn in s3.ls(test_bucket_name+'/nested/')
+    assert fn in s3.ls(test_bucket_name+'/nested')
+    assert s3.ls('s3://'+test_bucket_name+'/nested/') == s3.ls(test_bucket_name+'/nested')
 
 
 def test_s3_ls_detail(s3):
-    L = s3.ls('distributed-test/nested', detail=True)
+    L = s3.ls(test_bucket_name+'/nested', detail=True)
     assert all(isinstance(item, dict) for item in L)
 
 
 def test_s3_glob(s3):
-    fn = 'distributed-test/nested/file1'
-    assert fn not in s3.glob('distributed-test/')
-    assert fn not in s3.glob('distributed-test/*')
-    assert fn in s3.glob('distributed-test/nested')
-    assert fn in s3.glob('distributed-test/nested/*')
-    assert fn in s3.glob('distributed-test/nested/file*')
-    assert fn in s3.glob('distributed-test/*/*')
+    fn = test_bucket_name+'/nested/file1'
+    assert fn not in s3.glob(test_bucket_name+'/')
+    assert fn not in s3.glob('test_bucket_name/*')
+    assert fn in s3.glob(test_bucket_name+'/nested')
+    assert fn in s3.glob(test_bucket_name+'/nested/*')
+    assert fn in s3.glob(test_bucket_name+'/nested/file*')
+    assert fn in s3.glob(test_bucket_name+'/*/*')
 
 
 def test_get_list_of_summary_objects(s3):
@@ -128,10 +171,9 @@ def test_seek_delimiter(s3):
 
 
 def test_read_s3_block(s3):
-    import io
     data = files['test/accounts.1.json']
     lines = io.BytesIO(data).readlines()
-    path = 'distributed-test/test/accounts.1.json'
+    path = test_bucket_name+'/test/accounts.1.json'
     assert s3.read_block(path, 1, 35, b'\n') == lines[1]
     assert s3.read_block(path, 0, 30, b'\n') == lines[0]
     assert s3.read_block(path, 0, 35, b'\n') == lines[0] + lines[1]
@@ -139,5 +181,4 @@ def test_read_s3_block(s3):
     assert len(s3.read_block(path, 0, 5)) == 5
     assert len(s3.read_block(path, 4, 5000)) == len(data) - 4
     assert s3.read_block(path, 5000, 5010) == b''
-
     assert s3.read_block(path, 5, None) == s3.read_block(path, 5, 1000)
