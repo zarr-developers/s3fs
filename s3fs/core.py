@@ -180,7 +180,7 @@ class S3FileSystem(object):
         return files
 
     def ls(self, path, detail=False):
-        """ List single "dirtory" with or without details """
+        """ List single "directory" with or without details """
         path = path.lstrip('s3://').rstrip('/')
         try:
             files = self._ls(path)
