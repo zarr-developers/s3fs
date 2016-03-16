@@ -1,0 +1,6 @@
+recursive-include s3fs *.py
+
+include setup.py
+include README.rst
+include LICENSE
+include MANIFEST.in
