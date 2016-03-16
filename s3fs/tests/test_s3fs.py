@@ -52,14 +52,11 @@ def s3():
     for flist in [files, csv_files, text_files]:
         for f, data in flist.items():
             client.put_object(Bucket=test_bucket_name, Key=f, Body=data)
-    s3 = S3FileSystem(anon=False)
-    s3.connect(refresh=True)
-    s3._ls('test', refresh=True)
-    yield s3
+    yield S3FileSystem(anon=False)
     for flist in [files, csv_files, text_files]:
         for f, data in flist.items():
             try:
-                client.delete_object(Bucket=test_bucket_name, Key=f)
+                client.delete_object(Bucket=test_bucket_name, Key=f, Body=data)
             except:
                 pass
     for k in [a, b, c, d]:
@@ -70,14 +67,51 @@ def s3():
     m.stop()
 
 
+def test_simple(s3):
+    data = b'a' * (10 * 2**20)
+
+    with s3.open(a, 'wb') as f:
+        f.write(data)
+
+    with s3.open(a, 'rb') as f:
+        out = f.read(len(data))
+        assert len(data) == len(out)
+        assert out == data
+
+
 def test_idempotent_connect(s3):
     s3.connect()
     s3.connect()
 
 
-def test_non_anonymous_access():
+def test_multiple_objects(s3):
+    s3.connect()
+    assert s3.ls('test')
+    s32 = S3FileSystem(anon=False)
+    assert s3.ls('test') == s32.ls('test')
+
+
+def test_ls_touch(s3):
+    assert not s3.ls(test_bucket_name+'/tmp/test')
+    s3.touch(a)
+    s3.touch(b)
+    L = s3.ls(test_bucket_name+'/tmp/test', True)
+    assert set(d['Key'] for d in L) == set([a, b])
+    L = s3.ls(test_bucket_name+'/tmp/test', False)
+    assert set(L) == set([a, b])
+
+
+def test_rm(s3):
+    assert not s3.exists(a)
+    s3.touch(a)
+    assert s3.exists(a)
+    s3.rm(a)
+    assert not s3.exists(a)
+
+
+def test_anonymous_access():
     with ignoring(NoCredentialsError):
-        fs = S3FileSystem(anon=False)
+        fs = S3FileSystem(anon=True)
         fs.ls(test_bucket_name)
 
 
@@ -153,6 +187,62 @@ def test_read_keys_from_bucket(s3):
             s3.cat('s3://' + '/'.join([test_bucket_name, k])))
 
 
+def test_seek(s3):
+    with s3.open(a, 'wb') as f:
+        f.write(b'123')
+
+    with s3.open(a) as f:
+        f.seek(1000)
+        with pytest.raises(ValueError):
+            f.seek(-1)
+        with pytest.raises(ValueError):
+            f.seek(-5, 2)
+        with pytest.raises(ValueError):
+            f.seek(0, 10)
+        f.seek(0)
+        assert f.read(1) == b'1'
+        f.seek(0)
+        assert f.read(1) == b'1'
+        f.seek(3)
+        assert f.read(1) == b''
+        f.seek(-1, 2)
+        assert f.read(1) == b'3'
+        f.seek(-1, 1)
+        f.seek(-1, 1)
+        assert f.read(1) == b'2'
+        for i in range(4):
+            assert f.seek(i) == i
+
+
+def test_bad_open(s3):
+    with pytest.raises(IOError):
+        s3.open('')
+
+
+def test_errors(s3):
+    with pytest.raises((IOError, OSError)):
+        s3.open(test_bucket_name+'/tmp/test/shfoshf', 'rb')
+
+    ## This is fine, no need for interleving directories on S3
+    #with pytest.raises((IOError, OSError)):
+    #    s3.touch('tmp/test/shfoshf/x')
+
+    with pytest.raises((IOError, OSError)):
+        s3.rm(test_bucket_name+'/tmp/test/shfoshf/x')
+
+    with pytest.raises((IOError, OSError)):
+        s3.mv(test_bucket_name+'/tmp/test/shfoshf/x', 'tmp/test/shfoshf/y')
+
+    #with pytest.raises((IOError, OSError)):
+    #    s3.open('x', 'wb')
+
+    with pytest.raises((IOError, OSError)):
+        s3.open('x', 'rb')
+
+    with pytest.raises(IOError):
+        s3.rm('unknown')
+
+
 def test_seek_delimiter(s3):
     fn = 'test/accounts.1.json'
     data = files[fn]
@@ -181,4 +271,53 @@ def test_read_s3_block(s3):
     assert len(s3.read_block(path, 0, 5)) == 5
     assert len(s3.read_block(path, 4, 5000)) == len(data) - 4
     assert s3.read_block(path, 5000, 5010) == b''
+
     assert s3.read_block(path, 5, None) == s3.read_block(path, 5, 1000)
+
+def test_new_bucket(s3):
+    assert not s3.exists('new')
+    s3.mkdir('new')
+    assert s3.exists('new')
+    s3.touch('new/temp')
+    with pytest.raises((IOError, OSError)):
+        s3.rmdir('new')
+    s3.rm('new/temp')
+    s3.rmdir('new')
+    assert not s3.exists('new')
+
+def test_write_small(s3):
+    with s3.open(test_bucket_name+'/test', 'wb') as f:
+        f.write(b'hello')
+    assert s3.cat(test_bucket_name+'/test') == b'hello'
+
+def test_write_fails(s3):
+    with pytest.raises(NotImplementedError):
+        s3.open(test_bucket_name+'/temp', 'w')
+    with pytest.raises(ValueError):
+        s3.touch(test_bucket_name+'/temp')
+        s3.open(test_bucket_name+'/temp', 'rb').write(b'hello')
+    with pytest.raises(ValueError):
+        s3.open(test_bucket_name+'/temp', 'wb', block_size=10)
+    with pytest.raises(ValueError):
+        with s3.open(test_bucket_name+'/temp', 'wb') as f:
+            f.write(b'hello')
+            f.flush()
+            f.write(b'world')
+    f = s3.open(test_bucket_name+'/temp', 'wb')
+    f.close()
+    with pytest.raises(ValueError):
+        f.write(b'hello')
+    with pytest.raises((OSError, IOError)):
+        s3.open('nonexistentbucket/temp', 'wb')
+
+def test_write_blocks(s3):
+    with s3.open(test_bucket_name+'/temp', 'wb') as f:
+        f.write(b'a' * 2*2**20)
+        assert f.buffer.tell() == 2*2**20
+        f.write(b'a' * 2*2**20)
+        f.write(b'a' * 2*2**20)
+    assert s3.info(test_bucket_name+'/temp')['Size'] == 6*2**20
+    with s3.open(test_bucket_name+'/temp', 'wb', block_size=10*2**20) as f:
+        f.write(b'a' * 15*2**20)
+        assert f.buffer.tell() == 0
+    assert s3.info(test_bucket_name+'/temp')['Size'] == 15*2**20
