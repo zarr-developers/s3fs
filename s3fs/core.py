@@ -564,6 +564,8 @@ class S3File(object):
         If in write mode, key is only finalized upon close, and key will then
         be available to other processes.
         """
+        if self.closed:
+            return
         self.flush(True)
         self.cache = None
         self.closed = True
