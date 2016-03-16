@@ -17,8 +17,9 @@ install:
   - conda update conda
 
   # Install dependencies
-  - conda create -n test python=$TRAVIS_PYTHON_VERSION pytest boto3
+  - conda create -n test python=$TRAVIS_PYTHON_VERSION pytest boto3 
   - source activate test
+  - pip install moto
 
 script:
   - py.test -x --doctest-modules --pyargs s3fs

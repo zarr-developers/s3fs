@@ -2,8 +2,12 @@
 import io
 import logging
 import re
+import socket
+from hashlib import md5
 
 import boto3
+import boto3.compat
+import boto3.s3.transfer as trans
 from botocore.exceptions import ClientError
 from botocore.client import Config
 
@@ -13,6 +17,21 @@ logger = logging.getLogger(__name__)
 
 logging.getLogger('boto3').setLevel(logging.WARNING)
 logging.getLogger('botocore').setLevel(logging.WARNING)
+S3_RETRYABLE_ERRORS = (
+    socket.timeout,
+    trans.ReadTimeoutError, trans.IncompleteReadError
+)
+
+def tokenize(*args, **kwargs):
+    """ Deterministic token
+
+    >>> tokenize('Hello') == tokenize('Hello')
+    True
+    """
+    if kwargs:
+        args = args + (kwargs,)
+    return md5(str(tuple(args)).encode()).hexdigest()
+
 
 def split_path(path):
     """
@@ -65,20 +84,28 @@ class S3FileSystem(object):
         self.key = key
         self.secret = secret
         self.kwargs = kwargs
-        self.connect(anon, key, secret, kwargs)
         self.dirs = {}
-        self.s3 = self.connect(anon, key, secret, kwargs)
+        self.s3 = self.connect()
 
-    def connect(self, anon, key, secret, kwargs):
-        tok = (anon, key, secret, frozenset(kwargs.items()))
+    def connect(self, refresh=True):
+        """
+        Establish connection object.
+
+        Reuses cached previous objects, unless refresh is True
+        """
+        anon, key, secret, kwargs = self.anon, self.key, self.secret, self.kwargs
+        tok = tokenize(anon, key, secret, kwargs)
+        if refresh:
+            self._conn.pop(tok, None)
         if tok not in self._conn:
             logger.debug("Open S3 connection.  Anonymous: %s",
                          self.anon)
             if self.anon:
+                ## TODO: test addition of kwargs (e.g., S3 data centre)
                 from botocore import UNSIGNED
                 conf = Config(connect_timeout=self.connect_timeout,
                               read_timeout=self.read_timeout,
-                              signature_version=UNSIGNED)
+                              signature_version=UNSIGNED, **self.kwargs)
                 s3 = boto3.Session().client('s3', config=conf)
             else:
                 conf = Config(connect_timeout=self.connect_timeout,
@@ -96,9 +123,9 @@ class S3FileSystem(object):
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        self.s3 = self.connect(self.anon, self.key, self.secret, self.kwargs)
+        self.s3 = self.connect()
 
-    def open(self, path, mode='rb', block_size=4*1024**2):
+    def open(self, path, mode='rb', block_size=5*1024**2):
         """ Open a file for reading or writing
 
         Parameters
@@ -142,7 +169,10 @@ class S3FileSystem(object):
                     f['Size'] = 0
                     del f['Name']
             else:
-                files = self.s3.list_objects(Bucket=bucket).get('Contents', [])
+                try:
+                    files = self.s3.list_objects(Bucket=bucket).get('Contents', [])
+                except ClientError:
+                    files = []
                 for f in files:
                     f['Key'] = "/".join([bucket, f['Key']])
             self.dirs[bucket] = list(sorted(files, key=lambda x: x['Key']))
@@ -150,6 +180,7 @@ class S3FileSystem(object):
         return files
 
     def ls(self, path, detail=False):
+        """ List single "dirtory" with or without details """
         path = path.lstrip('s3://').rstrip('/')
         try:
             files = self._ls(path)
@@ -161,7 +192,7 @@ class S3FileSystem(object):
             if not files:
                 try:
                     files = [self.info(path)]
-                except (OSError, IOError):
+                except (OSError, IOError, ClientError):
                     files = []
         if detail:
             return files
@@ -180,6 +211,7 @@ class S3FileSystem(object):
             raise IOError("File not found: %s" %path)
 
     def walk(self, path):
+        """ Return all entries below path """
         return [f['Key'] for f in self._ls(path) if f['Key'].rstrip('/'
                 ).startswith(path.rstrip('/') + '/')]
 
@@ -213,6 +245,7 @@ class S3FileSystem(object):
         return out
 
     def du(self, path, total=False, deep=False):
+        """ Bytes in keys at path """
         if deep:
             files = self.walk(path)
             files = [self.info(f) for f in files]
@@ -224,9 +257,13 @@ class S3FileSystem(object):
             return {p['Key']: p['Size'] for p in files}
 
     def exists(self, path):
-        return bool(self.ls(path))
+        if split_path(path)[1]:
+            return bool(self.ls(path))
+        else:
+            return path in self.ls('')
 
     def cat(self, path):
+        """ Returns contents of file """
         with self.open(path, 'rb') as f:
             return f.read()
 
@@ -298,7 +335,7 @@ class S3File(object):
     Optimized for a single continguous block.
     """
 
-    def __init__(self, s3, path, mode='rb', block_size=4*2**20):
+    def __init__(self, s3, path, mode='rb', block_size=5*2**20):
         """
         Open S3 as a file. Data is only loaded and cached on demand.
 
@@ -335,16 +372,19 @@ class S3File(object):
         return self.loc
 
     def seek(self, loc, whence=0):
+        if not self.mode == 'rb':
+            raise ValueError('Seek only available in read mode')
         if whence == 0:
-            self.loc = loc
+            nloc = loc
         elif whence == 1:
-            self.loc += loc
+            nloc = self.loc + loc
         elif whence == 2:
-            self.loc = self.size + loc
+            nloc = self.size + loc
         else:
             raise ValueError("invalid whence (%s, should be 0, 1 or 2)" % whence)
-        if self.loc < 0:
-            self.loc = 0
+        if nloc < 0:
+            raise ValueError('Seek before start of file')
+        self.loc = nloc
         return self.loc
 
     def _fetch(self, start, end):
@@ -411,7 +451,7 @@ def _fetch_range(client, bucket, key, start, end, max_attempts=10):
             resp = client.get_object(Bucket=bucket, Key=key,
                                      Range='bytes=%i-%i' % (start, end - 1))
             return resp['Body'].read()
-        except boto3.s3.transfer.S3_RETRYABLE_ERRORS as e:
+        except S3_RETRYABLE_ERRORS as e:
             logger.debug('Exception %e on S3 download, retrying',
                          exc_info=True)
             continue
