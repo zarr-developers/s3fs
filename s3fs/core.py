@@ -25,9 +25,6 @@ S3_RETRYABLE_ERRORS = (
 def tokenize(*args, **kwargs):
     """ Deterministic token
 
-    >>> tokenize([1, 2, '3'])
-    '7d6a880cd9ec03506eee6973ff551339'
-
     >>> tokenize('Hello') == tokenize('Hello')
     True
     """
