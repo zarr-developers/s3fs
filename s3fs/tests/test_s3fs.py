@@ -70,6 +70,12 @@ def s3():
     m.stop()
 
 
+def test_tokenize():
+    from s3fs.core import tokenize
+    a = (1, 2, 3)
+    assert isinstance(tokenize(a), (str, bytes))
+
+
 def test_idempotent_connect(s3):
     s3.connect()
     s3.connect()
