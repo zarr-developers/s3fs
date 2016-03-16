@@ -1,4 +1,5 @@
 from s3fs.utils import read_block, seek_delimiter
+import io
 
 
 def test_read_block():

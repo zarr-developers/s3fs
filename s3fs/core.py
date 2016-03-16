@@ -3,6 +3,7 @@ import io
 import logging
 import re
 import socket
+from hashlib import md5
 
 import boto3
 import boto3.compat
@@ -32,7 +33,7 @@ def tokenize(*args, **kwargs):
     """
     if kwargs:
         args = args + (kwargs,)
-    return md5(str(tuple(map(normalize_token, args))).encode()).hexdigest()
+    return md5(str(tuple(args)).encode()).hexdigest()
 
 
 def split_path(path):
