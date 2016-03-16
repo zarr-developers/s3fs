@@ -3,6 +3,7 @@ import io
 import logging
 import re
 import socket
+from hashlib import md5
 
 import boto3
 import boto3.compat
@@ -10,7 +11,6 @@ import boto3.s3.transfer as trans
 from botocore.exceptions import ClientError
 from botocore.client import Config
 
-from dask.base import tokenize
 from .utils import read_block
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,16 @@ S3_RETRYABLE_ERRORS = (
     socket.timeout,
     trans.ReadTimeoutError, trans.IncompleteReadError
 )
+
+def tokenize(*args, **kwargs):
+    """ Deterministic token
+
+    >>> tokenize('Hello') == tokenize('Hello')
+    True
+    """
+    if kwargs:
+        args = args + (kwargs,)
+    return md5(str(tuple(args)).encode()).hexdigest()
 
 
 def split_path(path):
