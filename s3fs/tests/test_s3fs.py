@@ -43,7 +43,7 @@ def s3():
     m.start()
     import boto3
     client = boto3.client('s3')
-    client.create_bucket(Bucket=test_bucket_name)
+    client.create_bucket(Bucket=test_bucket_name, ACL='public-read')
     for k in [a, b, c, d]:
         try:
             client.delete_object(Bucket=test_bucket_name, Key=k)
@@ -86,14 +86,33 @@ def test_tokenize():
 
 
 def test_idempotent_connect(s3):
-    s3.connect()
-    s3.connect()
+    con1 = s3.connect()
+    con2 = s3.connect()
+    con3 = s3.connect(refresh=True)
+    assert con1 is con2
+    assert con1 is not con3
 
 
 def test_multiple_objects(s3):
     s3.connect()
     assert s3.ls('test')
     s32 = S3FileSystem(anon=False)
+    assert s3.ls('test') == s32.ls('test')
+
+
+def test_ls(s3):
+    assert s3.ls('') == [test_bucket_name]
+    with pytest.raises((OSError, IOError)):
+        s3.ls('nonexistent')
+    fn = test_bucket_name+'/test/accounts.1.json'
+    assert fn in s3.ls(test_bucket_name+'/test')
+    # assert fn in s3.ls(test_bucket_name)
+    # assert [fn] == s3.ls(fn)
+
+
+def test_pickle(s3):
+    import pickle
+    s32 = pickle.loads(pickle.dumps(s3))
     assert s3.ls('test') == s32.ls('test')
 
 
@@ -113,12 +132,19 @@ def test_rm(s3):
     assert s3.exists(a)
     s3.rm(a)
     assert not s3.exists(a)
+    with pytest.raises((OSError, IOError)):
+        s3.rm(test_bucket_name+'/nonexistent')
+    with pytest.raises((OSError, IOError)):
+        s3.rm('nonexistent')
+    s3.rm(test_bucket_name+'/nested', recursive=True)
+    assert not s3.exists(test_bucket_name+'/nested/nested2/file1')
 
 
 def test_anonymous_access():
     with ignoring(NoCredentialsError):
-        fs = S3FileSystem(anon=True)
-        fs.ls(test_bucket_name)
+        s3 = S3FileSystem(anon=True)
+        assert s3.ls('') == []
+        ## TODO: public bucket doesn't work through moto
 
 
 def test_s3_file_access(s3):
@@ -166,11 +192,13 @@ def test_s3_ls_detail(s3):
 def test_s3_glob(s3):
     fn = test_bucket_name+'/nested/file1'
     assert fn not in s3.glob(test_bucket_name+'/')
-    assert fn not in s3.glob('test_bucket_name/*')
+    assert fn not in s3.glob(test_bucket_name+'/*')
     assert fn in s3.glob(test_bucket_name+'/nested')
     assert fn in s3.glob(test_bucket_name+'/nested/*')
     assert fn in s3.glob(test_bucket_name+'/nested/file*')
     assert fn in s3.glob(test_bucket_name+'/*/*')
+    with pytest.raises(ValueError):
+        s3.glob('*')
 
 
 def test_get_list_of_summary_objects(s3):
@@ -225,6 +253,20 @@ def test_bad_open(s3):
         s3.open('')
 
 
+def test_copy(s3):
+    fn = test_bucket_name+'/test/accounts.1.json'
+    s3.copy(fn, fn+'2')
+    assert s3.cat(fn) == s3.cat(fn+'2')
+
+
+def test_move(s3):
+    fn = test_bucket_name+'/test/accounts.1.json'
+    data = s3.cat(fn)
+    s3.mv(fn, fn+'2')
+    assert s3.cat(fn+'2') == data
+    assert not s3.exists(fn)
+
+
 def test_errors(s3):
     with pytest.raises((IOError, OSError)):
         s3.open(test_bucket_name+'/tmp/test/shfoshf', 'rb')
@@ -247,6 +289,30 @@ def test_errors(s3):
 
     with pytest.raises(IOError):
         s3.rm('unknown')
+
+    with pytest.raises(NotImplementedError):
+        s3.open('anyfile', 'ab')
+
+    with pytest.raises(ValueError):
+        with s3.open(test_bucket_name+'/temp', 'wb') as f:
+            f.read()
+
+    with pytest.raises(ValueError):
+        f = s3.open(test_bucket_name+'/temp', 'rb')
+        f.close()
+        f.read()
+
+
+def test_read_small(s3):
+    fn = test_bucket_name+'/2014-01-01.csv'
+    with s3.open(fn, 'rb', block_size=10) as f:
+        out = []
+        while True:
+            data = f.read(3)
+            if data == b'':
+                break
+            out.append(data)
+        assert s3.cat(fn) == b''.join(out)
 
 
 def test_seek_delimiter(s3):
@@ -284,9 +350,12 @@ def test_new_bucket(s3):
     assert not s3.exists('new')
     s3.mkdir('new')
     assert s3.exists('new')
-    s3.touch('new/temp')
+    with s3.open('new/temp', 'wb') as f:
+        f.write(b'hello')
     with pytest.raises((IOError, OSError)):
         s3.rmdir('new')
+    with pytest.raises((IOError, OSError)):
+        s3.rmdir('new/temp')
     s3.rm('new/temp')
     s3.rmdir('new')
     assert not s3.exists('new')
