@@ -21,6 +21,11 @@ S3_RETRYABLE_ERRORS = (
     socket.timeout,
     trans.ReadTimeoutError, trans.IncompleteReadError
 )
+try:
+    FileNotFoundError
+except NameError:
+    class FileNotFoundError(IOError):
+        pass
 
 def tokenize(*args, **kwargs):
     """ Deterministic token
@@ -172,7 +177,8 @@ class S3FileSystem(object):
                 try:
                     files = self.s3.list_objects(Bucket=bucket).get('Contents', [])
                 except ClientError:
-                    files = []
+                    # bucket not accessible
+                    raise FileNotFoundError(bucket)
                 for f in files:
                     f['Key'] = "/".join([bucket, f['Key']])
             self.dirs[bucket] = list(sorted(files, key=lambda x: x['Key']))
@@ -182,10 +188,7 @@ class S3FileSystem(object):
     def ls(self, path, detail=False):
         """ List single "directory" with or without details """
         path = path.lstrip('s3://').rstrip('/')
-        try:
-            files = self._ls(path)
-        except ClientError:
-            files = []
+        files = self._ls(path)
         if path:
             pattern = re.compile(path + '/[^/]*.$')
             files = [f for f in files if pattern.match(f['Key']) is not None]
@@ -323,6 +326,7 @@ class S3FileSystem(object):
         if recursive:
             for f in self.walk(path):
                 self.rm(f, recursive=False)
+            return
         bucket, key = split_path(path)
         if key:
             try:
