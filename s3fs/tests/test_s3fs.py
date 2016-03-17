@@ -294,7 +294,8 @@ def test_errors(s3):
         s3.open('anyfile', 'ab')
 
     with pytest.raises(ValueError):
-        s3.open(test_bucket_name+'/temp', 'wb').read()
+        with s3.open(test_bucket_name+'/temp', 'wb') as f:
+            f.read()
 
     with pytest.raises(ValueError):
         f = s3.open(test_bucket_name+'/temp', 'rb')
