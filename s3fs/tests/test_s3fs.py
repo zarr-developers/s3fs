@@ -267,6 +267,17 @@ def test_move(s3):
     assert not s3.exists(fn)
 
 
+def test_get_put(s3):
+    import tempfile
+    fn = tempfile.mktemp()
+    s3.get(test_bucket_name+'/test/accounts.1.json', fn)
+    data = files['test/accounts.1.json']
+    assert open(fn, 'rb').read() == data
+    s3.put(fn, test_bucket_name+'/temp')
+    assert s3.du(test_bucket_name+'/temp')[test_bucket_name+'/temp'] == len(data)
+    assert s3.cat(test_bucket_name+'/temp') == data
+
+
 def test_errors(s3):
     with pytest.raises((IOError, OSError)):
         s3.open(test_bucket_name+'/tmp/test/shfoshf', 'rb')
