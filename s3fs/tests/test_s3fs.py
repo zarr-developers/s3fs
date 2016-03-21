@@ -2,7 +2,7 @@
 import io
 import pytest
 from s3fs.core import S3FileSystem
-from s3fs.utils import seek_delimiter, ignoring
+from s3fs.utils import seek_delimiter, ignoring, tmpfile
 import moto
 
 from botocore.exceptions import NoCredentialsError
@@ -83,6 +83,7 @@ def test_tokenize():
     from s3fs.core import tokenize
     a = (1, 2, 3)
     assert isinstance(tokenize(a), (str, bytes))
+    assert tokenize(a) != tokenize(a, other=1)
 
 
 def test_idempotent_connect(s3):
@@ -145,6 +146,8 @@ def test_anonymous_access():
         s3 = S3FileSystem(anon=True)
         assert s3.ls('') == []
         ## TODO: public bucket doesn't work through moto
+    with pytest.raises((OSError, IOError)):
+        s3.mkdir('newbucket')
 
 
 def test_s3_file_access(s3):
@@ -268,14 +271,13 @@ def test_move(s3):
 
 
 def test_get_put(s3):
-    import tempfile
-    fn = tempfile.mktemp()
-    s3.get(test_bucket_name+'/test/accounts.1.json', fn)
-    data = files['test/accounts.1.json']
-    assert open(fn, 'rb').read() == data
-    s3.put(fn, test_bucket_name+'/temp')
-    assert s3.du(test_bucket_name+'/temp')[test_bucket_name+'/temp'] == len(data)
-    assert s3.cat(test_bucket_name+'/temp') == data
+    with tmpfile() as fn:
+        s3.get(test_bucket_name+'/test/accounts.1.json', fn)
+        data = files['test/accounts.1.json']
+        assert open(fn, 'rb').read() == data
+        s3.put(fn, test_bucket_name+'/temp')
+        assert s3.du(test_bucket_name+'/temp')[test_bucket_name+'/temp'] == len(data)
+        assert s3.cat(test_bucket_name+'/temp') == data
 
 
 def test_errors(s3):

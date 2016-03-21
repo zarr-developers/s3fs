@@ -342,7 +342,7 @@ class S3FileSystem(object):
             by `walk()`.
         """
         if not self.exists(path):
-            raise IOError('File does not exist', path)
+            raise FileNotFoundError(path)
         if recursive:
             for f in self.walk(path):
                 self.rm(f, recursive=False)
