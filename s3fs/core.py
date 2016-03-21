@@ -284,6 +284,26 @@ class S3FileSystem(object):
         with self.open(path, 'rb', block_size=size) as f:
             return f.read(size)
 
+    def get(self, path, filename):
+        """ Stream data from file at path to local filename """
+        with self.open(path, 'rb') as f:
+            with open(filename, 'wb') as f2:
+                while True:
+                    data = f.read(f.blocksize)
+                    if len(data) == 0:
+                        break
+                    f2.write(data)
+
+    def put(self, filename, path):
+        """ Stream data from local filename to file at path """
+        with open(filename, 'rb') as f:
+            with self.open(path, 'wb') as f2:
+                while True:
+                    data = f.read(f2.blocksize)
+                    if len(data) == 0:
+                        break
+                    f2.write(data)        
+
     def mkdir(self, path):
         """ Make new bucket or empty key """
         self.touch(path)
@@ -322,7 +342,7 @@ class S3FileSystem(object):
             by `walk()`.
         """
         if not self.exists(path):
-            raise IOError('File does not exist', path)
+            raise FileNotFoundError(path)
         if recursive:
             for f in self.walk(path):
                 self.rm(f, recursive=False)
