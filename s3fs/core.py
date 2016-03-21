@@ -368,11 +368,12 @@ class S3FileSystem(object):
                 raise IOError('Delete key failed', (bucket, key))
             self._ls(path, refresh=True)
         else:
-            if recursive or not self.s3.list_objects(Bucket=bucket).get('Contents'):
+            if not self.s3.list_objects(Bucket=bucket).get('Contents'):
                 try:
                     self.s3.delete_bucket(Bucket=bucket)
                 except ClientError:
                     raise IOError('Delete bucket failed', bucket)
+                self.dirs.pop(bucket, None)
                 self._ls('', refresh=True)
             else:
                 raise IOError('Not empty', path)

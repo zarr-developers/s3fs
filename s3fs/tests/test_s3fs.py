@@ -374,6 +374,8 @@ def test_new_bucket(s3):
     s3.rm('new/temp')
     s3.rmdir('new')
     assert not s3.exists('new')
+    with pytest.raises((IOError, OSError)):
+        s3.ls('new')
 
 def test_write_small(s3):
     with s3.open(test_bucket_name+'/test', 'wb') as f:
