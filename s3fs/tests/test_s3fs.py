@@ -177,6 +177,7 @@ def test_du(s3):
 
     assert s3.du(test_bucket_name + '/test/', total=True) ==\
            sum(map(len, files.values()))
+    assert s3.du(test_bucket_name) == s3.du('s3://'+test_bucket_name)
 
 
 def test_s3_ls(s3):
@@ -200,6 +201,7 @@ def test_s3_glob(s3):
     assert fn in s3.glob(test_bucket_name+'/nested/*')
     assert fn in s3.glob(test_bucket_name+'/nested/file*')
     assert fn in s3.glob(test_bucket_name+'/*/*')
+    assert all(f in s3.walk(test_bucket_name) for f in s3.glob(test_bucket_name+'/nested/*'))
     with pytest.raises(ValueError):
         s3.glob('*')
 

@@ -148,7 +148,12 @@ class S3FileSystem(object):
         return S3File(self, path, mode, block_size=block_size)
 
     def _ls(self, path, refresh=False):
-        """ List files below path
+        """ List files in given bucket, or list of buckets.
+
+        Listing is cached unless `refresh=True`.
+
+        Note: only your buckets associated with the login will be listed by
+        `ls('')`, not any public buckets (even if already accessed).
 
         Parameters
         ----------
@@ -173,6 +178,7 @@ class S3FileSystem(object):
                     f['Key'] = f['Name']
                     f['Size'] = 0
                     del f['Name']
+                self.dirs[''] = files
             else:
                 try:
                     files = self.s3.list_objects(Bucket=bucket).get('Contents', [])
@@ -203,6 +209,11 @@ class S3FileSystem(object):
             return [f['Key'] for f in files]
 
     def info(self, path):
+        """ Detail on the specific file pointed to by path.
+
+        NB: path has trailing '/' stripped to work as `ls` does, so key
+        names that genuinely end in '/' will fail.
+        """
         if path.startswith('s3://'):
             path = path[len('s3://'):]
         path = path.rstrip('/')
@@ -215,6 +226,7 @@ class S3FileSystem(object):
 
     def walk(self, path):
         """ Return all entries below path """
+        path = path.lstrip('s3://')
         return [f['Key'] for f in self._ls(path) if f['Key'].rstrip('/'
                 ).startswith(path.rstrip('/') + '/')]
 
@@ -249,6 +261,7 @@ class S3FileSystem(object):
 
     def du(self, path, total=False, deep=False):
         """ Bytes in keys at path """
+        path = path.lstrip('s3://')
         if deep:
             files = self.walk(path)
             files = [self.info(f) for f in files]
@@ -263,7 +276,7 @@ class S3FileSystem(object):
         if split_path(path)[1]:
             return bool(self.ls(path))
         else:
-            return path in self.ls('')
+            return path.lstrip('s3://') in self.ls('')
 
     def cat(self, path):
         """ Returns contents of file """
