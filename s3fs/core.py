@@ -617,7 +617,7 @@ class S3File(object):
             if self.buffer.tell() == 0:
                 # no data in the buffer to write
                 return
-            if force and self.forced and self.buffer.tell() < 4*2**20:
+            if force and self.forced and self.buffer.tell() < 5*2**20:
                 raise IOError('Under-sized block already written')
             if force and self.buffer.tell() < 4*2**20:
                 self.forced = True
