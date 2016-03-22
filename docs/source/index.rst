@@ -13,12 +13,14 @@ or in configuration files.
 
 Calling `open()` on a `S3FileSystem` (typically using a context manager)
 provides an `S3File` for read or write access to a particular key. The
-object emulated the standard `File` protocol (`read`, `write`, `tell`, `seek`),
+object emulates the standard `File` protocol (`read`, `write`, `tell`, `seek`),
 such that functions expecting a file can access S3. Only binary read and write
 modes are implemented, with blocked caching.
 
 This project was originally designed as a storage-layer interface
-for `dask.distributed`.
+for `dask.distributed`_
+
+.. _`dask.distributed`: https://distributed.readthedocs.org/en/latest
 
 Examples
 --------
@@ -41,7 +43,7 @@ Reading with delimited blocks:
 
 .. code-block:: python
 
-   >>> s3.read_block(path, 1000, 1010, b'\n')
+   >>> s3.read_block(path, offset=1000, length=10, delimiter=b'\n')
    b'A whole line of text\n'
 
 Writing with blocked caching:
@@ -51,11 +53,9 @@ Writing with blocked caching:
    >>> s3 = s3fs.S3FileSystme(anon=False)  # uses default credentials
    >>> with s3.open('mybucket/new-file', 'wb') as f:
    ...     f.write(2*2**20 * b'a')
-   ...     f.write(2*2**20 * b'a')
-   ...     f.write(2*2**20 * b'a') # buffer now >5MB, auto-flush here
-   ...     f.write(2*2**20 * b'a') # last write, data is flushed and file closed
+   ...     f.write(2*2**20 * b'a') # data is flushed and file closed
    >>> s3.du('mybucket/new-file')
-   {'MDtemp/new-file': 8388608}
+   {'mybucket/new-file': 4194304}
 
 .. toctree::
    api
