@@ -18,9 +18,10 @@ such that functions expecting a file can access S3. Only binary read and write
 modes are implemented, with blocked caching.
 
 This project was originally designed as a storage-layer interface
-for `dask.distributed`_
+for `dask.distributed`_ and has a very similar interface to `hdfs3`_
 
 .. _`dask.distributed`: https://distributed.readthedocs.org/en/latest
+.. _`hdfs3`: http://hdfs3.readthedocs.org/en/latest/
 
 Examples
 --------
@@ -56,6 +57,15 @@ Writing with blocked caching:
    ...     f.write(2*2**20 * b'a') # data is flushed and file closed
    >>> s3.du('mybucket/new-file')
    {'mybucket/new-file': 4194304}
+
+Limitations
+-----------
+
+This project is meant for convenience, rather than feature completeness.
+The following are known current omissions:
+- there is no append-mode on files
+- file access is always binary
+- no permissions/access-control (i.e., no chmod/chmown methods)
 
 .. toctree::
    api
