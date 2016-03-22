@@ -62,29 +62,40 @@ def split_path(path):
 
 class S3FileSystem(object):
     """
-    Access S3 data as if it were a file system.
+    Access S3 as if it were a file system.
+
+    This exposes a filesystem-like API (ls, cp, open, etc.) on top of S3
+    storage.
+
+    Provide credentials either explicitly (``key=``, ``secret=``) or depend
+    upon local configuration files (``~/.aws`` or ``~/.boto``).  See boto3
+    documentation for more information.
+
+    Parameters
+    ----------
+    anon : bool (True)
+        Whether to use anonymous connection (public buckets only)
+    key : string (None)
+        If not anonymouns, use this key, if specified
+    secret : string (None)
+        If not anonymous, use this password, if specified
+    kwargs : other parameters for boto3 session
+
+    Examples
+    --------
+    >>> s3 = S3FileSystem(anon=False)  # doctest: +SKIP
+    >>> s3.ls('my-bucket/')  # doctest: +SKIP
+    ['my-file.txt']
+
+    >>> with s3.open('my-bucket/my-file.txt', mode='rb') as f:  # doctest: +SKIP
+    ...     print(f.read())  # doctest: +SKIP
+    b'Hello, world!'
     """
     _conn = {}
     connect_timeout=5
     read_timeout=15
 
     def __init__(self, anon=True, key=None, secret=None, **kwargs):
-        """
-        Create connection object to S3
-
-        Will use configured key/secret (typically in ~/.aws, see the
-        boto3 documentation) unless specified
-
-        Parameters
-        ----------
-        anon : bool (True)
-            whether to use anonymous connection (public buckets only)
-        key : string (None)
-            if not anonymouns, use this key, if specified
-        secret : string (None)
-            if not anonymous, use this password, if specified
-        kwargs : other parameters for boto3 session
-        """
         self.anon = anon
         self.key = key
         self.secret = secret
@@ -279,8 +290,7 @@ class S3FileSystem(object):
             return {p['Key']: p['Size'] for p in files}
 
     def exists(self, path):
-        """ Does such a file exist?
-        """
+        """ Does such a file exist? """
         if path.startswith('s3://'):
             path = path[len('s3://'):]
         path = path.rstrip('/')
@@ -326,7 +336,7 @@ class S3FileSystem(object):
                     data = f.read(f2.blocksize)
                     if len(data) == 0:
                         break
-                    f2.write(data)        
+                    f2.write(data)
 
     def mkdir(self, path):
         """ Make new bucket or empty key """
@@ -341,10 +351,12 @@ class S3FileSystem(object):
             raise IOError('Path is not directory-like', path)
 
     def mv(self, path1, path2):
+        """ Move file between locations on S3 """
         self.copy(path1, path2)
-        self.rm(path1)        
+        self.rm(path1)
 
     def copy(self, path1, path2):
+        """ Copy file between locations on S3 """
         buc1, key1 = split_path(path1)
         buc2, key2 = split_path(path2)
         try:
@@ -391,8 +403,9 @@ class S3FileSystem(object):
 
     def touch(self, path):
         """
-        Create empty key; or if path is a bucket only, attempt to create
-        bucket.
+        Create empty key
+
+        If path is a bucket only, attempt to create bucket.
         """
         bucket, key = split_path(path)
         if key:
@@ -453,25 +466,29 @@ class S3FileSystem(object):
 
 class S3File(object):
     """
-    Cached read-only interface to a key in S3, behaving like a seekable file.
+    Open S3 key as a file. Data is only loaded and cached on demand.
 
-    Optimized for a single continguous block.
+    Parameters
+    ----------
+    s3 : boto3 connection
+    bucket : string
+        S3 bucket to access
+    key : string
+        S3 key to access
+    blocksize : int
+        read-ahead size for finding delimiters
+
+    Examples
+    --------
+    >>> s3 = S3FileSystem()  # doctest: +SKIP
+    >>> with s3.open('my-bucket/my-file.txt', mode='rb') as f:  # doctest: +SKIP
+    ...     ...  # doctest: +SKIP
+
+    See Also
+    --------
+    S3FileSystem.open: used to create ``S3File`` objects
     """
-
     def __init__(self, s3, path, mode='rb', block_size=5*2**20):
-        """
-        Open S3 as a file. Data is only loaded and cached on demand.
-
-        Parameters
-        ----------
-        s3 : boto3 connection
-        bucket : string
-            S3 bucket to access
-        key : string
-            S3 key to access
-        blocksize : int
-            read-ahead size for finding delimiters
-        """
         self.mode = mode
         if mode not in {'rb', 'wb'}:
             raise NotImplementedError("File mode must be 'rb' or 'wb', not %s" % mode)
@@ -504,12 +521,15 @@ class S3File(object):
                 raise IOError("File not accessible", path)
 
     def info(self):
+        """ File information about this path """
         return self.s3.info(self.path)
 
     def tell(self):
+        """ Current file location """
         return self.loc
 
     def seek(self, loc, whence=0):
+        """ Set current file location """
         if not self.mode == 'rb':
             raise ValueError('Seek only available in read mode')
         if whence == 0:
@@ -581,11 +601,15 @@ class S3File(object):
         """
         Write buffered data to S3.
 
+        Due to S3 multi-upload policy, you can only safely force flush to S3
+        when you are finished writing.  It is unsafe to call this function
+        repeatedly.
+
         Parameters
         ----------
         force : bool (True)
             Whether to write even if the buffer is less than the blocksize. If
-        less than the S3 part minimum (5MB), must be last block.
+            less than the S3 part minimum (5MB), must be last block.
         """
         if self.mode == 'wb' and not self.closed:
             if self.buffer.tell() < self.blocksize and not force:
@@ -609,7 +633,8 @@ class S3File(object):
             self.buffer = io.BytesIO()
 
     def close(self):
-        """
+        """ Close file
+
         If in write mode, key is only finalized upon close, and key will then
         be available to other processes.
         """

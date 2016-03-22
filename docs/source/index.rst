@@ -12,7 +12,7 @@ Example
    >>> fs = s3fs.S3FileSystem()
    >>> fs.ls('my-bucket')
    ['my-file.txt']
-   >>> with fs.open('my-bucket/my-file.csv', 'rb') as f:
+   >>> with fs.open('my-bucket/my-file.txt', 'rb') as f:
    ...     print(f.read())
    b'Hello, world'
 
