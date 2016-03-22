@@ -619,7 +619,7 @@ class S3File(object):
                 return
             if force and self.forced and self.buffer.tell() < 5*2**20:
                 raise IOError('Under-sized block already written')
-            if force and self.buffer.tell() < 4*2**20:
+            if force and self.buffer.tell() < 5*2**20:
                 self.forced = True
             self.buffer.seek(0)
             try:
