@@ -148,7 +148,12 @@ class S3FileSystem(object):
         return S3File(self, path, mode, block_size=block_size)
 
     def _ls(self, path, refresh=False):
-        """ List files below path
+        """ List files in given bucket, or list of buckets.
+
+        Listing is cached unless `refresh=True`.
+
+        Note: only your buckets associated with the login will be listed by
+        `ls('')`, not any public buckets (even if already accessed).
 
         Parameters
         ----------
@@ -160,7 +165,9 @@ class S3FileSystem(object):
         refresh : bool (=False)
             if False, look in local cache for file details first
         """
-        path = path.lstrip('s3://').lstrip('/')
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
+        path = path.rstrip('/')
         bucket, key = split_path(path)
         if bucket not in self.dirs or refresh:
             if bucket == '':
@@ -173,6 +180,7 @@ class S3FileSystem(object):
                     f['Key'] = f['Name']
                     f['Size'] = 0
                     del f['Name']
+                self.dirs[''] = files
             else:
                 try:
                     files = self.s3.list_objects(Bucket=bucket).get('Contents', [])
@@ -187,7 +195,9 @@ class S3FileSystem(object):
 
     def ls(self, path, detail=False):
         """ List single "directory" with or without details """
-        path = path.lstrip('s3://').rstrip('/')
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
+        path = path.rstrip('/')
         files = self._ls(path)
         if path:
             pattern = re.compile(path + '/[^/]*.$')
@@ -203,6 +213,11 @@ class S3FileSystem(object):
             return [f['Key'] for f in files]
 
     def info(self, path):
+        """ Detail on the specific file pointed to by path.
+
+        NB: path has trailing '/' stripped to work as `ls` does, so key
+        names that genuinely end in '/' will fail.
+        """
         if path.startswith('s3://'):
             path = path[len('s3://'):]
         path = path.rstrip('/')
@@ -215,6 +230,8 @@ class S3FileSystem(object):
 
     def walk(self, path):
         """ Return all entries below path """
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
         return [f['Key'] for f in self._ls(path) if f['Key'].rstrip('/'
                 ).startswith(path.rstrip('/') + '/')]
 
@@ -225,7 +242,9 @@ class S3FileSystem(object):
         Note that the bucket part of the path must not contain a "*"
         """
         path0 = path
-        path = path.lstrip('s3://').lstrip('/')
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
+        path = path.rstrip('/')
         bucket, key = split_path(path)
         if "*" in bucket:
             raise ValueError('Bucket cannot contain a "*"')
@@ -260,6 +279,11 @@ class S3FileSystem(object):
             return {p['Key']: p['Size'] for p in files}
 
     def exists(self, path):
+        """ Does such a file exist?
+        """
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
+        path = path.rstrip('/')
         if split_path(path)[1]:
             return bool(self.ls(path))
         else:
@@ -355,11 +379,12 @@ class S3FileSystem(object):
                 raise IOError('Delete key failed', (bucket, key))
             self._ls(path, refresh=True)
         else:
-            if recursive or not self.s3.list_objects(Bucket=bucket).get('Contents'):
+            if not self.s3.list_objects(Bucket=bucket).get('Contents'):
                 try:
                     self.s3.delete_bucket(Bucket=bucket)
                 except ClientError:
                     raise IOError('Delete bucket failed', bucket)
+                self.dirs.pop(bucket, None)
                 self._ls('', refresh=True)
             else:
                 raise IOError('Not empty', path)
