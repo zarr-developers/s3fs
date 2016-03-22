@@ -6,13 +6,9 @@ API
 .. autosummary::
    S3FileSystem
    S3FileSystem.cat
-   S3FileSystem.chmod
-   S3FileSystem.chown
-   S3FileSystem.df
    S3FileSystem.du
    S3FileSystem.exists
    S3FileSystem.get
-   S3FileSystem.getmerge
    S3FileSystem.glob
    S3FileSystem.info
    S3FileSystem.ls
@@ -31,7 +27,6 @@ API
    S3File.flush
    S3File.info
    S3File.read
-   S3File.readlines
    S3File.seek
    S3File.tell
    S3File.write
