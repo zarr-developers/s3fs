@@ -165,7 +165,9 @@ class S3FileSystem(object):
         refresh : bool (=False)
             if False, look in local cache for file details first
         """
-        path = path.lstrip('s3://').lstrip('/')
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
+        path = path.rstrip('/')
         bucket, key = split_path(path)
         if bucket not in self.dirs or refresh:
             if bucket == '':
@@ -193,7 +195,9 @@ class S3FileSystem(object):
 
     def ls(self, path, detail=False):
         """ List single "directory" with or without details """
-        path = path.lstrip('s3://').rstrip('/')
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
+        path = path.rstrip('/')
         files = self._ls(path)
         if path:
             pattern = re.compile(path + '/[^/]*.$')
@@ -226,7 +230,8 @@ class S3FileSystem(object):
 
     def walk(self, path):
         """ Return all entries below path """
-        path = path.lstrip('s3://')
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
         return [f['Key'] for f in self._ls(path) if f['Key'].rstrip('/'
                 ).startswith(path.rstrip('/') + '/')]
 
@@ -237,7 +242,9 @@ class S3FileSystem(object):
         Note that the bucket part of the path must not contain a "*"
         """
         path0 = path
-        path = path.lstrip('s3://').lstrip('/')
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
+        path = path.rstrip('/')
         bucket, key = split_path(path)
         if "*" in bucket:
             raise ValueError('Bucket cannot contain a "*"')
@@ -261,7 +268,6 @@ class S3FileSystem(object):
 
     def du(self, path, total=False, deep=False):
         """ Bytes in keys at path """
-        path = path.lstrip('s3://')
         if deep:
             files = self.walk(path)
             files = [self.info(f) for f in files]
@@ -273,10 +279,15 @@ class S3FileSystem(object):
             return {p['Key']: p['Size'] for p in files}
 
     def exists(self, path):
+        """ Does such a file exist?
+        """
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
+        path = path.rstrip('/')
         if split_path(path)[1]:
             return bool(self.ls(path))
         else:
-            return path.lstrip('s3://') in self.ls('')
+            return path in self.ls('')
 
     def cat(self, path):
         """ Returns contents of file """
