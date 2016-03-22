@@ -14,10 +14,11 @@ or in configuration files.
 Calling `open()` on a `S3FileSystem` (typically using a context manager)
 provides an `S3File` for read or write access to a particular key. The
 object emulated the standard `File` protocol (`read`, `write`, `tell`, `seek`),
-such that functions expecting a file can access S3. Only read and write
+such that functions expecting a file can access S3. Only binary read and write
 modes are implemented, with blocked caching.
 
-This project was designed as a storage-layer interface for `dask.distributed`.
+This project was originally designed as a storage-layer interface
+for `dask.distributed`.
 
 Examples
 --------
