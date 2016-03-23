@@ -58,6 +58,16 @@ Writing with blocked caching:
    >>> s3.du('mybucket/new-file')
    {'mybucket/new-file': 4194304}
 
+Because S3Fs faithfully copies the Python file interface it can be used
+smoothly with other projects that consume the file interface like ``gzip`` or
+``pandas``.
+
+.. code-block:: python
+
+   >>> with s3.open('mybucket/my-file.csv.gz', 'rb') as f:
+   ...     g = gzip.GzipFile(fileobj=f)  # Decompress data with gzip
+   ...     df = pd.read_csv(g)           # Read CSV file with Pandas
+
 Limitations
 -----------
 
