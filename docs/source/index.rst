@@ -75,6 +75,7 @@ Contents
 ========
 
 .. toctree::
+   install
    api
    :maxdepth: 2
 
@@ -87,4 +88,3 @@ Indices and tables
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
-
