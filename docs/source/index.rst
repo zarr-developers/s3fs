@@ -3,19 +3,19 @@ S3Fs
 
 S3Fs is a Pythonic file interface to S3.  It builds on top of boto3_.
 
-The top-level class `S3FileSystem` holds connection information and
-allows typical file-system style operations like `cp`, `mv`, `ls`, `du`, `glob`,
-etc., as well as put/get of local files to/from S3.
+The top-level class ``S3FileSystem`` holds connection information and allows
+typical file-system style operations like ``cp``, ``mv``, ``ls``, ``du``,
+``glob``, etc., as well as put/get of local files to/from S3.
 
 The connection can be anonymous - in which case only publicly-available,
 read-only buckets are accessible - or via credentials explicitly supplied
 or in configuration files.
 
-Calling `open()` on a `S3FileSystem` (typically using a context manager)
-provides an `S3File` for read or write access to a particular key. The
-object emulates the standard `File` protocol (`read`, `write`, `tell`, `seek`),
-such that functions expecting a file can access S3. Only binary read and write
-modes are implemented, with blocked caching.
+Calling ``open()`` on a ``S3FileSystem`` (typically using a context manager)
+provides an ``S3File`` for read or write access to a particular key. The object
+emulates the standard ``File`` protocol (``read``, ``write``, ``tell``,
+``seek``), such that functions expecting a file can access S3. Only binary read
+and write modes are implemented, with blocked caching.
 
 This project was originally designed as a storage-layer interface
 for `dask.distributed`_ and has a very similar interface to `hdfs3`_
@@ -38,7 +38,7 @@ Simple locate and read a file:
    ...     print(f.read())
    b'Hello, world'
 
-(see also `walk` and `glob`)
+(see also ``walk`` and ``glob``)
 
 Reading with delimited blocks:
 
