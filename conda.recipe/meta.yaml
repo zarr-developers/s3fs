@@ -1,0 +1,24 @@
+package:
+  name: s3fs
+  version: "0.0.1"
+
+source:
+  path: ../
+
+requirements:
+  build:
+    - python
+    - boto3
+
+  run:
+    - python
+    - boto3
+
+test:
+  imports:
+    - s3fs
+
+about:
+  home: http://s3fs.readthedocs.org/en/latest/
+  license: BSD
+  summary: 'Convenient Filesystem interface over S3'
