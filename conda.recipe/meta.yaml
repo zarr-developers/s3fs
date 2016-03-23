@@ -1,9 +1,12 @@
 package:
   name: s3fs
-  version: "0.0.2"
+  version: "0.0.3"
 
 source:
   path: ../
+
+build:
+    noarch_python: True
 
 requirements:
   build:
