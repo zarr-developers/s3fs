@@ -63,9 +63,16 @@ Limitations
 
 This project is meant for convenience, rather than feature completeness.
 The following are known current omissions:
+
 - there is no append-mode on files
+
 - file access is always binary
+
 - no permissions/access-control (i.e., no chmod/chmown methods)
+
+
+Contents
+========
 
 .. toctree::
    api
