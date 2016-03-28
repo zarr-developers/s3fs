@@ -189,6 +189,13 @@ def test_s3_ls(s3):
     assert s3.ls('s3://'+test_bucket_name+'/nested/') == s3.ls(test_bucket_name+'/nested')
 
 
+def test_s3_big_ls(s3):
+    for x in range(1200):
+        s3.touch(test_bucket_name+'/thousand/%i.part'%x)
+    assert len(s3.walk(test_bucket_name)) > 1200
+    s3.rm(test_bucket_name+'/thousand/', recursive=True)
+
+
 def test_s3_ls_detail(s3):
     L = s3.ls(test_bucket_name+'/nested', detail=True)
     assert all(isinstance(item, dict) for item in L)

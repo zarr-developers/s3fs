@@ -194,7 +194,11 @@ class S3FileSystem(object):
                 self.dirs[''] = files
             else:
                 try:
-                    files = self.s3.list_objects(Bucket=bucket).get('Contents', [])
+                    pag = self.s3.get_paginator('list_objects')
+                    it = pag.paginate(Bucket=bucket)
+                    files = []
+                    for i in it:
+                        files.extend(i.get('Contents', []))
                 except ClientError:
                     # bucket not accessible
                     raise FileNotFoundError(bucket)
