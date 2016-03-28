@@ -549,7 +549,7 @@ class S3File(object):
         '''
         Read and return a line from the stream.
         
-        If size is specified, at most size bytes will be read.
+        If length is specified, at most size bytes will be read.
         '''  
         self._fetch(self.loc, self.loc+1)
         while True:
