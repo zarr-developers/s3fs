@@ -73,8 +73,9 @@ class S3FileSystem(object):
 
     Parameters
     ----------
-    anon : bool (True)
-        Whether to use anonymous connection (public buckets only)
+    anon : bool or None (default)
+        Whether to use anonymous connection (public buckets only). If None,
+        tries False and falls back to True.
     key : string (None)
         If not anonymouns, use this key, if specified
     secret : string (None)
@@ -95,12 +96,21 @@ class S3FileSystem(object):
     connect_timeout=5
     read_timeout=15
 
-    def __init__(self, anon=True, key=None, secret=None, **kwargs):
+    def __init__(self, anon=None, key=None, secret=None, **kwargs):
         self.anon = anon
         self.key = key
         self.secret = secret
         self.kwargs = kwargs
         self.dirs = {}
+        if anon is None:
+            try:
+                self.anon = False
+                self.s3 = self.connect()
+                self.ls('')
+                return
+            except ClientError:
+                logger.debug('Credentials failed/missing, trying anonymous')
+                self.anon = False
         self.s3 = self.connect()
 
     def connect(self, refresh=False):
