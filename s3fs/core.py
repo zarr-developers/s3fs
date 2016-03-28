@@ -545,6 +545,35 @@ class S3File(object):
         self.loc = nloc
         return self.loc
 
+    def readline(self, length=-1):
+        '''
+        Read and return a line from the stream.
+        
+        If size is specified, at most size bytes will be read.
+        '''  
+        self._fetch(self.loc, self.loc+1)
+        while True:
+            found = self.cache[self.loc-self.start:].find(b'\n') + 1
+            if length > 0 and found > length:
+                return self.read(length)
+            if found:
+                return self.read(found)
+            if self.end > self.size:
+                return self.read(length)
+            self._fetch(self.start, self.end + self.blocksize)
+
+    def __next__(self):
+        return self.readline()
+
+    next = __next__
+
+    def __iter__(self):
+        return self
+
+    def readlines(self):
+        """ Return all lines in a file as a list """
+        return list(self)
+
     def _fetch(self, start, end):
         if self.start is None and self.end is None:
             # First read
@@ -651,6 +680,18 @@ class S3File(object):
             else:
                 self.s3.s3.put_object(Bucket=self.bucket, Key=self.key)
             self.s3._ls(self.bucket, refresh=True)
+
+    def readable(self):
+        '''Return whether the S3File was opened for reading'''
+        return self.mode == 'rb'
+
+    def seekable(self):
+        '''Return whether the S3File is seekable (only in read mode)'''
+        return self.readable()
+
+    def writable(self):
+        '''Return whether the S3File was opened for writing'''
+        return self.mode == 'wb'
 
     def __del__(self):
         self.close()
