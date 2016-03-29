@@ -356,9 +356,17 @@ class S3FileSystem(object):
         self.rm(path1)
 
     def merge(self, path, filelist):
-        """ Create single file from list of files
+        """ Create single S3 file from list of S3 files
 
-        Uses multi-part, no data is downloaded.
+        Uses multi-part, no data is downloaded. The original files are
+        not deleted.
+
+        Parameters
+        ----------
+        path : str
+            The final file to produce
+        filelist : list of str
+            The paths, in order, to assemble into the final file.
         """
         bucket, key = split_path(path)
         mpu = self.s3.create_multipart_upload(Bucket=bucket, Key=key)
@@ -688,7 +696,7 @@ class S3File(object):
                     break
                 except S3_RETRYABLE_ERRORS:
                     if i < retries:
-                        logger.debug('Exception %e on S3 download, retrying',
+                        logger.debug('Exception %e on S3 upload, retrying',
                                      exc_info=True)
                         i += 1
                         continue
