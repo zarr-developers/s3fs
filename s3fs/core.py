@@ -491,8 +491,8 @@ def no_refresh(s3fs):
 
     Usage
     -----
-    >>> with no_refresh(s3fs) as fs:
-            [fs.touch('mybucket/file%i'%i) for i in range(1500)]
+    >>> with no_refresh(s3fs) as fs:    # doctest: +SKIP
+            [fs.touch('mybucket/file%i'%i) for i in range(1500)] # doctest: +SKIP
     """
     s3fs.refresh_on()
     try:
