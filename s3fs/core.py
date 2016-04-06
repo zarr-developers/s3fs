@@ -4,6 +4,7 @@ import logging
 import re
 import socket
 from hashlib import md5
+from contextlib import contextmanager
 
 import boto3
 import boto3.compat
@@ -113,6 +114,7 @@ class S3FileSystem(object):
                 logger.debug('Credentials failed/missing, trying anonymous')
                 self.anon = False
         self.s3 = self.connect()
+        self.no_refresh = False
 
     def connect(self, refresh=False):
         """
@@ -144,6 +146,16 @@ class S3FileSystem(object):
                                    **self.kwargs).client('s3', config=conf)
             self._conn[tok] = s3
         return self._conn[tok]
+
+    def refresh_off(self):
+        """ Block auto-refresh when writing.
+
+        Use in conjunction with `refresh_on()` when writing many files to S3.
+        """
+        self.no_refresh = True
+
+    def refresh_on(self):
+        self.no_refresh = False
 
     def __getstate__(self):
         d = self.__dict__.copy()
@@ -194,7 +206,7 @@ class S3FileSystem(object):
             path = path[len('s3://'):]
         path = path.rstrip('/')
         bucket, key = split_path(path)
-        if bucket not in self.dirs or refresh:
+        if bucket not in self.dirs or (refresh and not self.no_refresh):
             if bucket == '':
                 # list of buckets
                 if self.anon:
@@ -205,11 +217,13 @@ class S3FileSystem(object):
                     f['Key'] = f['Name']
                     f['Size'] = 0
                     del f['Name']
-                self.dirs[''] = files
             else:
                 try:
-                    files = self.s3.list_objects(Bucket=bucket).get('Contents',
-                                                                    [])
+                    pag = self.s3.get_paginator('list_objects')
+                    it = pag.paginate(Bucket=bucket)
+                    files = []
+                    for i in it:
+                        files.extend(i.get('Contents', []))
                 except ClientError:
                     # bucket not accessible
                     raise FileNotFoundError(bucket)
@@ -425,7 +439,8 @@ class S3FileSystem(object):
         """
         bucket, key = split_path(path)
         if key:
-            self.open(path, mode='wb')
+            self.s3.put_object(Bucket=bucket, Key=key)
+            self._ls(bucket, refresh=True)
         else:
             try:
                 self.s3.create_bucket(Bucket=bucket)
@@ -478,6 +493,26 @@ class S3FileSystem(object):
                 length = size - offset
             bytes = read_block(f, offset, length, delimiter)
         return bytes
+
+
+@contextmanager
+def no_refresh(s3fs):
+    """ Wrap an s3fs with this to temporarily block freshing filecache on writes.
+
+    Use this if writing many small files to a bucket.
+    The filelist will only be refreshed by the next writing action, or
+    explicit call to `s3fs._ls(bucket, refresh=True)`.
+
+    Usage
+    -----
+    >>> with no_refresh(s3fs) as fs:    # doctest: +SKIP
+            [fs.touch('mybucket/file%i'%i) for i in range(1500)] # doctest: +SKIP
+    """
+    s3fs.refresh_off()
+    try:
+        yield s3fs
+    finally:
+        s3fs.refresh_on()
 
 
 class S3File(object):
