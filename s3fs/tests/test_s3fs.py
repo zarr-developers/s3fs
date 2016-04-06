@@ -146,7 +146,7 @@ def test_anonymous_access():
     with ignoring(NoCredentialsError):
         s3 = S3FileSystem(anon=True)
         assert s3.ls('') == []
-        # TODO: public bucket doesn't work through moto
+        ## TODO: public bucket doesn't work through moto
     with pytest.raises((OSError, IOError)):
         s3.mkdir('newbucket')
 
@@ -324,9 +324,6 @@ def test_errors(s3):
 
     with pytest.raises(IOError):
         s3.rm('unknown')
-
-    with pytest.raises(NotImplementedError):
-        s3.open('anyfile', 'ab')
 
     with pytest.raises(ValueError):
         with s3.open(test_bucket_name+'/temp', 'wb') as f:
@@ -552,3 +549,39 @@ def test_writable(s3):
 
     with s3.open(a, 'rb') as f:
         assert not f.writable()
+
+def test_merge(s3):
+    with s3.open(a, 'wb') as f:
+        f.write(b'a' * 10*2**20)
+        
+    with s3.open(b, 'wb') as f:
+        f.write(b'a' * 10*2**20)
+    s3.merge(test_bucket_name+'/joined', [a, b])
+    assert s3.info(test_bucket_name+'/joined')['Size'] == 2*10*2**20
+
+
+def test_append(s3):
+    data = text_files['nested/file1']
+    with s3.open(test_bucket_name+'/nested/file1', 'ab') as f:
+        assert f.tell() == len(data) # append, no write, small file
+    assert s3.cat(test_bucket_name+'/nested/file1') == data
+    with s3.open(test_bucket_name+'/nested/file1', 'ab') as f:
+        f.write(b'extra')  # append, write, small file
+    assert  s3.cat(test_bucket_name+'/nested/file1') == data+b'extra'
+
+    with s3.open(a, 'wb') as f:
+        f.write(b'a' * 10*2**20)
+    with s3.open(a, 'ab') as f:
+        pass # append, no write, big file
+    assert s3.cat(a) == b'a' * 10*2**20
+    
+    with s3.open(a, 'ab') as f:
+        f.write(b'extra') # append, small write, big file
+    assert s3.cat(a) == b'a' * 10*2**20 + b'extra'
+
+    with s3.open(a, 'ab') as f:
+        assert f.tell() == 10*2**20 + 5
+        f.write(b'b' * 10*2**20) # append, big write, big file
+        assert f.tell() == 20*2**20 + 5
+    assert s3.cat(a) == b'a' * 10*2**20 + b'extra' + b'b' *10*2**20
+    

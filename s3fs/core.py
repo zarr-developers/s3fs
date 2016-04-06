@@ -384,6 +384,30 @@ class S3FileSystem(object):
         self.copy(path1, path2)
         self.rm(path1)
 
+    def merge(self, path, filelist):
+        """ Create single S3 file from list of S3 files
+
+        Uses multi-part, no data is downloaded. The original files are
+        not deleted.
+
+        Parameters
+        ----------
+        path : str
+            The final file to produce
+        filelist : list of str
+            The paths, in order, to assemble into the final file.
+        """
+        bucket, key = split_path(path)
+        mpu = self.s3.create_multipart_upload(Bucket=bucket, Key=key)
+        out = [self.s3.upload_part_copy(Bucket=bucket, Key=key, UploadId=mpu['UploadId'],
+                            CopySource=f, PartNumber=i+1) for (i, f) in enumerate(filelist)]
+        parts = [{'PartNumber': i+1, 'ETag': o['CopyPartResult']['ETag']} for (i, o) in enumerate(out)]
+        part_info = {'Parts': parts}
+        self.s3.complete_multipart_upload(Bucket=bucket, Key=key,
+                    UploadId=mpu['UploadId'], MultipartUpload=part_info)
+        self._ls(bucket, refresh=True)
+        
+
     def copy(self, path1, path2):
         """ Copy file between locations on S3 """
         buc1, key1 = split_path(path1)
@@ -542,9 +566,8 @@ class S3File(object):
 
     def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20):
         self.mode = mode
-        if mode not in {'rb', 'wb'}:
-            raise NotImplementedError(
-                "File mode must be 'rb' or 'wb', not %s" % mode)
+        if mode not in {'rb', 'wb', 'ab'}:
+            raise NotImplementedError("File mode must be {'rb', 'wb', 'ab'}, not %s" % mode)
         self.path = path
         bucket, key = split_path(path)
         self.s3 = s3
@@ -557,7 +580,7 @@ class S3File(object):
         self.end = None
         self.closed = False
         self.trim = True
-        if mode == 'wb':
+        if mode in {'wb', 'ab'}:
             self.buffer = io.BytesIO()
             self.parts = []
             self.size = 0
@@ -568,6 +591,17 @@ class S3File(object):
             except ClientError:
                 raise IOError('Open for write failed', path)
             self.forced = False
+            if mode == 'ab' and s3.exists(path):
+                self.size = s3.info(path)['Size']
+                if self.size < 5*2**20:
+                    # existing file too small for multi-upload: download
+                    self.write(s3.cat(path))
+                else:
+                    self.loc = self.size
+                    out = self.s3.s3.upload_part_copy(Bucket=self.bucket, Key=self.key,
+                                PartNumber=1, UploadId=self.mpu['UploadId'],
+                                CopySource=path)
+                    self.parts.append({'PartNumber': 1, 'ETag': out['CopyPartResult']['ETag']})
         else:
             try:
                 self.size = self.info()['Size']
@@ -694,7 +728,7 @@ class S3File(object):
         data : bytes
             Set of bytes to be written.
         """
-        if self.mode != 'wb':
+        if self.mode not in {'wb', 'ab'}:
             raise ValueError('File not in write mode')
         if self.closed:
             raise ValueError('I/O operation on closed file.')
@@ -704,7 +738,7 @@ class S3File(object):
             self.flush()
         return out
 
-    def flush(self, force=False):
+    def flush(self, force=False, retries=10):
         """
         Write buffered data to S3.
 
@@ -718,7 +752,7 @@ class S3File(object):
             Whether to write even if the buffer is less than the blocksize. If
             less than the S3 part minimum (5MB), must be last block.
         """
-        if self.mode == 'wb' and not self.closed:
+        if self.mode in {'wb', 'ab'} and not self.closed:
             if self.buffer.tell() < self.blocksize and not force:
                 raise ValueError('Parts must be greater than %s',
                                  self.blocksize)
@@ -730,15 +764,25 @@ class S3File(object):
             if force and self.buffer.tell() < 5 * 2 ** 20:
                 self.forced = True
             self.buffer.seek(0)
-            try:
-                part = len(self.parts) + 1
-                out = self.s3.s3.upload_part(Bucket=self.bucket, Key=self.key,
-                                             PartNumber=part,
-                                             UploadId=self.mpu['UploadId'],
-                                             Body=self.buffer.read())
-                self.parts.append({'PartNumber': part, 'ETag': out['ETag']})
-            except ClientError:
-                raise IOError('Write failed', self)
+            part = len(self.parts) + 1
+            i = 0
+            while True:
+                try:
+                    out = self.s3.s3.upload_part(Bucket=self.bucket, Key=self.key,
+                            PartNumber=part, UploadId=self.mpu['UploadId'],
+                            Body=self.buffer.read())
+                    break
+                except S3_RETRYABLE_ERRORS:
+                    if i < retries:
+                        logger.debug('Exception %e on S3 upload, retrying',
+                                     exc_info=True)
+                        i += 1
+                        continue
+                    else:
+                        raise IOError('Write failed after %i retries'%retries, self)
+                except:
+                    raise IOError('Write failed', self)
+            self.parts.append({'PartNumber': part, 'ETag': out['ETag']})
             self.buffer = io.BytesIO()
 
     def close(self):
@@ -752,7 +796,7 @@ class S3File(object):
         self.flush(True)
         self.cache = None
         self.closed = True
-        if self.mode == 'wb':
+        if self.mode in {'wb', 'ab'}:
             if self.parts:
                 part_info = {'Parts': self.parts}
                 self.s3.s3.complete_multipart_upload(Bucket=self.bucket,
@@ -774,7 +818,7 @@ class S3File(object):
 
     def writable(self):
         """Return whether the S3File was opened for writing"""
-        return self.mode == 'wb'
+        return self.mode in {'wb', 'ab'}
 
     def __del__(self):
         self.close()
