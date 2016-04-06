@@ -146,7 +146,7 @@ def test_anonymous_access():
     with ignoring(NoCredentialsError):
         s3 = S3FileSystem(anon=True)
         assert s3.ls('') == []
-        ## TODO: public bucket doesn't work through moto
+        # TODO: public bucket doesn't work through moto
     with pytest.raises((OSError, IOError)):
         s3.mkdir('newbucket')
 
@@ -329,6 +329,8 @@ def test_read_small(s3):
                 break
             out.append(data)
         assert s3.cat(fn) == b''.join(out)
+        # cache drop
+        assert len(f.cache) < len(out)
 
 
 def test_seek_delimiter(s3):
@@ -524,10 +526,10 @@ def test_seekable(s3):
     with s3.open(a, 'rb') as f:
         assert f.seekable()
 
+
 def test_writable(s3):
     with s3.open(a, 'wb') as f:
         assert f.writable()
 
     with s3.open(a, 'rb') as f:
         assert not f.writable()
-
