@@ -2,7 +2,7 @@
 import io
 import pytest
 from itertools import chain
-from s3fs.core import S3FileSystem
+from s3fs.core import S3FileSystem, no_refresh
 from s3fs.utils import seek_delimiter, ignoring, tmpfile
 import moto
 
@@ -187,6 +187,24 @@ def test_s3_ls(s3):
     assert fn in s3.ls(test_bucket_name+'/nested/')
     assert fn in s3.ls(test_bucket_name+'/nested')
     assert s3.ls('s3://'+test_bucket_name+'/nested/') == s3.ls(test_bucket_name+'/nested')
+
+
+def test_s3_big_ls(s3):
+    with no_refresh(s3) as s3:
+        for x in range(1200):
+            s3.touch(test_bucket_name+'/thousand/%i.part'%x)
+    assert len(s3.walk(test_bucket_name)) > 1200
+    s3.rm(test_bucket_name+'/thousand/', recursive=True)
+
+
+def test_no_refresh(s3):
+    set1 = s3.walk(test_bucket_name)
+    s3.refresh_off()
+    s3.touch(test_bucket_name+'/another')
+    assert set1 == s3.walk(test_bucket_name)
+    s3.refresh_on()
+    s3.touch(test_bucket_name+'/yet_another')
+    assert len(set1) < len(s3.walk(test_bucket_name))
 
 
 def test_s3_ls_detail(s3):
