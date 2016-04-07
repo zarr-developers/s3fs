@@ -111,8 +111,8 @@ class S3FileSystem(object):
                 self.s3 = self.connect()
                 self.ls('')
                 return
-            except ClientError:
-                logger.debug('Credentials failed/missing, trying anonymous')
+            except:
+                logger.debug('Accredited connection failed, trying anonymous')
                 self.anon = True
         self.s3 = self.connect()
 
