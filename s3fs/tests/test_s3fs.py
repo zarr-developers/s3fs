@@ -193,6 +193,7 @@ def test_s3_big_ls(s3):
     with no_refresh(s3) as s3:
         for x in range(1200):
             s3.touch(test_bucket_name+'/thousand/%i.part'%x)
+    s3._ls(test_bucket_name, refresh=True)
     assert len(s3.walk(test_bucket_name)) > 1200
     s3.rm(test_bucket_name+'/thousand/', recursive=True)
 
@@ -344,6 +345,8 @@ def test_read_small(s3):
                 break
             out.append(data)
         assert s3.cat(fn) == b''.join(out)
+        # cache drop
+        assert len(f.cache) < len(out)
 
 
 def test_seek_delimiter(s3):
@@ -539,13 +542,13 @@ def test_seekable(s3):
     with s3.open(a, 'rb') as f:
         assert f.seekable()
 
+
 def test_writable(s3):
     with s3.open(a, 'wb') as f:
         assert f.writable()
 
     with s3.open(a, 'rb') as f:
         assert not f.writable()
-
 
 def test_merge(s3):
     with s3.open(a, 'wb') as f:

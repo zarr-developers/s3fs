@@ -28,6 +28,7 @@ except NameError:
     class FileNotFoundError(IOError):
         pass
 
+
 def tokenize(*args, **kwargs):
     """ Deterministic token
 
@@ -94,8 +95,8 @@ class S3FileSystem(object):
     b'Hello, world!'
     """
     _conn = {}
-    connect_timeout=5
-    read_timeout=15
+    connect_timeout = 5
+    read_timeout = 15
 
     def __init__(self, anon=None, key=None, secret=None, **kwargs):
         self.anon = anon
@@ -119,7 +120,10 @@ class S3FileSystem(object):
         """
         Establish S3 connection object.
 
-        Reuses cached object unless refresh is True
+        Parameters
+        ----------
+        refresh : bool (True)
+            Whether to use cached filelists, if already read
         """
         anon, key, secret, kwargs = self.anon, self.key, self.secret, self.kwargs
         tok = tokenize(anon, key, secret, kwargs)
@@ -129,7 +133,7 @@ class S3FileSystem(object):
             logger.debug("Open S3 connection.  Anonymous: %s",
                          self.anon)
             if self.anon:
-                ## TODO: test addition of kwargs (e.g., S3 data centre)
+                # TODO: test addition of kwargs (e.g., S3 data centre)
                 from botocore import UNSIGNED
                 conf = Config(connect_timeout=self.connect_timeout,
                               read_timeout=self.read_timeout,
@@ -163,7 +167,7 @@ class S3FileSystem(object):
         self.__dict__.update(state)
         self.s3 = self.connect()
 
-    def open(self, path, mode='rb', block_size=5*1024**2):
+    def open(self, path, mode='rb', block_size=5 * 1024 ** 2):
         """ Open a file for reading or writing
 
         Parameters
@@ -177,7 +181,7 @@ class S3FileSystem(object):
         """
         if 'b' not in mode:
             raise NotImplementedError("Text mode not supported, use mode='%s'"
-                    " and manage bytes" % (mode[0] + 'b'))
+                                      " and manage bytes" % (mode[0] + 'b'))
         return S3File(self, path, mode, block_size=block_size)
 
     def _ls(self, path, refresh=False):
@@ -213,7 +217,6 @@ class S3FileSystem(object):
                     f['Key'] = f['Name']
                     f['Size'] = 0
                     del f['Name']
-                self.dirs[''] = files
             else:
                 try:
                     pag = self.s3.get_paginator('list_objects')
@@ -263,7 +266,7 @@ class S3FileSystem(object):
         if len(files) == 1:
             return files[0]
         else:
-            raise IOError("File not found: %s" %path)
+            raise IOError("File not found: %s" % path)
 
     def walk(self, path):
         """ Return all entries below path """
@@ -289,14 +292,14 @@ class S3FileSystem(object):
             path = path.rstrip('/') + '/*'
         if '/' in path[:path.index('*')]:
             ind = path[:path.index('*')].rindex('/')
-            root = path[:ind+1]
+            root = path[:ind + 1]
         else:
             root = '/'
         allfiles = self.walk(root)
         pattern = re.compile("^" + path.replace('//', '/')
-                                        .rstrip('/')
-                                        .replace('*', '[^/]*')
-                                        .replace('?', '.') + "$")
+                             .rstrip('/')
+                             .replace('*', '[^/]*')
+                             .replace('?', '.') + "$")
         out = [f for f in allfiles if re.match(pattern,
                f.replace('//', '/').rstrip('/'))]
         if not out:
@@ -410,7 +413,8 @@ class S3FileSystem(object):
         buc1, key1 = split_path(path1)
         buc2, key2 = split_path(path2)
         try:
-            self.s3.copy_object(Bucket=buc2, Key=key2, CopySource='/'.join([buc1, key1]))
+            self.s3.copy_object(Bucket=buc2, Key=key2,
+                                CopySource='/'.join([buc1, key1]))
         except ClientError:
             raise IOError('Copy failed', (path1, path2))
         self._ls(path2, refresh=True)
@@ -528,11 +532,11 @@ def no_refresh(s3fs):
     >>> with no_refresh(s3fs) as fs:    # doctest: +SKIP
             [fs.touch('mybucket/file%i'%i) for i in range(1500)] # doctest: +SKIP
     """
-    s3fs.refresh_on()
+    s3fs.refresh_off()
     try:
         yield s3fs
     finally:
-        s3fs.refresh_off()
+        s3fs.refresh_on()
 
 
 class S3File(object):
@@ -559,7 +563,8 @@ class S3File(object):
     --------
     S3FileSystem.open: used to create ``S3File`` objects
     """
-    def __init__(self, s3, path, mode='rb', block_size=5*2**20):
+
+    def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20):
         self.mode = mode
         if mode not in {'rb', 'wb', 'ab'}:
             raise NotImplementedError("File mode must be {'rb', 'wb', 'ab'}, not %s" % mode)
@@ -574,11 +579,12 @@ class S3File(object):
         self.start = None
         self.end = None
         self.closed = False
+        self.trim = True
         if mode in {'wb', 'ab'}:
             self.buffer = io.BytesIO()
             self.parts = []
             self.size = 0
-            if block_size < 5*2**20:
+            if block_size < 5 * 2 ** 20:
                 raise ValueError('Block size must be >=5MB')
             try:
                 self.mpu = s3.s3.create_multipart_upload(Bucket=bucket, Key=key)
@@ -611,7 +617,15 @@ class S3File(object):
         return self.loc
 
     def seek(self, loc, whence=0):
-        """ Set current file location """
+        """ Set current file location
+
+        Parameters
+        ----------
+        loc : int
+            byte location
+        whence : {0, 1, 2}
+            from start of file, current location or end of file, resp.
+        """
         if not self.mode == 'rb':
             raise ValueError('Seek only available in read mode')
         if whence == 0:
@@ -621,7 +635,8 @@ class S3File(object):
         elif whence == 2:
             nloc = self.size + loc
         else:
-            raise ValueError("invalid whence (%s, should be 0, 1 or 2)" % whence)
+            raise ValueError(
+                "invalid whence (%s, should be 0, 1 or 2)" % whence)
         if nloc < 0:
             raise ValueError('Seek before start of file')
         self.loc = nloc
@@ -630,12 +645,12 @@ class S3File(object):
     def readline(self, length=-1):
         '''
         Read and return a line from the stream.
-        
+
         If length is specified, at most size bytes will be read.
-        '''  
-        self._fetch(self.loc, self.loc+1)
+        '''
+        self._fetch(self.loc, self.loc + 1)
         while True:
-            found = self.cache[self.loc-self.start:].find(b'\n') + 1
+            found = self.cache[self.loc - self.start:].find(b'\n') + 1
             if length > 0 and found > length:
                 return self.read(length)
             if found:
@@ -679,6 +694,11 @@ class S3File(object):
     def read(self, length=-1):
         """
         Return data from cache, or fetch pieces as necessary
+
+        Parameters
+        ----------
+        length : int (-1)
+            Number of bytes to read; if <0, all remaining bytes.
         """
         if self.mode != 'rb':
             raise ValueError('File not in read mode')
@@ -690,6 +710,11 @@ class S3File(object):
         out = self.cache[self.loc - self.start:
                          self.loc - self.start + length]
         self.loc += len(out)
+        if self.trim:
+            num = (self.loc - self.start) // self.blocksize - 1
+            if num > 0:
+                self.start += self.blocksize * num
+                self.cache = self.cache[self.blocksize * num:]
         return out
 
     def write(self, data):
@@ -697,6 +722,11 @@ class S3File(object):
         Write data to buffer.
 
         Buffer only sent to S3 on flush() or if buffer is bigger than blocksize.
+
+        Parameters
+        ----------
+        data : bytes
+            Set of bytes to be written.
         """
         if self.mode not in {'wb', 'ab'}:
             raise ValueError('File not in write mode')
@@ -724,13 +754,14 @@ class S3File(object):
         """
         if self.mode in {'wb', 'ab'} and not self.closed:
             if self.buffer.tell() < self.blocksize and not force:
-                raise ValueError('Parts must be greater than %s', self.blocksize)
+                raise ValueError('Parts must be greater than %s',
+                                 self.blocksize)
             if self.buffer.tell() == 0:
                 # no data in the buffer to write
                 return
-            if force and self.forced and self.buffer.tell() < 5*2**20:
+            if force and self.forced and self.buffer.tell() < 5 * 2 ** 20:
                 raise IOError('Under-sized block already written')
-            if force and self.buffer.tell() < 5*2**20:
+            if force and self.buffer.tell() < 5 * 2 ** 20:
                 self.forced = True
             self.buffer.seek(0)
             part = len(self.parts) + 1
@@ -768,22 +799,25 @@ class S3File(object):
         if self.mode in {'wb', 'ab'}:
             if self.parts:
                 part_info = {'Parts': self.parts}
-                self.s3.s3.complete_multipart_upload(Bucket=self.bucket, Key=self.key,
-                            UploadId=self.mpu['UploadId'], MultipartUpload=part_info)
+                self.s3.s3.complete_multipart_upload(Bucket=self.bucket,
+                                                     Key=self.key,
+                                                     UploadId=self.mpu[
+                                                         'UploadId'],
+                                                     MultipartUpload=part_info)
             else:
                 self.s3.s3.put_object(Bucket=self.bucket, Key=self.key)
             self.s3._ls(self.bucket, refresh=True)
 
     def readable(self):
-        '''Return whether the S3File was opened for reading'''
+        """Return whether the S3File was opened for reading"""
         return self.mode == 'rb'
 
     def seekable(self):
-        '''Return whether the S3File is seekable (only in read mode)'''
+        """Return whether the S3File is seekable (only in read mode)"""
         return self.readable()
 
     def writable(self):
-        '''Return whether the S3File was opened for writing'''
+        """Return whether the S3File was opened for writing"""
         return self.mode in {'wb', 'ab'}
 
     def __del__(self):
@@ -809,11 +843,12 @@ def _fetch_range(client, bucket, key, start, end, max_attempts=10):
                                      Range='bytes=%i-%i' % (start, end - 1))
             return resp['Body'].read()
         except S3_RETRYABLE_ERRORS as e:
-            logger.debug('Exception %e on S3 download, retrying',
+            logger.debug('Exception %e on S3 download, retrying', e,
                          exc_info=True)
             continue
         except ClientError as e:
-            if e.response['Error'].get('Code', 'Unknown') in ['416', 'InvalidRange']:
+            if e.response['Error'].get('Code', 'Unknown') in ['416',
+                                                              'InvalidRange']:
                 return b''
             else:
                 raise
