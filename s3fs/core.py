@@ -104,6 +104,7 @@ class S3FileSystem(object):
         self.secret = secret
         self.kwargs = kwargs
         self.dirs = {}
+        self.no_refresh = False
         if anon is None:
             try:
                 self.anon = False
@@ -112,9 +113,8 @@ class S3FileSystem(object):
                 return
             except ClientError:
                 logger.debug('Credentials failed/missing, trying anonymous')
-                self.anon = False
+                self.anon = True
         self.s3 = self.connect()
-        self.no_refresh = False
 
     def connect(self, refresh=False):
         """
@@ -406,7 +406,7 @@ class S3FileSystem(object):
         self.s3.complete_multipart_upload(Bucket=bucket, Key=key,
                     UploadId=mpu['UploadId'], MultipartUpload=part_info)
         self._ls(bucket, refresh=True)
-        
+
 
     def copy(self, path1, path2):
         """ Copy file between locations on S3 """
