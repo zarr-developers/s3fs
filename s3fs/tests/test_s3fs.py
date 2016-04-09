@@ -553,7 +553,7 @@ def test_writable(s3):
 def test_merge(s3):
     with s3.open(a, 'wb') as f:
         f.write(b'a' * 10*2**20)
-        
+
     with s3.open(b, 'wb') as f:
         f.write(b'a' * 10*2**20)
     s3.merge(test_bucket_name+'/joined', [a, b])
@@ -574,7 +574,7 @@ def test_append(s3):
     with s3.open(a, 'ab') as f:
         pass # append, no write, big file
     assert s3.cat(a) == b'a' * 10*2**20
-    
+
     with s3.open(a, 'ab') as f:
         f.write(b'extra') # append, small write, big file
     assert s3.cat(a) == b'a' * 10*2**20 + b'extra'
@@ -584,4 +584,14 @@ def test_append(s3):
         f.write(b'b' * 10*2**20) # append, big write, big file
         assert f.tell() == 20*2**20 + 5
     assert s3.cat(a) == b'a' * 10*2**20 + b'extra' + b'b' *10*2**20
-    
+
+
+def test_bigger_than_block_read(s3):
+    with s3.open(test_bucket_name+'/2014-01-01.csv', 'rb', block_size=3) as f:
+        out = []
+        while True:
+            data = f.read(20)
+            out.append(data)
+            if len(data) == 0:
+                break
+    assert b''.join(out) == csv_files['2014-01-01.csv']
