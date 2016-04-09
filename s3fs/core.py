@@ -610,7 +610,9 @@ class S3File(object):
 
     def info(self):
         """ File information about this path """
-        return self.s3.info(self.path)
+        info = self.s3.s3.head_object(Bucket=self.bucket, Key=self.key)
+        info['Size'] = info.get('ContentLength')
+        return info
 
     def tell(self):
         """ Current file location """
