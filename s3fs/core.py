@@ -9,7 +9,7 @@ from contextlib import contextmanager
 import boto3
 import boto3.compat
 import boto3.s3.transfer as trans
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ParamValidationError
 from botocore.client import Config
 
 from .utils import read_block
@@ -415,7 +415,7 @@ class S3FileSystem(object):
         try:
             self.s3.copy_object(Bucket=buc2, Key=key2,
                                 CopySource='/'.join([buc1, key1]))
-        except ClientError:
+        except (ClientError, ParamValidationError):
             raise IOError('Copy failed', (path1, path2))
         self._ls(path2, refresh=True)
 
@@ -469,7 +469,7 @@ class S3FileSystem(object):
             try:
                 self.s3.create_bucket(Bucket=bucket)
                 self._ls("", refresh=True)
-            except ClientError:
+            except (ClientError, ParamValidationError):
                 raise IOError('Bucket create failed', path)
 
     def read_block(self, fn, offset, length, delimiter=None):
@@ -588,7 +588,7 @@ class S3File(object):
                 raise ValueError('Block size must be >=5MB')
             try:
                 self.mpu = s3.s3.create_multipart_upload(Bucket=bucket, Key=key)
-            except ClientError:
+            except (ClientError, ParamValidationError):
                 raise IOError('Open for write failed', path)
             self.forced = False
             if mode == 'ab' and s3.exists(path):
@@ -605,7 +605,7 @@ class S3File(object):
         else:
             try:
                 self.size = self.info()['Size']
-            except ClientError:
+            except (ClientError, ParamValidationError):
                 raise IOError("File not accessible", path)
 
     def info(self):
