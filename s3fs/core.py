@@ -686,7 +686,7 @@ class S3File(object):
             self.start = start
             self.cache = new + self.cache
         if end > self.end:
-            if end > self.size:
+            if self.end > self.size:
                 return
             new = _fetch_range(self.s3.s3, self.bucket, self.key,
                                self.end, end + self.blocksize)
