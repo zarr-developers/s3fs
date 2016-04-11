@@ -316,9 +316,6 @@ def test_errors(s3):
     with pytest.raises((IOError, OSError)):
         s3.mv(test_bucket_name+'/tmp/test/shfoshf/x', 'tmp/test/shfoshf/y')
 
-    #with pytest.raises((IOError, OSError)):
-    #    s3.open('x', 'wb')
-
     with pytest.raises((IOError, OSError)):
         s3.open('x', 'rb')
 
@@ -333,6 +330,9 @@ def test_errors(s3):
         f = s3.open(test_bucket_name+'/temp', 'rb')
         f.close()
         f.read()
+
+    with pytest.raises((IOError, OSError)):
+        s3.mkdir('/')
 
 
 def test_read_small(s3):
