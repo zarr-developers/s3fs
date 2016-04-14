@@ -98,10 +98,11 @@ class S3FileSystem(object):
     connect_timeout = 5
     read_timeout = 15
 
-    def __init__(self, anon=None, key=None, secret=None, **kwargs):
+    def __init__(self, anon=None, key=None, secret=None, token=None, **kwargs):
         self.anon = anon
         self.key = key
         self.secret = secret
+        self.token = token
         self.kwargs = kwargs
         self.dirs = {}
         self.no_refresh = False
@@ -125,8 +126,9 @@ class S3FileSystem(object):
         refresh : bool (True)
             Whether to use cached filelists, if already read
         """
-        anon, key, secret, kwargs = self.anon, self.key, self.secret, self.kwargs
-        tok = tokenize(anon, key, secret, kwargs)
+        anon, key, secret, kwargs, token = (self.anon, self.key, self.secret,
+                                            self.kwargs, self.token)
+        tok = tokenize(anon, key, secret, kwargs, token)
         if refresh:
             self._conn.pop(tok, None)
         if tok not in self._conn:
@@ -137,15 +139,38 @@ class S3FileSystem(object):
                 from botocore import UNSIGNED
                 conf = Config(connect_timeout=self.connect_timeout,
                               read_timeout=self.read_timeout,
-                              signature_version=UNSIGNED, **self.kwargs)
-                s3 = boto3.Session().client('s3', config=conf)
+                              signature_version=UNSIGNED)
+                s3 = boto3.Session(**self.kwargs).client('s3', config=conf)
             else:
                 conf = Config(connect_timeout=self.connect_timeout,
                               read_timeout=self.read_timeout)
-                s3 = boto3.Session(self.key, self.secret,
+                s3 = boto3.Session(self.key, self.secret, self.token,
                                    **self.kwargs).client('s3', config=conf)
             self._conn[tok] = s3
         return self._conn[tok]
+
+    def get_delegated_s3pars(self, exp=3600):
+        """Get temporary credentials, apropriate for sending across a network
+
+        Parameters
+        ----------
+        exp : int
+            Time in seconds that credentials are good for
+
+        Returns
+        -------
+        dict of parameters
+        """
+        if self.anon:
+            return {'anon': True}
+        if self.token:  # already has temporary cred
+            return {'key': self.key, 'secret': self.secret, 'token': self.token,
+                    'anon': False}
+        sts = boto3.Session(self.key, self.secret, self.token,
+                            **self.kwargs).client('sts')
+        cred = sts.get_session_token(DurationSeconds=3600)['Credentials']
+        return {'key': cred['AccessKeyId'], 'secret': cred['SecretAccessKey'],
+                'token': cred['SessionToken'], 'anon': False}
 
     def refresh_off(self):
         """ Block auto-refresh when writing.

@@ -102,6 +102,19 @@ def test_multiple_objects(s3):
     assert s3.ls('test') == s32.ls('test')
 
 
+@pytest.mark.xfail()
+def test_delegate(s3):
+    out = s3.get_delegated_s3pars()
+    assert out
+    assert out['token']
+    s32 = S3FileSystem(**out)
+    assert not s32.anon
+    assert out == s32.get_delegated_s3pars()
+    s32.anon = True
+    out = s32.get_delegated_s3pars()
+    assert out == {'anon': True}
+
+
 def test_ls(s3):
     assert s3.ls('') == [test_bucket_name]
     with pytest.raises((OSError, IOError)):
