@@ -49,3 +49,13 @@ def test_complex_keys(s3):
     print(list(mw))
 
     assert ('x', 1, 2) in mw
+
+
+def test_pickle(s3):
+    d = S3Map(s3, root)
+    d['x'] = b'1'
+
+    import pickle
+    d2 = pickle.loads(pickle.dumps(d))
+
+    assert d2['x'] == b'1'
