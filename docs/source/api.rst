@@ -31,8 +31,19 @@ API
    S3File.tell
    S3File.write
 
+.. currentmodule:: s3fs.mapping
+
+.. autosummary::
+   S3Map
+
+.. currentmodule:: s3fs.core
+
 .. autoclass:: S3FileSystem
    :members:
 
 .. autoclass:: S3File
    :members:
+
+.. currentmodule:: s3fs.mapping
+
+.. autoclass:: S3Map
