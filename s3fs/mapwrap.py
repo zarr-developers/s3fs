@@ -65,7 +65,7 @@ class S3Map(MutableMapping):
             f.write(value)
 
     def keys(self):
-        return map(lambda x: x[len(self.root) + 1:], self.s3.walk(self.root))
+        return iter(map(lambda x: x[len(self.root) + 1:], self.s3.walk(self.root)))
 
     def __iter__(self):
         return self.keys()
