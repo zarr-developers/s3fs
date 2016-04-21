@@ -1,5 +1,5 @@
 from s3fs.tests.test_s3fs import s3, test_bucket_name
-from s3fs.mapwrap import S3Map
+from s3fs.mapping import S3Map
 
 root = test_bucket_name+'/mapping'
 
