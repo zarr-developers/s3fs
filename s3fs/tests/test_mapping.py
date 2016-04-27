@@ -5,12 +5,12 @@ root = test_bucket_name+'/mapping'
 
 
 def test_simple(s3):
-    mw = S3Map(root, s3)
-    assert not mw
+    d = S3Map(root, s3)
+    assert not d
 
-    assert list(mw) == list(mw.keys()) == []
-    assert list(mw.values()) == []
-    assert list(mw.items()) == []
+    assert list(d) == list(d.keys()) == []
+    assert list(d.values()) == []
+    assert list(d.items()) == []
 
 
 def test_simple():
@@ -19,41 +19,41 @@ def test_simple():
 
 
 def test_with_data(s3):
-    mw = S3Map(root, s3)
-    mw['x'] = b'123'
-    assert list(mw) == list(mw.keys()) == ['x']
-    assert list(mw.values()) == [b'123']
-    assert list(mw.items()) == [('x', b'123')]
-    assert mw['x'] == b'123'
-    assert bool(mw)
+    d = S3Map(root, s3)
+    d['x'] = b'123'
+    assert list(d) == list(d.keys()) == ['x']
+    assert list(d.values()) == [b'123']
+    assert list(d.items()) == [('x', b'123')]
+    assert d['x'] == b'123'
+    assert bool(d)
 
     assert s3.walk(root) == [test_bucket_name+'/mapping/x']
-    mw['x'] = b'000'
-    assert mw['x'] == b'000'
+    d['x'] = b'000'
+    assert d['x'] == b'000'
 
-    mw['y'] = b'456'
-    assert mw['y'] == b'456'
-    assert set(mw) == {'x', 'y'}
+    d['y'] = b'456'
+    assert d['y'] == b'456'
+    assert set(d) == {'x', 'y'}
 
-    mw.clear()
-    assert list(mw) == []
+    d.clear()
+    assert list(d) == []
 
 
 def test_complex_keys(s3):
-    mw = S3Map(root, s3)
-    mw[1] = b'hello'
-    assert mw[1] == b'hello'
-    del mw[1]
+    d = S3Map(root, s3)
+    d[1] = b'hello'
+    assert d[1] == b'hello'
+    del d[1]
 
-    mw[1, 2] = b'world'
-    assert mw[1, 2] == b'world'
-    del mw[1, 2]
+    d[1, 2] = b'world'
+    assert d[1, 2] == b'world'
+    del d[1, 2]
 
-    mw['x', 1, 2] = b'hello world'
-    assert mw['x', 1, 2] == b'hello world'
-    print(list(mw))
+    d['x', 1, 2] = b'hello world'
+    assert d['x', 1, 2] == b'hello world'
+    print(list(d))
 
-    assert ('x', 1, 2) in mw
+    assert ('x', 1, 2) in d
 
 
 def test_pickle(s3):

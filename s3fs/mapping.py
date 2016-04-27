@@ -22,11 +22,11 @@ class S3Map(MutableMapping):
     Examples
     --------
     >>> s3 = s3fs.S3FileSystem() # doctest: +SKIP
-    >>> mw = MapWrapping('mybucket/mapstore/', s3=s3) # doctest: +SKIP
-    >>> mw['loc1'] = b'Hello World' # doctest: +SKIP
-    >>> list(mw.keys()) # doctest: +SKIP
+    >>> d = MapWrapping('mybucket/mapstore/', s3=s3) # doctest: +SKIP
+    >>> d['loc1'] = b'Hello World' # doctest: +SKIP
+    >>> list(d.keys()) # doctest: +SKIP
     ['loc1']
-    >>> mw['loc1'] # doctest: +SKIP
+    >>> d['loc1'] # doctest: +SKIP
     b'Hello World'
     """
 
