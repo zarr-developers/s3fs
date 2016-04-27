@@ -608,3 +608,7 @@ def test_bigger_than_block_read(s3):
             if len(data) == 0:
                 break
     assert b''.join(out) == csv_files['2014-01-01.csv']
+
+
+def test_current(s3):
+    assert S3FileSystem.current() is s3

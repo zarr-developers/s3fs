@@ -13,9 +13,9 @@ def test_simple(s3):
     assert list(d.items()) == []
 
 
-def test_simple():
+def test_default_s3filesystem(s3):
     d = S3Map(root)
-    assert isinstance(d.s3, S3FileSystem)
+    assert d.s3 is s3
 
 
 def test_with_data(s3):

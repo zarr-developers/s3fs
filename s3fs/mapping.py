@@ -31,7 +31,7 @@ class S3Map(MutableMapping):
     """
 
     def __init__(self, root, s3=None, check=False):
-        self.s3 = s3 or S3FileSystem()
+        self.s3 = s3 or S3FileSystem.current()
         self.root = root
         if check:
             s3.touch(root+'/a')

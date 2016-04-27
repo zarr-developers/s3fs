@@ -95,6 +95,7 @@ class S3FileSystem(object):
     b'Hello, world!'
     """
     _conn = {}
+    _singleton = [None]
     connect_timeout = 5
     read_timeout = 15
 
@@ -116,6 +117,18 @@ class S3FileSystem(object):
                 logger.debug('Accredited connection failed, trying anonymous')
                 self.anon = True
         self.s3 = self.connect()
+        S3FileSystem._singleton[0] = self
+
+    @classmethod
+    def current(cls):
+        """ Return the most recently created S3FileSystem
+
+        If no S3FileSystem has been created, then create one
+        """
+        if not cls._singleton[0]:
+            return S3FileSystem()
+        else:
+            return cls._singleton[0]
 
     def connect(self, refresh=False):
         """
