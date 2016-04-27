@@ -116,3 +116,11 @@ def read_block(f, offset, length, delimiter=None):
     f.seek(offset)
     bytes = f.read(length)
     return bytes
+
+
+def raises(exc, lamda):
+    try:
+        lamda()
+        return False
+    except exc:
+        return True

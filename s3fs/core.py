@@ -12,7 +12,7 @@ import boto3.s3.transfer as trans
 from botocore.exceptions import ClientError, ParamValidationError
 from botocore.client import Config
 
-from .utils import read_block
+from .utils import read_block, raises
 
 logger = logging.getLogger(__name__)
 
@@ -271,12 +271,12 @@ class S3FileSystem(object):
         files = self.dirs[bucket]
         return files
 
-    def ls(self, path, detail=False):
+    def ls(self, path, detail=False, refresh=False):
         """ List single "directory" with or without details """
         if path.startswith('s3://'):
             path = path[len('s3://'):]
         path = path.rstrip('/')
-        files = self._ls(path)
+        files = self._ls(path, refresh=refresh)
         if path:
             pattern = re.compile(path + '/[^/]*.$')
             files = [f for f in files if pattern.match(f['Key']) is not None]
@@ -290,7 +290,7 @@ class S3FileSystem(object):
         else:
             return [f['Key'] for f in files]
 
-    def info(self, path):
+    def info(self, path, refresh=False):
         """ Detail on the specific file pointed to by path.
 
         NB: path has trailing '/' stripped to work as `ls` does, so key
@@ -299,18 +299,19 @@ class S3FileSystem(object):
         if path.startswith('s3://'):
             path = path[len('s3://'):]
         path = path.rstrip('/')
-        files = self._ls(path)
+        files = self._ls(path, refresh=refresh)
         files = [f for f in files if f['Key'].rstrip('/') == path]
         if len(files) == 1:
             return files[0]
         else:
             raise IOError("File not found: %s" % path)
 
-    def walk(self, path):
+    def walk(self, path, refresh=False):
         """ Return all entries below path """
         if path.startswith('s3://'):
             path = path[len('s3://'):]
-        return [f['Key'] for f in self._ls(path) if f['Key'].rstrip('/'
+        filenames = self._ls(path, refresh=refresh)
+        return [f['Key'] for f in filenames if f['Key'].rstrip('/'
                 ).startswith(path.rstrip('/') + '/')]
 
     def glob(self, path):
@@ -364,7 +365,8 @@ class S3FileSystem(object):
         if split_path(path)[1]:
             return bool(self.ls(path))
         else:
-            return path in self.ls('')
+            return (path in self.ls('') and
+                    not raises(FileNotFoundError, lambda: self.ls(path)))
 
     def cat(self, path):
         """ Returns contents of file """
@@ -443,7 +445,7 @@ class S3FileSystem(object):
         part_info = {'Parts': parts}
         self.s3.complete_multipart_upload(Bucket=bucket, Key=key,
                     UploadId=mpu['UploadId'], MultipartUpload=part_info)
-        self._ls(bucket, refresh=True)
+        self.invalidate_cache(bucket)
 
 
     def copy(self, path1, path2):
@@ -455,7 +457,7 @@ class S3FileSystem(object):
                                 CopySource='/'.join([buc1, key1]))
         except (ClientError, ParamValidationError):
             raise IOError('Copy failed', (path1, path2))
-        self._ls(path2, refresh=True)
+        self.invalidate_cache(buc2)
 
     def rm(self, path, recursive=False):
         """
@@ -481,7 +483,7 @@ class S3FileSystem(object):
                 self.s3.delete_object(Bucket=bucket, Key=key)
             except ClientError:
                 raise IOError('Delete key failed', (bucket, key))
-            self._ls(path, refresh=True)
+            self.invalidate_cache(bucket)
         else:
             if not self.s3.list_objects(Bucket=bucket).get('Contents'):
                 try:
@@ -489,9 +491,15 @@ class S3FileSystem(object):
                 except ClientError:
                     raise IOError('Delete bucket failed', bucket)
                 self.dirs.pop(bucket, None)
-                self._ls('', refresh=True)
+                self.invalidate_cache(bucket)
             else:
                 raise IOError('Not empty', path)
+
+    def invalidate_cache(self, bucket=None):
+        if bucket is None:
+            self.dirs.clear()
+        elif bucket in self.dirs:
+            del self.dirs[bucket]
 
     def touch(self, path):
         """
@@ -502,11 +510,11 @@ class S3FileSystem(object):
         bucket, key = split_path(path)
         if key:
             self.s3.put_object(Bucket=bucket, Key=key)
-            self._ls(bucket, refresh=True)
+            self.invalidate_cache(bucket)
         else:
             try:
                 self.s3.create_bucket(Bucket=bucket)
-                self._ls("", refresh=True)
+                self.invalidate_cache('')
             except (ClientError, ParamValidationError):
                 raise IOError('Bucket create failed', path)
 
@@ -639,7 +647,8 @@ class S3File(object):
                     out = self.s3.s3.upload_part_copy(Bucket=self.bucket, Key=self.key,
                                 PartNumber=1, UploadId=self.mpu['UploadId'],
                                 CopySource=path)
-                    self.parts.append({'PartNumber': 1, 'ETag': out['CopyPartResult']['ETag']})
+                    self.parts.append({'PartNumber': 1,
+                                       'ETag': out['CopyPartResult']['ETag']})
         else:
             try:
                 self.size = self.info()['Size']
@@ -846,7 +855,7 @@ class S3File(object):
                                                      MultipartUpload=part_info)
             else:
                 self.s3.s3.put_object(Bucket=self.bucket, Key=self.key)
-            self.s3._ls(self.bucket, refresh=True)
+            self.s3.invalidate_cache(self.bucket)
 
     def readable(self):
         """Return whether the S3File was opened for reading"""
