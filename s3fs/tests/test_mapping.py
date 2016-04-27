@@ -1,11 +1,11 @@
 from s3fs.tests.test_s3fs import s3, test_bucket_name
-from s3fs.mapping import S3Map
+from s3fs import S3Map, S3FileSystem
 
 root = test_bucket_name+'/mapping'
 
 
 def test_simple(s3):
-    mw = S3Map(s3, root)
+    mw = S3Map(root, s3)
     assert not mw
 
     assert list(mw) == list(mw.keys()) == []
@@ -13,8 +13,13 @@ def test_simple(s3):
     assert list(mw.items()) == []
 
 
+def test_simple():
+    d = S3Map(root)
+    assert isinstance(d.s3, S3FileSystem)
+
+
 def test_with_data(s3):
-    mw = S3Map(s3, root)
+    mw = S3Map(root, s3)
     mw['x'] = b'123'
     assert list(mw) == list(mw.keys()) == ['x']
     assert list(mw.values()) == [b'123']
@@ -35,7 +40,7 @@ def test_with_data(s3):
 
 
 def test_complex_keys(s3):
-    mw = S3Map(s3, root)
+    mw = S3Map(root, s3)
     mw[1] = b'hello'
     assert mw[1] == b'hello'
     del mw[1]
@@ -52,7 +57,7 @@ def test_complex_keys(s3):
 
 
 def test_pickle(s3):
-    d = S3Map(s3, root)
+    d = S3Map(root, s3)
     d['x'] = b'1'
 
     import pickle

@@ -2,6 +2,9 @@
 from collections import MutableMapping
 import os
 
+from .core import S3FileSystem
+
+
 class S3Map(MutableMapping):
     """Wrap an S3FileSystem as a mutable wrapping.
 
@@ -10,16 +13,16 @@ class S3Map(MutableMapping):
 
     Parameters
     ----------
-    s3 : S3FileSystem
     root : string
         prefix for all the files (perhaps justa  bucket name
+    s3 : S3FileSystem
     check : bool (=True)
         performs a touch at the location, to check writeability.
 
     Examples
     --------
     >>> s3 = s3fs.S3FileSystem() # doctest: +SKIP
-    >>> mw = MapWrapping(s3, 'mybucket/mapstore/') # doctest: +SKIP
+    >>> mw = MapWrapping('mybucket/mapstore/', s3=s3) # doctest: +SKIP
     >>> mw['loc1'] = b'Hello World' # doctest: +SKIP
     >>> list(mw.keys()) # doctest: +SKIP
     ['loc1']
@@ -27,8 +30,8 @@ class S3Map(MutableMapping):
     b'Hello World'
     """
 
-    def __init__(self, s3, root, check=False):
-        self.s3 = s3
+    def __init__(self, root, s3=None, check=False):
+        self.s3 = s3 or S3FileSystem()
         self.root = root
         if check:
             s3.touch(root+'/a')
