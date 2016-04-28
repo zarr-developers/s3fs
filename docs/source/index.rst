@@ -20,8 +20,8 @@ and write modes are implemented, with blocked caching.
 This project was originally designed as a storage-layer interface
 for `dask.distributed`_ and has a very similar interface to `hdfs3`_
 
-.. _`dask.distributed`: https://distributed.readthedocs.org/en/latest
-.. _`hdfs3`: http://hdfs3.readthedocs.org/en/latest/
+.. _`dask.distributed`: https://distributed.readthedocs.io/en/latest
+.. _`hdfs3`: http://hdfs3.readthedocs.io/en/latest/
 
 Examples
 --------
@@ -90,7 +90,7 @@ Contents
    :maxdepth: 2
 
 
-.. _boto3: https://boto3.readthedocs.org/en/latest/
+.. _boto3: https://boto3.readthedocs.io/en/latest/
 
 Indices and tables
 ==================
