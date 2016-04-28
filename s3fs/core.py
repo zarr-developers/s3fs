@@ -185,16 +185,6 @@ class S3FileSystem(object):
         return {'key': cred['AccessKeyId'], 'secret': cred['SecretAccessKey'],
                 'token': cred['SessionToken'], 'anon': False}
 
-    def refresh_off(self):
-        """ Block auto-refresh when writing.
-
-        Use in conjunction with `refresh_on()` when writing many files to S3.
-        """
-        self.no_refresh = True
-
-    def refresh_on(self):
-        self.no_refresh = False
-
     def __getstate__(self):
         d = self.__dict__.copy()
         del d['s3']
@@ -447,7 +437,6 @@ class S3FileSystem(object):
                     UploadId=mpu['UploadId'], MultipartUpload=part_info)
         self.invalidate_cache(bucket)
 
-
     def copy(self, path1, path2):
         """ Copy file between locations on S3 """
         buc1, key1 = split_path(path1)
@@ -563,26 +552,6 @@ class S3FileSystem(object):
                 length = size - offset
             bytes = read_block(f, offset, length, delimiter)
         return bytes
-
-
-@contextmanager
-def no_refresh(s3fs):
-    """ Wrap an s3fs with this to temporarily block freshing filecache on writes.
-
-    Use this if writing many small files to a bucket.
-    The filelist will only be refreshed by the next writing action, or
-    explicit call to `s3fs._ls(bucket, refresh=True)`.
-
-    Usage
-    -----
-    >>> with no_refresh(s3fs) as fs:    # doctest: +SKIP
-            [fs.touch('mybucket/file%i'%i) for i in range(1500)] # doctest: +SKIP
-    """
-    s3fs.refresh_off()
-    try:
-        yield s3fs
-    finally:
-        s3fs.refresh_on()
 
 
 class S3File(object):
