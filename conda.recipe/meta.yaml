@@ -22,6 +22,6 @@ test:
     - s3fs
 
 about:
-  home: http://s3fs.readthedocs.org/en/latest/
+  home: http://s3fs.readthedocs.io/en/latest/
   license: BSD
   summary: 'Convenient Filesystem interface over S3'
