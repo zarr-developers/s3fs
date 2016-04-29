@@ -595,16 +595,13 @@ class S3File(object):
         self.end = None
         self.closed = False
         self.trim = True
+        self.mpu = None
         if mode in {'wb', 'ab'}:
             self.buffer = io.BytesIO()
             self.parts = []
             self.size = 0
             if block_size < 5 * 2 ** 20:
                 raise ValueError('Block size must be >=5MB')
-            try:
-                self.mpu = s3.s3.create_multipart_upload(Bucket=bucket, Key=key)
-            except (ClientError, ParamValidationError):
-                raise IOError('Open for write failed', path)
             self.forced = False
             if mode == 'ab' and s3.exists(path):
                 self.size = s3.info(path)['Size']
@@ -612,6 +609,10 @@ class S3File(object):
                     # existing file too small for multi-upload: download
                     self.write(s3.cat(path))
                 else:
+                    try:
+                        self.mpu = s3.s3.create_multipart_upload(Bucket=bucket, Key=key)
+                    except (ClientError, ParamValidationError):
+                        raise IOError('Open for write failed', path)
                     self.loc = self.size
                     out = self.s3.s3.upload_part_copy(Bucket=self.bucket, Key=self.key,
                                 PartNumber=1, UploadId=self.mpu['UploadId'],
@@ -756,48 +757,47 @@ class S3File(object):
             self.flush()
         return out
 
-    def flush(self, force=False, retries=10):
+    def flush(self, retries=10):
         """
         Write buffered data to S3.
 
         Due to S3 multi-upload policy, you can only safely force flush to S3
         when you are finished writing.  It is unsafe to call this function
         repeatedly.
-
-        Parameters
-        ----------
-        force : bool (True)
-            Whether to write even if the buffer is less than the blocksize. If
-            less than the S3 part minimum (5MB), must be last block.
         """
         if self.mode in {'wb', 'ab'} and not self.closed:
-            if self.buffer.tell() < self.blocksize and not force:
+            if self.buffer.tell() < self.blocksize:
                 raise ValueError('Parts must be greater than %s',
                                  self.blocksize)
             if self.buffer.tell() == 0:
                 # no data in the buffer to write
                 return
-            if force and self.forced and self.buffer.tell() < 5 * 2 ** 20:
-                raise IOError('Under-sized block already written')
-            if force and self.buffer.tell() < 5 * 2 ** 20:
-                self.forced = True
+
             self.buffer.seek(0)
             part = len(self.parts) + 1
             i = 0
+
+            try:
+                self.mpu = self.mpu or self.s3.s3.create_multipart_upload(
+                                Bucket=self.bucket, Key=self.key)
+            except (ClientError, ParamValidationError):
+                raise IOError('Initating write failed: %s' % self.path)
+
             while True:
                 try:
-                    out = self.s3.s3.upload_part(Bucket=self.bucket, Key=self.key,
+                    out = self.s3.s3.upload_part(Bucket=self.bucket,
                             PartNumber=part, UploadId=self.mpu['UploadId'],
-                            Body=self.buffer.read())
+                            Body=self.buffer.read(), Key=self.key)
                     break
                 except S3_RETRYABLE_ERRORS:
                     if i < retries:
-                        logger.debug('Exception %e on S3 upload, retrying',
+                        logger.debug('Exception %e on S3 write, retrying',
                                      exc_info=True)
                         i += 1
                         continue
                     else:
-                        raise IOError('Write failed after %i retries'%retries, self)
+                        raise IOError('Write failed after %i retries' % retries,
+                                      self)
                 except:
                     raise IOError('Write failed', self)
             self.parts.append({'PartNumber': part, 'ETag': out['ETag']})
@@ -811,11 +811,11 @@ class S3File(object):
         """
         if self.closed:
             return
-        self.flush(True)
         self.cache = None
         self.closed = True
         if self.mode in {'wb', 'ab'}:
             if self.parts:
+                self.flush()
                 part_info = {'Parts': self.parts}
                 self.s3.s3.complete_multipart_upload(Bucket=self.bucket,
                                                      Key=self.key,
@@ -823,7 +823,12 @@ class S3File(object):
                                                          'UploadId'],
                                                      MultipartUpload=part_info)
             else:
-                self.s3.s3.put_object(Bucket=self.bucket, Key=self.key)
+                self.buffer.seek(0)
+                try:
+                    self.s3.s3.put_object(Bucket=self.bucket, Key=self.key,
+                                           Body=self.buffer.read())
+                except (ClientError, ParamValidationError):
+                    raise IOError('Write failed: %s' % self.path)
             self.s3.invalidate_cache(self.bucket)
 
     def readable(self):

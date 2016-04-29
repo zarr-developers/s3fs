@@ -401,6 +401,8 @@ def test_write_small(s3):
     with s3.open(test_bucket_name+'/test', 'wb') as f:
         f.write(b'hello')
     assert s3.cat(test_bucket_name+'/test') == b'hello'
+    s3.open(test_bucket_name+'/test', 'wb').close()
+    assert s3.info(test_bucket_name+'/test')['Size'] == 0
 
 def test_write_fails(s3):
     with pytest.raises(NotImplementedError):
@@ -420,14 +422,17 @@ def test_write_fails(s3):
     with pytest.raises(ValueError):
         f.write(b'hello')
     with pytest.raises((OSError, IOError)):
-        s3.open('nonexistentbucket/temp', 'wb')
+        s3.open('nonexistentbucket/temp', 'wb').close()
 
 def test_write_blocks(s3):
     with s3.open(test_bucket_name+'/temp', 'wb') as f:
         f.write(b'a' * 2*2**20)
         assert f.buffer.tell() == 2*2**20
+        assert not(f.parts)
         f.write(b'a' * 2*2**20)
         f.write(b'a' * 2*2**20)
+        assert f.mpu
+        assert f.parts
     assert s3.info(test_bucket_name+'/temp')['Size'] == 6*2**20
     with s3.open(test_bucket_name+'/temp', 'wb', block_size=10*2**20) as f:
         f.write(b'a' * 15*2**20)
