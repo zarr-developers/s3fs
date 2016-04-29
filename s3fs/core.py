@@ -757,21 +757,33 @@ class S3File(object):
             self.flush()
         return out
 
-    def flush(self, retries=10):
+    def flush(self, force=False, retries=10):
         """
         Write buffered data to S3.
+
+        Uploads the current buffer, if it is larger than the block-size.
 
         Due to S3 multi-upload policy, you can only safely force flush to S3
         when you are finished writing.  It is unsafe to call this function
         repeatedly.
+
+        Parameters
+        ----------
+        force : bool
+            When closing, write the last block even if it is smaller than
+            blocks are allowed to be.
         """
         if self.mode in {'wb', 'ab'} and not self.closed:
-            if self.buffer.tell() < self.blocksize:
+            if self.buffer.tell() < self.blocksize and not force:
                 raise ValueError('Parts must be greater than %s',
                                  self.blocksize)
             if self.buffer.tell() == 0:
                 # no data in the buffer to write
                 return
+            if force and self.forced:
+                raise ValueError("Force flush cannot be called more than once")
+            if force:
+                self.forced = True
 
             self.buffer.seek(0)
             part = len(self.parts) + 1
@@ -812,10 +824,9 @@ class S3File(object):
         if self.closed:
             return
         self.cache = None
-        self.closed = True
         if self.mode in {'wb', 'ab'}:
             if self.parts:
-                self.flush()
+                self.flush(force=True)
                 part_info = {'Parts': self.parts}
                 self.s3.s3.complete_multipart_upload(Bucket=self.bucket,
                                                      Key=self.key,
@@ -830,6 +841,7 @@ class S3File(object):
                 except (ClientError, ParamValidationError):
                     raise IOError('Write failed: %s' % self.path)
             self.s3.invalidate_cache(self.bucket)
+        self.closed = True
 
     def readable(self):
         """Return whether the S3File was opened for reading"""

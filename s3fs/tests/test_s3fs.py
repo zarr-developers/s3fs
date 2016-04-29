@@ -573,21 +573,23 @@ def test_append(s3):
     assert s3.cat(test_bucket_name+'/nested/file1') == data
     with s3.open(test_bucket_name+'/nested/file1', 'ab') as f:
         f.write(b'extra')  # append, write, small file
-    assert  s3.cat(test_bucket_name+'/nested/file1') == data+b'extra'
+    assert s3.cat(test_bucket_name+'/nested/file1') == data+b'extra'
 
     with s3.open(a, 'wb') as f:
         f.write(b'a' * 10*2**20)
     with s3.open(a, 'ab') as f:
-        pass # append, no write, big file
+        pass  # append, no write, big file
     assert s3.cat(a) == b'a' * 10*2**20
 
     with s3.open(a, 'ab') as f:
-        f.write(b'extra') # append, small write, big file
+        assert f.parts
+        assert f.tell() == 10*2**20
+        f.write(b'extra')  # append, small write, big file
     assert s3.cat(a) == b'a' * 10*2**20 + b'extra'
 
     with s3.open(a, 'ab') as f:
         assert f.tell() == 10*2**20 + 5
-        f.write(b'b' * 10*2**20) # append, big write, big file
+        f.write(b'b' * 10*2**20)  # append, big write, big file
         assert f.tell() == 20*2**20 + 5
     assert s3.cat(a) == b'a' * 10*2**20 + b'extra' + b'b' *10*2**20
 
