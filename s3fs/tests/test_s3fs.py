@@ -2,7 +2,7 @@
 import io
 import pytest
 from itertools import chain
-from s3fs.core import S3FileSystem, no_refresh
+from s3fs.core import S3FileSystem
 from s3fs.utils import seek_delimiter, ignoring, tmpfile
 import moto
 
@@ -203,22 +203,10 @@ def test_s3_ls(s3):
 
 
 def test_s3_big_ls(s3):
-    with no_refresh(s3) as s3:
-        for x in range(1200):
-            s3.touch(test_bucket_name+'/thousand/%i.part'%x)
-    s3._ls(test_bucket_name, refresh=True)
+    for x in range(1200):
+        s3.touch(test_bucket_name+'/thousand/%i.part'%x)
     assert len(s3.walk(test_bucket_name)) > 1200
     s3.rm(test_bucket_name+'/thousand/', recursive=True)
-
-
-def test_no_refresh(s3):
-    set1 = s3.walk(test_bucket_name)
-    s3.refresh_off()
-    s3.touch(test_bucket_name+'/another')
-    assert set1 == s3.walk(test_bucket_name)
-    s3.refresh_on()
-    s3.touch(test_bucket_name+'/yet_another')
-    assert len(set1) < len(s3.walk(test_bucket_name))
 
 
 def test_s3_ls_detail(s3):
@@ -413,6 +401,8 @@ def test_write_small(s3):
     with s3.open(test_bucket_name+'/test', 'wb') as f:
         f.write(b'hello')
     assert s3.cat(test_bucket_name+'/test') == b'hello'
+    s3.open(test_bucket_name+'/test', 'wb').close()
+    assert s3.info(test_bucket_name+'/test')['Size'] == 0
 
 def test_write_fails(s3):
     with pytest.raises(NotImplementedError):
@@ -432,14 +422,17 @@ def test_write_fails(s3):
     with pytest.raises(ValueError):
         f.write(b'hello')
     with pytest.raises((OSError, IOError)):
-        s3.open('nonexistentbucket/temp', 'wb')
+        s3.open('nonexistentbucket/temp', 'wb').close()
 
 def test_write_blocks(s3):
     with s3.open(test_bucket_name+'/temp', 'wb') as f:
         f.write(b'a' * 2*2**20)
         assert f.buffer.tell() == 2*2**20
+        assert not(f.parts)
         f.write(b'a' * 2*2**20)
         f.write(b'a' * 2*2**20)
+        assert f.mpu
+        assert f.parts
     assert s3.info(test_bucket_name+'/temp')['Size'] == 6*2**20
     with s3.open(test_bucket_name+'/temp', 'wb', block_size=10*2**20) as f:
         f.write(b'a' * 15*2**20)
@@ -580,21 +573,23 @@ def test_append(s3):
     assert s3.cat(test_bucket_name+'/nested/file1') == data
     with s3.open(test_bucket_name+'/nested/file1', 'ab') as f:
         f.write(b'extra')  # append, write, small file
-    assert  s3.cat(test_bucket_name+'/nested/file1') == data+b'extra'
+    assert s3.cat(test_bucket_name+'/nested/file1') == data+b'extra'
 
     with s3.open(a, 'wb') as f:
         f.write(b'a' * 10*2**20)
     with s3.open(a, 'ab') as f:
-        pass # append, no write, big file
+        pass  # append, no write, big file
     assert s3.cat(a) == b'a' * 10*2**20
 
     with s3.open(a, 'ab') as f:
-        f.write(b'extra') # append, small write, big file
+        assert f.parts
+        assert f.tell() == 10*2**20
+        f.write(b'extra')  # append, small write, big file
     assert s3.cat(a) == b'a' * 10*2**20 + b'extra'
 
     with s3.open(a, 'ab') as f:
         assert f.tell() == 10*2**20 + 5
-        f.write(b'b' * 10*2**20) # append, big write, big file
+        f.write(b'b' * 10*2**20)  # append, big write, big file
         assert f.tell() == 20*2**20 + 5
     assert s3.cat(a) == b'a' * 10*2**20 + b'extra' + b'b' *10*2**20
 

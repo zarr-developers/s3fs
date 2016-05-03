@@ -12,7 +12,7 @@ import boto3.s3.transfer as trans
 from botocore.exceptions import ClientError, ParamValidationError
 from botocore.client import Config
 
-from .utils import read_block
+from .utils import read_block, raises
 
 logger = logging.getLogger(__name__)
 
@@ -185,16 +185,6 @@ class S3FileSystem(object):
         return {'key': cred['AccessKeyId'], 'secret': cred['SecretAccessKey'],
                 'token': cred['SessionToken'], 'anon': False}
 
-    def refresh_off(self):
-        """ Block auto-refresh when writing.
-
-        Use in conjunction with `refresh_on()` when writing many files to S3.
-        """
-        self.no_refresh = True
-
-    def refresh_on(self):
-        self.no_refresh = False
-
     def __getstate__(self):
         d = self.__dict__.copy()
         del d['s3']
@@ -271,12 +261,12 @@ class S3FileSystem(object):
         files = self.dirs[bucket]
         return files
 
-    def ls(self, path, detail=False):
+    def ls(self, path, detail=False, refresh=False):
         """ List single "directory" with or without details """
         if path.startswith('s3://'):
             path = path[len('s3://'):]
         path = path.rstrip('/')
-        files = self._ls(path)
+        files = self._ls(path, refresh=refresh)
         if path:
             pattern = re.compile(path + '/[^/]*.$')
             files = [f for f in files if pattern.match(f['Key']) is not None]
@@ -290,7 +280,7 @@ class S3FileSystem(object):
         else:
             return [f['Key'] for f in files]
 
-    def info(self, path):
+    def info(self, path, refresh=False):
         """ Detail on the specific file pointed to by path.
 
         NB: path has trailing '/' stripped to work as `ls` does, so key
@@ -299,18 +289,19 @@ class S3FileSystem(object):
         if path.startswith('s3://'):
             path = path[len('s3://'):]
         path = path.rstrip('/')
-        files = self._ls(path)
+        files = self._ls(path, refresh=refresh)
         files = [f for f in files if f['Key'].rstrip('/') == path]
         if len(files) == 1:
             return files[0]
         else:
             raise IOError("File not found: %s" % path)
 
-    def walk(self, path):
+    def walk(self, path, refresh=False):
         """ Return all entries below path """
         if path.startswith('s3://'):
             path = path[len('s3://'):]
-        return [f['Key'] for f in self._ls(path) if f['Key'].rstrip('/'
+        filenames = self._ls(path, refresh=refresh)
+        return [f['Key'] for f in filenames if f['Key'].rstrip('/'
                 ).startswith(path.rstrip('/') + '/')]
 
     def glob(self, path):
@@ -364,7 +355,8 @@ class S3FileSystem(object):
         if split_path(path)[1]:
             return bool(self.ls(path))
         else:
-            return path in self.ls('')
+            return (path in self.ls('') and
+                    not raises(FileNotFoundError, lambda: self.ls(path)))
 
     def cat(self, path):
         """ Returns contents of file """
@@ -443,8 +435,7 @@ class S3FileSystem(object):
         part_info = {'Parts': parts}
         self.s3.complete_multipart_upload(Bucket=bucket, Key=key,
                     UploadId=mpu['UploadId'], MultipartUpload=part_info)
-        self._ls(bucket, refresh=True)
-
+        self.invalidate_cache(bucket)
 
     def copy(self, path1, path2):
         """ Copy file between locations on S3 """
@@ -455,7 +446,7 @@ class S3FileSystem(object):
                                 CopySource='/'.join([buc1, key1]))
         except (ClientError, ParamValidationError):
             raise IOError('Copy failed', (path1, path2))
-        self._ls(path2, refresh=True)
+        self.invalidate_cache(buc2)
 
     def rm(self, path, recursive=False):
         """
@@ -481,7 +472,7 @@ class S3FileSystem(object):
                 self.s3.delete_object(Bucket=bucket, Key=key)
             except ClientError:
                 raise IOError('Delete key failed', (bucket, key))
-            self._ls(path, refresh=True)
+            self.invalidate_cache(bucket)
         else:
             if not self.s3.list_objects(Bucket=bucket).get('Contents'):
                 try:
@@ -489,9 +480,15 @@ class S3FileSystem(object):
                 except ClientError:
                     raise IOError('Delete bucket failed', bucket)
                 self.dirs.pop(bucket, None)
-                self._ls('', refresh=True)
+                self.invalidate_cache(bucket)
             else:
                 raise IOError('Not empty', path)
+
+    def invalidate_cache(self, bucket=None):
+        if bucket is None:
+            self.dirs.clear()
+        elif bucket in self.dirs:
+            del self.dirs[bucket]
 
     def touch(self, path):
         """
@@ -502,11 +499,11 @@ class S3FileSystem(object):
         bucket, key = split_path(path)
         if key:
             self.s3.put_object(Bucket=bucket, Key=key)
-            self._ls(bucket, refresh=True)
+            self.invalidate_cache(bucket)
         else:
             try:
                 self.s3.create_bucket(Bucket=bucket)
-                self._ls("", refresh=True)
+                self.invalidate_cache('')
             except (ClientError, ParamValidationError):
                 raise IOError('Bucket create failed', path)
 
@@ -557,26 +554,6 @@ class S3FileSystem(object):
         return bytes
 
 
-@contextmanager
-def no_refresh(s3fs):
-    """ Wrap an s3fs with this to temporarily block freshing filecache on writes.
-
-    Use this if writing many small files to a bucket.
-    The filelist will only be refreshed by the next writing action, or
-    explicit call to `s3fs._ls(bucket, refresh=True)`.
-
-    Usage
-    -----
-    >>> with no_refresh(s3fs) as fs:    # doctest: +SKIP
-            [fs.touch('mybucket/file%i'%i) for i in range(1500)] # doctest: +SKIP
-    """
-    s3fs.refresh_off()
-    try:
-        yield s3fs
-    finally:
-        s3fs.refresh_on()
-
-
 class S3File(object):
     """
     Open S3 key as a file. Data is only loaded and cached on demand.
@@ -618,16 +595,13 @@ class S3File(object):
         self.end = None
         self.closed = False
         self.trim = True
+        self.mpu = None
         if mode in {'wb', 'ab'}:
             self.buffer = io.BytesIO()
             self.parts = []
             self.size = 0
             if block_size < 5 * 2 ** 20:
                 raise ValueError('Block size must be >=5MB')
-            try:
-                self.mpu = s3.s3.create_multipart_upload(Bucket=bucket, Key=key)
-            except (ClientError, ParamValidationError):
-                raise IOError('Open for write failed', path)
             self.forced = False
             if mode == 'ab' and s3.exists(path):
                 self.size = s3.info(path)['Size']
@@ -635,11 +609,16 @@ class S3File(object):
                     # existing file too small for multi-upload: download
                     self.write(s3.cat(path))
                 else:
+                    try:
+                        self.mpu = s3.s3.create_multipart_upload(Bucket=bucket, Key=key)
+                    except (ClientError, ParamValidationError):
+                        raise IOError('Open for write failed', path)
                     self.loc = self.size
                     out = self.s3.s3.upload_part_copy(Bucket=self.bucket, Key=self.key,
                                 PartNumber=1, UploadId=self.mpu['UploadId'],
                                 CopySource=path)
-                    self.parts.append({'PartNumber': 1, 'ETag': out['CopyPartResult']['ETag']})
+                    self.parts.append({'PartNumber': 1,
+                                       'ETag': out['CopyPartResult']['ETag']})
         else:
             try:
                 self.size = self.info()['Size']
@@ -782,15 +761,17 @@ class S3File(object):
         """
         Write buffered data to S3.
 
+        Uploads the current buffer, if it is larger than the block-size.
+
         Due to S3 multi-upload policy, you can only safely force flush to S3
         when you are finished writing.  It is unsafe to call this function
         repeatedly.
 
         Parameters
         ----------
-        force : bool (True)
-            Whether to write even if the buffer is less than the blocksize. If
-            less than the S3 part minimum (5MB), must be last block.
+        force : bool
+            When closing, write the last block even if it is smaller than
+            blocks are allowed to be.
         """
         if self.mode in {'wb', 'ab'} and not self.closed:
             if self.buffer.tell() < self.blocksize and not force:
@@ -799,27 +780,36 @@ class S3File(object):
             if self.buffer.tell() == 0:
                 # no data in the buffer to write
                 return
-            if force and self.forced and self.buffer.tell() < 5 * 2 ** 20:
-                raise IOError('Under-sized block already written')
-            if force and self.buffer.tell() < 5 * 2 ** 20:
+            if force and self.forced:
+                raise ValueError("Force flush cannot be called more than once")
+            if force:
                 self.forced = True
+
             self.buffer.seek(0)
             part = len(self.parts) + 1
             i = 0
+
+            try:
+                self.mpu = self.mpu or self.s3.s3.create_multipart_upload(
+                                Bucket=self.bucket, Key=self.key)
+            except (ClientError, ParamValidationError):
+                raise IOError('Initating write failed: %s' % self.path)
+
             while True:
                 try:
-                    out = self.s3.s3.upload_part(Bucket=self.bucket, Key=self.key,
+                    out = self.s3.s3.upload_part(Bucket=self.bucket,
                             PartNumber=part, UploadId=self.mpu['UploadId'],
-                            Body=self.buffer.read())
+                            Body=self.buffer.read(), Key=self.key)
                     break
                 except S3_RETRYABLE_ERRORS:
                     if i < retries:
-                        logger.debug('Exception %e on S3 upload, retrying',
+                        logger.debug('Exception %e on S3 write, retrying',
                                      exc_info=True)
                         i += 1
                         continue
                     else:
-                        raise IOError('Write failed after %i retries'%retries, self)
+                        raise IOError('Write failed after %i retries' % retries,
+                                      self)
                 except:
                     raise IOError('Write failed', self)
             self.parts.append({'PartNumber': part, 'ETag': out['ETag']})
@@ -833,11 +823,10 @@ class S3File(object):
         """
         if self.closed:
             return
-        self.flush(True)
         self.cache = None
-        self.closed = True
         if self.mode in {'wb', 'ab'}:
             if self.parts:
+                self.flush(force=True)
                 part_info = {'Parts': self.parts}
                 self.s3.s3.complete_multipart_upload(Bucket=self.bucket,
                                                      Key=self.key,
@@ -845,8 +834,14 @@ class S3File(object):
                                                          'UploadId'],
                                                      MultipartUpload=part_info)
             else:
-                self.s3.s3.put_object(Bucket=self.bucket, Key=self.key)
-            self.s3._ls(self.bucket, refresh=True)
+                self.buffer.seek(0)
+                try:
+                    self.s3.s3.put_object(Bucket=self.bucket, Key=self.key,
+                                           Body=self.buffer.read())
+                except (ClientError, ParamValidationError):
+                    raise IOError('Write failed: %s' % self.path)
+            self.s3.invalidate_cache(self.bucket)
+        self.closed = True
 
     def readable(self):
         """Return whether the S3File was opened for reading"""
