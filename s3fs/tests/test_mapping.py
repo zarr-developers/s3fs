@@ -11,6 +11,7 @@ def test_simple(s3):
     assert list(d) == list(d.keys()) == []
     assert list(d.values()) == []
     assert list(d.items()) == []
+    d = S3Map(root, s3, check=True)
 
 
 def test_default_s3filesystem(s3):
@@ -54,6 +55,16 @@ def test_complex_keys(s3):
     print(list(d))
 
     assert ('x', 1, 2) in d
+
+
+def test_clear_empty(s3):
+    d = S3Map(root, s3)
+    d.clear()
+    assert list(d) == []
+    d[1] = b'1'
+    assert list(d) == ['1']
+    d.clear()
+    assert list(d) == []
 
 
 def test_pickle(s3):

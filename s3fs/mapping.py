@@ -34,13 +34,17 @@ class S3Map(MutableMapping):
         self.s3 = s3 or S3FileSystem.current()
         self.root = root
         if check:
-            s3.touch(root+'/a')
-            s3.rm(root+'/a')
+            self.s3.touch(root+'/a')
+            self.s3.rm(root+'/a')
 
     def clear(self):
         """Remove all keys below root - empties out mapping
         """
-        self.s3.rm(self.root, recursive=True)
+        try:
+            self.s3.rm(self.root, recursive=True)
+        except (IOError, OSError):
+            # ignore non-existance of root
+            pass
 
     def _key_to_str(self, key):
         if isinstance(key, (tuple, list)):

@@ -80,6 +80,11 @@ def test_simple(s3):
         assert out == data
 
 
+def test_ssl_off():
+    s3 = S3FileSystem(use_ssl=False)
+    assert s3.s3.meta.endpoint_url.startswith('http://')
+
+
 def test_tokenize():
     from s3fs.core import tokenize
     a = (1, 2, 3)

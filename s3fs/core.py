@@ -82,6 +82,9 @@ class S3FileSystem(object):
         If not anonymouns, use this key, if specified
     secret : string (None)
         If not anonymous, use this password, if specified
+    use_ssl : bool (True)
+        Whether to use SSL in connections to S3; may be faster without, but
+        insecure
     kwargs : other parameters for boto3 session
 
     Examples
@@ -99,14 +102,15 @@ class S3FileSystem(object):
     connect_timeout = 5
     read_timeout = 15
 
-    def __init__(self, anon=None, key=None, secret=None, token=None, **kwargs):
+    def __init__(self, anon=None, key=None, secret=None, token=None,
+                 use_ssl=True, **kwargs):
         self.anon = anon
         self.key = key
         self.secret = secret
         self.token = token
         self.kwargs = kwargs
         self.dirs = {}
-        self.no_refresh = False
+        self.use_ssl = use_ssl
         if anon is None:
             try:
                 self.anon = False
@@ -139,9 +143,9 @@ class S3FileSystem(object):
         refresh : bool (True)
             Whether to use cached filelists, if already read
         """
-        anon, key, secret, kwargs, token = (self.anon, self.key, self.secret,
-                                            self.kwargs, self.token)
-        tok = tokenize(anon, key, secret, kwargs, token)
+        anon, key, secret, kwargs, token, ssl = (self.anon, self.key,
+                            self.secret, self.kwargs, self.token, self.use_ssl)
+        tok = tokenize(anon, key, secret, kwargs, token, ssl)
         if refresh:
             self._conn.pop(tok, None)
         if tok not in self._conn:
@@ -153,12 +157,14 @@ class S3FileSystem(object):
                 conf = Config(connect_timeout=self.connect_timeout,
                               read_timeout=self.read_timeout,
                               signature_version=UNSIGNED)
-                s3 = boto3.Session(**self.kwargs).client('s3', config=conf)
+                s3 = boto3.Session(**self.kwargs).client('s3', config=conf,
+                                                         use_ssl=ssl)
             else:
                 conf = Config(connect_timeout=self.connect_timeout,
                               read_timeout=self.read_timeout)
                 s3 = boto3.Session(self.key, self.secret, self.token,
-                                   **self.kwargs).client('s3', config=conf)
+                                   **self.kwargs).client('s3', config=conf,
+                                                         use_ssl=ssl)
             self._conn[tok] = s3
         return self._conn[tok]
 
@@ -234,7 +240,7 @@ class S3FileSystem(object):
             path = path[len('s3://'):]
         path = path.rstrip('/')
         bucket, key = split_path(path)
-        if bucket not in self.dirs or (refresh and not self.no_refresh):
+        if bucket not in self.dirs or refresh:
             if bucket == '':
                 # list of buckets
                 if self.anon:
