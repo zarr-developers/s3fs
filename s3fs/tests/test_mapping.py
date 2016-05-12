@@ -75,3 +75,19 @@ def test_pickle(s3):
     d2 = pickle.loads(pickle.dumps(d))
 
     assert d2['x'] == b'1'
+
+
+def test_array(s3):
+    from array import array
+    d = S3Map(root, s3)
+    d['x'] = array('B', [65] * 1000)
+
+    assert d['x'] == b'A' * 1000
+
+
+def test_bytearray(s3):
+    from array import array
+    d = S3Map(root, s3)
+    d['x'] = bytearray(b'123')
+
+    assert d['x'] == b'123'

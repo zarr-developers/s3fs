@@ -1,8 +1,13 @@
 
+import array
 from contextlib import contextmanager
 import os
 import tempfile
 import shutil
+import sys
+
+PY2 = sys.version_info[0] == 2
+PY3 = sys.version_info[0] == 3
 
 
 @contextmanager
@@ -124,3 +129,9 @@ def raises(exc, lamda):
         return False
     except exc:
         return True
+
+
+def ensure_writable(b):
+    if PY2 and isinstance(b, array.array):
+        return b.tostring()
+    return b
