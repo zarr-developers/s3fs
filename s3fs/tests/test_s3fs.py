@@ -415,6 +415,7 @@ def test_new_bucket(s3):
         s3.rmdir('new/temp')
     s3.rm('new/temp')
     s3.rmdir('new')
+    assert 'new' not in s3.ls('')
     assert not s3.exists('new')
     with pytest.raises((IOError, OSError)):
         s3.ls('new')

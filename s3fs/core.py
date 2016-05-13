@@ -515,6 +515,7 @@ class S3FileSystem(object):
                     raise IOError('Delete bucket failed', bucket)
                 self.dirs.pop(bucket, None)
                 self.invalidate_cache(bucket)
+                self.invalidate_cache('')
             else:
                 raise IOError('Not empty', path)
 
