@@ -12,7 +12,7 @@ import boto3.s3.transfer as trans
 from botocore.exceptions import ClientError, ParamValidationError
 from botocore.client import Config
 
-from .utils import read_block, raises
+from .utils import read_block, raises, ensure_writable
 
 logger = logging.getLogger(__name__)
 
@@ -783,7 +783,7 @@ class S3File(object):
             raise ValueError('File not in write mode')
         if self.closed:
             raise ValueError('I/O operation on closed file.')
-        out = self.buffer.write(data)
+        out = self.buffer.write(ensure_writable(data))
         self.loc += out
         if self.buffer.tell() > self.blocksize:
             self.flush()

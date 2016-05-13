@@ -64,8 +64,6 @@ class S3Map(MutableMapping):
 
     def __setitem__(self, key, value):
         key = self._key_to_str(key)
-        if not isinstance(value, bytes):
-            raise TypeError("Value must be of type bytes")
         with self.s3.open(key, 'wb') as f:
             f.write(value)
 

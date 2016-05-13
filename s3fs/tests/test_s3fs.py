@@ -629,3 +629,15 @@ def test_bigger_than_block_read(s3):
 
 def test_current(s3):
     assert S3FileSystem.current() is s3
+
+
+def test_array(s3):
+    from array import array
+    data = array('B', [65] * 1000)
+
+    with s3.open(a, 'wb') as f:
+        f.write(data)
+
+    with s3.open(a, 'rb') as f:
+        out = f.read()
+        assert out == b'A' * 1000
