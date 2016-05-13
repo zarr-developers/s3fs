@@ -361,7 +361,7 @@ class S3FileSystem(object):
         if split_path(path)[1]:
             return bool(self.ls(path))
         else:
-            return (path in self.ls('') and
+            return (path in self.ls('') or
                     not raises(FileNotFoundError, lambda: self.ls(path)))
 
     def cat(self, path):
