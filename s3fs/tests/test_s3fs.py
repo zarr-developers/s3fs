@@ -159,6 +159,22 @@ def test_rm(s3):
     s3.rm(test_bucket_name+'/nested', recursive=True)
     assert not s3.exists(test_bucket_name+'/nested/nested2/file1')
 
+    #whole bucket
+    s3.rm(test_bucket_name, recursive=True)
+    with pytest.raises((IOError, OSError)):
+        s3.exists(test_bucket_name+'/2014-01-01.csv')
+    assert not s3.exists(test_bucket_name)
+
+
+def test_bulk_delete(s3):
+    with pytest.raises((OSError, IOError)):
+        s3.bulk_delete(['nonexistent/file'])
+    with pytest.raises(ValueError):
+        s3.bulk_delete(['bucket1/file', 'bucket2/file'])
+    filelist = s3.walk(test_bucket_name+'/nested')
+    s3.bulk_delete(filelist)
+    assert not s3.exists(test_bucket_name+'/nested/nested2/file1')
+
 
 def test_anonymous_access():
     with ignoring(NoCredentialsError):
@@ -212,6 +228,7 @@ def test_s3_big_ls(s3):
         s3.touch(test_bucket_name+'/thousand/%i.part'%x)
     assert len(s3.walk(test_bucket_name)) > 1200
     s3.rm(test_bucket_name+'/thousand/', recursive=True)
+    assert len(s3.walk(test_bucket_name+'/thousand/')) == 0
 
 
 def test_s3_ls_detail(s3):
