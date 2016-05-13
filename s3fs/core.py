@@ -645,8 +645,8 @@ class S3File(object):
                 else:
                     try:
                         self.mpu = s3.s3.create_multipart_upload(Bucket=bucket, Key=key)
-                    except (ClientError, ParamValidationError):
-                        raise IOError('Open for write failed', path)
+                    except (ClientError, ParamValidationError) as e:
+                        raise IOError('Open for write failed', path, e)
                     self.loc = self.size
                     out = self.s3.s3.upload_part_copy(Bucket=self.bucket, Key=self.key,
                                 PartNumber=1, UploadId=self.mpu['UploadId'],
@@ -826,8 +826,8 @@ class S3File(object):
             try:
                 self.mpu = self.mpu or self.s3.s3.create_multipart_upload(
                                 Bucket=self.bucket, Key=self.key)
-            except (ClientError, ParamValidationError):
-                raise IOError('Initating write failed: %s' % self.path)
+            except (ClientError, ParamValidationError) as e:
+                raise IOError('Initating write failed: %s' % self.path, e)
 
             while True:
                 try:
@@ -844,8 +844,8 @@ class S3File(object):
                     else:
                         raise IOError('Write failed after %i retries' % retries,
                                       self)
-                except:
-                    raise IOError('Write failed', self)
+                except Exception as e:
+                    raise IOError('Write failed', self, e)
             self.parts.append({'PartNumber': part, 'ETag': out['ETag']})
             self.buffer = io.BytesIO()
 
@@ -872,8 +872,8 @@ class S3File(object):
                 try:
                     self.s3.s3.put_object(Bucket=self.bucket, Key=self.key,
                                            Body=self.buffer.read())
-                except (ClientError, ParamValidationError):
-                    raise IOError('Write failed: %s' % self.path)
+                except (ClientError, ParamValidationError) as e:
+                    raise IOError('Write failed: %s' % self.path, e)
             self.s3.invalidate_cache(self.bucket)
         self.closed = True
 
