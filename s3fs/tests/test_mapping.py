@@ -91,3 +91,17 @@ def test_bytearray(s3):
     d['x'] = bytearray(b'123')
 
     assert d['x'] == b'123'
+
+
+def test_new_bucket(s3):
+    try:
+        d = S3Map('new-bucket', s3)
+        assert False
+    except ValueError as e:
+        assert 'create=True' in str(e)
+
+    d = S3Map('new-bucket', s3, create=True)
+    assert not d
+
+    d = S3Map('new-bucket/new-directory', s3)
+    assert not d

@@ -2,7 +2,7 @@
 from collections import MutableMapping
 import os
 
-from .core import S3FileSystem
+from .core import S3FileSystem, split_path
 
 
 class S3Map(MutableMapping):
@@ -30,12 +30,19 @@ class S3Map(MutableMapping):
     b'Hello World'
     """
 
-    def __init__(self, root, s3=None, check=False):
+    def __init__(self, root, s3=None, check=False, create=False):
         self.s3 = s3 or S3FileSystem.current()
         self.root = root
         if check:
             self.s3.touch(root+'/a')
             self.s3.rm(root+'/a')
+        else:
+            bucket = split_path(root)[0]
+            if create:
+                self.s3.mkdir(bucket)
+            elif not self.s3.exists(bucket):
+                raise ValueError("Bucket %s does not exist."
+                        " Create bucket with the ``create=True`` keyword")
 
     def clear(self):
         """Remove all keys below root - empties out mapping
