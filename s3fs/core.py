@@ -454,6 +454,32 @@ class S3FileSystem(object):
             raise IOError('Copy failed', (path1, path2))
         self.invalidate_cache(buc2)
 
+    def bulk_delete(self, pathlist):
+        """
+        Remove multiple keys with one call
+
+        Parameters
+        ----------
+        pathlist : listof strings
+            The keys to remove, must all be in the same bucket.
+        """
+        buckets = {split_path(path)[0] for path in pathlist}
+        if len(buckets) > 1:
+            raise ValueError("Bulk delete files should refer to only one bucket")
+        bucket = buckets.pop()
+        if len(pathlist) > 1000:
+            for i in range((len(pathlist) // 1000) + 1):
+                print(i)
+                self.bulk_delete(pathlist[i*1000:(i+1)*1000])
+            return
+        delete_keys = {'Objects': [{'Key' : split_path(path)[1]} for path
+                                   in pathlist]}
+        try:
+            self.s3.delete_objects(Bucket=bucket, Delete=delete_keys)
+            self.invalidate_cache(bucket)
+        except ClientError:
+            raise IOError('Bulk delete failed')
+
     def rm(self, path, recursive=False):
         """
         Remove keys and/or bucket.
@@ -469,9 +495,9 @@ class S3FileSystem(object):
         if not self.exists(path):
             raise FileNotFoundError(path)
         if recursive:
-            for f in self.walk(path):
-                self.rm(f, recursive=False)
-            return
+            self.bulk_delete(self.walk(path))
+            if not self.exists(path):
+                return
         bucket, key = split_path(path)
         if key:
             try:
