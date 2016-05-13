@@ -463,6 +463,8 @@ class S3FileSystem(object):
         pathlist : listof strings
             The keys to remove, must all be in the same bucket.
         """
+        if not pathlist:
+            return
         buckets = {split_path(path)[0] for path in pathlist}
         if len(buckets) > 1:
             raise ValueError("Bulk delete files should refer to only one bucket")
