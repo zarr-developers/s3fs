@@ -361,7 +361,7 @@ class S3FileSystem(object):
         if split_path(path)[1]:
             return bool(self.ls(path))
         else:
-            return (path in self.ls('') and
+            return (path in self.ls('') or
                     not raises(FileNotFoundError, lambda: self.ls(path)))
 
     def cat(self, path):
@@ -515,6 +515,7 @@ class S3FileSystem(object):
                     raise IOError('Delete bucket failed', bucket)
                 self.dirs.pop(bucket, None)
                 self.invalidate_cache(bucket)
+                self.invalidate_cache('')
             else:
                 raise IOError('Not empty', path)
 
