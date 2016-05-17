@@ -4,12 +4,13 @@ Installation
 Conda
 -----
 
-The ``s3fs`` library (and its dependencies) are available via conda on the
-``dask`` channel:
+The ``s3fs`` library and its dependencies can be installed from the
+`conda-forge <https://conda-forge.github.io/>`_ repository using
+`conda <https://www.continuum.io/downloads>`_::
 
 .. code-block:: bash
 
-   $ conda install s3fs -c dask
+   $ conda install s3fs -c conda-forge
 
 PyPI
 ----
