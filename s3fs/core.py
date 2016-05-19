@@ -218,6 +218,47 @@ class S3FileSystem(object):
                                       " and manage bytes" % (mode[0] + 'b'))
         return S3File(self, path, mode, block_size=block_size)
 
+    def _lsdir(self, path, refresh=False):
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
+        path = path.rstrip('/')
+        bucket, key = split_path(path)
+        key = key + '/' if key else ""
+        if path not in self.dirs or refresh:
+            try:
+                pag = self.s3.get_paginator('list_objects')
+                it = pag.paginate(Bucket=bucket, Prefix=key, Delimiter='/')
+                files = []
+                dirs = None
+                for i in it:
+                    dirs = dirs or i.get('CommonPrefixes', None)
+                    files.extend(i.get('Contents', []))
+                if dirs:
+                    files.extend([{'Key': l['Prefix'][:-1], 'Size': 0,
+                                  'StorageClass': "DIRECTORY"} for l in dirs])
+                files = [f for f in files if len(f['Key']) > len(key)]
+                for f in files:
+                    f['Key'] = '/'.join([bucket, f['Key']])
+            except ClientError:
+                # path not accessible
+                files = []
+            self.dirs[path] = files
+        return self.dirs[path]
+
+    def _lsbuckets(self, refresh=False):
+        if '' not in self.dirs or refresh:
+            if self.anon:
+                # cannot list buckets if not logged in
+                return []
+            files = self.s3.list_buckets()['Buckets']
+            for f in files:
+                f['Key'] = f['Name']
+                f['Size'] = 0
+                f['StorageClass'] = 'BUCKET'
+                del f['Name']
+            self.dirs[''] = files
+        return self.dirs['']
+
     def _ls(self, path, refresh=False):
         """ List files in given bucket, or list of buckets.
 
@@ -238,34 +279,10 @@ class S3FileSystem(object):
         """
         if path.startswith('s3://'):
             path = path[len('s3://'):]
-        path = path.rstrip('/')
-        bucket, key = split_path(path)
-        if bucket not in self.dirs or refresh:
-            if bucket == '':
-                # list of buckets
-                if self.anon:
-                    # cannot list buckets if not logged in
-                    return []
-                files = self.s3.list_buckets()['Buckets']
-                for f in files:
-                    f['Key'] = f['Name']
-                    f['Size'] = 0
-                    del f['Name']
-            else:
-                try:
-                    pag = self.s3.get_paginator('list_objects')
-                    it = pag.paginate(Bucket=bucket)
-                    files = []
-                    for i in it:
-                        files.extend(i.get('Contents', []))
-                except ClientError:
-                    # bucket not accessible
-                    raise FileNotFoundError(bucket)
-                for f in files:
-                    f['Key'] = "/".join([bucket, f['Key']])
-            self.dirs[bucket] = list(sorted(files, key=lambda x: x['Key']))
-        files = self.dirs[bucket]
-        return files
+        if path in ['', '/']:
+            return self._lsbuckets(refresh)
+        else:
+            return self._lsdir(path, refresh)
 
     def ls(self, path, detail=False, refresh=False):
         """ List single "directory" with or without details """
@@ -273,14 +290,8 @@ class S3FileSystem(object):
             path = path[len('s3://'):]
         path = path.rstrip('/')
         files = self._ls(path, refresh=refresh)
-        if path:
-            pattern = re.compile(path + '/[^/]*.$')
-            files = [f for f in files if pattern.match(f['Key']) is not None]
-            if not files:
-                try:
-                    files = [self.info(path)]
-                except (OSError, IOError, ClientError):
-                    files = []
+        if not files and path not in ['', '/']:
+            files = [self.info(path)]
         if detail:
             return files
         else:
@@ -289,26 +300,38 @@ class S3FileSystem(object):
     def info(self, path, refresh=False):
         """ Detail on the specific file pointed to by path.
 
-        NB: path has trailing '/' stripped to work as `ls` does, so key
-        names that genuinely end in '/' will fail.
+        Gets details only for a specific key, directories/buckets cannot be
+        used with info.
         """
-        if path.startswith('s3://'):
-            path = path[len('s3://'):]
-        path = path.rstrip('/')
-        files = self._ls(path, refresh=refresh)
-        files = [f for f in files if f['Key'].rstrip('/') == path]
+        parent = path.rsplit('/', 1)[0]
+        files = self._lsdir(parent, refresh=refresh)
+        files = [f for f in files if f['Key'] == path and f['StorageClass'] not
+                 in ['DIRECTORY', 'BUCKET']]
         if len(files) == 1:
             return files[0]
         else:
-            raise IOError("File not found: %s" % path)
+            try:
+                bucket, key = split_path(path)
+                out = self.s3.head_object(Bucket=bucket, Key=key)
+                return out['Contents']
+            except (ClientError, ParamValidationError):
+                raise FileNotFoundError(path)
 
-    def walk(self, path, refresh=False):
-        """ Return all entries below path """
+    def _walk(self, path, refresh=False):
         if path.startswith('s3://'):
             path = path[len('s3://'):]
-        filenames = self._ls(path, refresh=refresh)
-        return [f['Key'] for f in filenames if f['Key'].rstrip('/'
-                ).startswith(path.rstrip('/') + '/')]
+        if path in ['', '/']:
+            raise ValueError('Cannot walk all of S3')
+        filenames = self._ls(path, refresh=refresh)[:]
+        for f in filenames[:]:
+            if f['StorageClass'] == 'DIRECTORY':
+                filenames.extend(self._walk(f['Key'], refresh))
+        return [f for f in filenames if f['StorageClass'] not in
+                ['BUCKET', 'DIRECTORY']]
+
+    def walk(self, path, refresh=False):
+        """ Return all real keys below path """
+        return [f['Key'] for f in self._walk(path, refresh)]
 
     def glob(self, path):
         """
@@ -354,15 +377,12 @@ class S3FileSystem(object):
             return {p['Key']: p['Size'] for p in files}
 
     def exists(self, path):
-        """ Does such a file exist? """
-        if path.startswith('s3://'):
-            path = path[len('s3://'):]
-        path = path.rstrip('/')
-        if split_path(path)[1]:
-            return bool(self.ls(path))
+        """ Does such a file/directory exist? """
+        bucket, key = split_path(path)
+        if key:
+            return not raises(FileNotFoundError, lambda: self.ls(path))
         else:
-            return (path in self.ls('') or
-                    not raises(FileNotFoundError, lambda: self.ls(path)))
+            return bucket in self.ls('')
 
     def cat(self, path):
         """ Returns contents of file """
@@ -441,7 +461,7 @@ class S3FileSystem(object):
         part_info = {'Parts': parts}
         self.s3.complete_multipart_upload(Bucket=bucket, Key=key,
                     UploadId=mpu['UploadId'], MultipartUpload=part_info)
-        self.invalidate_cache(bucket)
+        self.invalidate_cache(path)
 
     def copy(self, path1, path2):
         """ Copy file between locations on S3 """
@@ -452,7 +472,7 @@ class S3FileSystem(object):
                                 CopySource='/'.join([buc1, key1]))
         except (ClientError, ParamValidationError):
             raise IOError('Copy failed', (path1, path2))
-        self.invalidate_cache(buc2)
+        self.invalidate_cache(path2)
 
     def bulk_delete(self, pathlist):
         """
@@ -478,7 +498,8 @@ class S3FileSystem(object):
                                    in pathlist]}
         try:
             self.s3.delete_objects(Bucket=bucket, Delete=delete_keys)
-            self.invalidate_cache(bucket)
+            for path in pathlist:
+                self.invalidate_cache(path)
         except ClientError:
             raise IOError('Bulk delete failed')
 
@@ -506,24 +527,27 @@ class S3FileSystem(object):
                 self.s3.delete_object(Bucket=bucket, Key=key)
             except ClientError:
                 raise IOError('Delete key failed', (bucket, key))
-            self.invalidate_cache(bucket)
+            self.invalidate_cache(path)
         else:
             if not self.s3.list_objects(Bucket=bucket).get('Contents'):
                 try:
                     self.s3.delete_bucket(Bucket=bucket)
                 except ClientError:
                     raise IOError('Delete bucket failed', bucket)
-                self.dirs.pop(bucket, None)
                 self.invalidate_cache(bucket)
                 self.invalidate_cache('')
             else:
                 raise IOError('Not empty', path)
 
-    def invalidate_cache(self, bucket=None):
-        if bucket is None:
+    def invalidate_cache(self, path=None):
+        if path is None:
             self.dirs.clear()
-        elif bucket in self.dirs:
-            del self.dirs[bucket]
+        else:
+            print(self.dirs.keys())
+            self.dirs.pop(path, None)
+            parent = path.rsplit('/', 1)[0]
+            self.dirs.pop(parent, None)
+            print(self.dirs.keys())
 
     def touch(self, path):
         """
@@ -534,11 +558,12 @@ class S3FileSystem(object):
         bucket, key = split_path(path)
         if key:
             self.s3.put_object(Bucket=bucket, Key=key)
-            self.invalidate_cache(bucket)
+            self.invalidate_cache(path)
         else:
             try:
                 self.s3.create_bucket(Bucket=bucket)
                 self.invalidate_cache('')
+                self.invalidate_cache(bucket)
             except (ClientError, ParamValidationError):
                 raise IOError('Bucket create failed', path)
 
@@ -875,7 +900,7 @@ class S3File(object):
                                            Body=self.buffer.read())
                 except (ClientError, ParamValidationError) as e:
                     raise IOError('Write failed: %s' % self.path, e)
-            self.s3.invalidate_cache(self.bucket)
+            self.s3.invalidate_cache(self.path)
         self.closed = True
 
     def readable(self):

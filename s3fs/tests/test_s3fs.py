@@ -137,7 +137,7 @@ def test_pickle(s3):
 
 
 def test_ls_touch(s3):
-    assert not s3.ls(test_bucket_name+'/tmp/test')
+    assert not s3.exists(test_bucket_name+'/tmp/test')
     s3.touch(a)
     s3.touch(b)
     L = s3.ls(test_bucket_name+'/tmp/test', True)
@@ -161,8 +161,7 @@ def test_rm(s3):
 
     #whole bucket
     s3.rm(test_bucket_name, recursive=True)
-    with pytest.raises((IOError, OSError)):
-        s3.exists(test_bucket_name+'/2014-01-01.csv')
+    assert not s3.exists(test_bucket_name+'/2014-01-01.csv')
     assert not s3.exists(test_bucket_name)
 
 
