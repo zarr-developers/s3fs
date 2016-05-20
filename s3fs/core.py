@@ -497,7 +497,6 @@ class S3FileSystem(object):
         bucket = buckets.pop()
         if len(pathlist) > 1000:
             for i in range((len(pathlist) // 1000) + 1):
-                print(i)
                 self.bulk_delete(pathlist[i*1000:(i+1)*1000])
             return
         delete_keys = {'Objects': [{'Key' : split_path(path)[1]} for path
@@ -549,11 +548,9 @@ class S3FileSystem(object):
         if path is None:
             self.dirs.clear()
         else:
-            print(self.dirs.keys())
             self.dirs.pop(path, None)
             parent = path.rsplit('/', 1)[0]
             self.dirs.pop(parent, None)
-            print(self.dirs.keys())
 
     def touch(self, path):
         """
