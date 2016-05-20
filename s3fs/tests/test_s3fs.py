@@ -136,8 +136,6 @@ def test_ls(s3):
         s3.ls('nonexistent')
     fn = test_bucket_name+'/test/accounts.1.json'
     assert fn in s3.ls(test_bucket_name+'/test')
-    # assert fn in s3.ls(test_bucket_name)
-    # assert [fn] == s3.ls(fn)
 
 
 def test_pickle(s3):

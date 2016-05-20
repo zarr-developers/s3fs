@@ -222,12 +222,12 @@ class S3FileSystem(object):
         if path.startswith('s3://'):
             path = path[len('s3://'):]
         path = path.rstrip('/')
-        bucket, key = split_path(path)
-        key = key + '/' if key else ""
+        bucket, prefix = split_path(path)
+        prefix = prefix + '/' if prefix else ""
         if path not in self.dirs or refresh:
             try:
                 pag = self.s3.get_paginator('list_objects')
-                it = pag.paginate(Bucket=bucket, Prefix=key, Delimiter='/')
+                it = pag.paginate(Bucket=bucket, Prefix=prefix, Delimiter='/')
                 files = []
                 dirs = None
                 for i in it:
@@ -236,7 +236,7 @@ class S3FileSystem(object):
                 if dirs:
                     files.extend([{'Key': l['Prefix'][:-1], 'Size': 0,
                                   'StorageClass': "DIRECTORY"} for l in dirs])
-                files = [f for f in files if len(f['Key']) > len(key)]
+                files = [f for f in files if len(f['Key']) > len(prefix)]
                 for f in files:
                     f['Key'] = '/'.join([bucket, f['Key']])
             except ClientError:
