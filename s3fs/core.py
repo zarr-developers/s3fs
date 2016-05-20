@@ -290,7 +290,7 @@ class S3FileSystem(object):
             path = path[len('s3://'):]
         path = path.rstrip('/')
         files = self._ls(path, refresh=refresh)
-        if not files and path not in ['', '/']:
+        if not files and split_path(path)[1]:
             files = [self.info(path)]
         if detail:
             return files

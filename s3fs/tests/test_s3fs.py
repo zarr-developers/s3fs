@@ -366,6 +366,11 @@ def test_errors(s3):
     with pytest.raises((IOError, OSError)):
         s3.mkdir('/')
 
+    with pytest.raises(ValueError):
+        s3.walk('')
+
+    with pytest.raises(ValueError):
+        s3.walk('s3://')
 
 def test_read_small(s3):
     fn = test_bucket_name+'/2014-01-01.csv'
