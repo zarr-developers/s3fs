@@ -107,6 +107,16 @@ def test_multiple_objects(s3):
     assert s3.ls('test') == s32.ls('test')
 
 
+def test_info(s3):
+    s3.touch(a)
+    s3.touch(b)
+    assert s3.info(a) == s3.ls(a, detail=True)[0]
+    parent = a.rsplit('/', 1)[0]
+    s3.dirs[parent].pop(0)  # disappear our file!
+    assert a not in s3.ls(parent)
+    assert s3.info(a)  # now uses head_object
+
+
 @pytest.mark.xfail()
 def test_delegate(s3):
     out = s3.get_delegated_s3pars()

@@ -313,7 +313,10 @@ class S3FileSystem(object):
             try:
                 bucket, key = split_path(path)
                 out = self.s3.head_object(Bucket=bucket, Key=key)
-                return out['Contents']
+                out = {'ETag': out['ETag'], 'Key': '/'.join([bucket, key]),
+                       'LastModified': out['LastModified'],
+                       'Size': out['ContentLength'], 'StorageClass': "STANDARD"}
+                return out
             except (ClientError, ParamValidationError):
                 raise FileNotFoundError(path)
 
