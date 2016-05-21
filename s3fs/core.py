@@ -115,7 +115,7 @@ class S3FileSystem(object):
             try:
                 self.anon = False
                 self.s3 = self.connect()
-                self.ls('')
+                self.get_delegated_s3pars()
                 return
             except:
                 logger.debug('Accredited connection failed, trying anonymous')
@@ -157,13 +157,15 @@ class S3FileSystem(object):
                 conf = Config(connect_timeout=self.connect_timeout,
                               read_timeout=self.read_timeout,
                               signature_version=UNSIGNED)
-                s3 = boto3.Session(**self.kwargs).client('s3', config=conf,
+                self.session = boto3.Session(**self.kwargs)
+                s3 = self.session.client('s3', config=conf,
                                                          use_ssl=ssl)
             else:
                 conf = Config(connect_timeout=self.connect_timeout,
                               read_timeout=self.read_timeout)
-                s3 = boto3.Session(self.key, self.secret, self.token,
-                                   **self.kwargs).client('s3', config=conf,
+                self.session = boto3.Session(self.key, self.secret, self.token,
+                                   **self.kwargs)
+                s3 = self.session.client('s3', config=conf,
                                                          use_ssl=ssl)
             self._conn[tok] = s3
         return self._conn[tok]
@@ -185,8 +187,7 @@ class S3FileSystem(object):
         if self.token:  # already has temporary cred
             return {'key': self.key, 'secret': self.secret, 'token': self.token,
                     'anon': False}
-        sts = boto3.Session(self.key, self.secret, self.token,
-                            **self.kwargs).client('sts')
+        sts = self.session.client('sts')
         cred = sts.get_session_token(DurationSeconds=3600)['Credentials']
         return {'key': cred['AccessKeyId'], 'secret': cred['SecretAccessKey'],
                 'token': cred['SessionToken'], 'anon': False}
