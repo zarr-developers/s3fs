@@ -1,3 +1,4 @@
+import pytest
 from s3fs.tests.test_s3fs import s3, test_bucket_name
 from s3fs import S3Map, S3FileSystem
 
@@ -17,6 +18,12 @@ def test_simple(s3):
 def test_default_s3filesystem(s3):
     d = S3Map(root)
     assert d.s3 is s3
+
+
+def test_errors(s3):
+    d = S3Map(root, s3)
+    with pytest.raises(KeyError):
+        d['nonexistent']
 
 
 def test_with_data(s3):

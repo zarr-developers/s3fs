@@ -107,6 +107,16 @@ def test_multiple_objects(s3):
     assert s3.ls('test') == s32.ls('test')
 
 
+def test_info(s3):
+    s3.touch(a)
+    s3.touch(b)
+    assert s3.info(a) == s3.ls(a, detail=True)[0]
+    parent = a.rsplit('/', 1)[0]
+    s3.dirs[parent].pop(0)  # disappear our file!
+    assert a not in s3.ls(parent)
+    assert s3.info(a)  # now uses head_object
+
+
 @pytest.mark.xfail()
 def test_delegate(s3):
     out = s3.get_delegated_s3pars()
@@ -126,8 +136,6 @@ def test_ls(s3):
         s3.ls('nonexistent')
     fn = test_bucket_name+'/test/accounts.1.json'
     assert fn in s3.ls(test_bucket_name+'/test')
-    # assert fn in s3.ls(test_bucket_name)
-    # assert [fn] == s3.ls(fn)
 
 
 def test_pickle(s3):
@@ -137,7 +145,7 @@ def test_pickle(s3):
 
 
 def test_ls_touch(s3):
-    assert not s3.ls(test_bucket_name+'/tmp/test')
+    assert not s3.exists(test_bucket_name+'/tmp/test')
     s3.touch(a)
     s3.touch(b)
     L = s3.ls(test_bucket_name+'/tmp/test', True)
@@ -161,8 +169,7 @@ def test_rm(s3):
 
     #whole bucket
     s3.rm(test_bucket_name, recursive=True)
-    with pytest.raises((IOError, OSError)):
-        s3.exists(test_bucket_name+'/2014-01-01.csv')
+    assert not s3.exists(test_bucket_name+'/2014-01-01.csv')
     assert not s3.exists(test_bucket_name)
 
 
@@ -357,6 +364,11 @@ def test_errors(s3):
     with pytest.raises((IOError, OSError)):
         s3.mkdir('/')
 
+    with pytest.raises(ValueError):
+        s3.walk('')
+
+    with pytest.raises(ValueError):
+        s3.walk('s3://')
 
 def test_read_small(s3):
     fn = test_bucket_name+'/2014-01-01.csv'
