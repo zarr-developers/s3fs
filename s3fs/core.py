@@ -146,7 +146,6 @@ class S3FileSystem(object):
         anon, key, secret, kwargs, token, ssl = (self.anon, self.key,
                             self.secret, self.kwargs, self.token, self.use_ssl)
         tok = tokenize(anon, key, secret, kwargs, token, ssl)
-        print(anon)
         if refresh:
             self._conn.pop(tok, None)
         logger.debug("Open S3 connection.  Anonymous: %s", self.anon)
