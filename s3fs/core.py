@@ -191,6 +191,7 @@ class S3FileSystem(object):
     def __getstate__(self):
         d = self.__dict__.copy()
         del d['s3']
+        del d['session']
         logger.debug("Serialize with state: %s", d)
         return d
 
