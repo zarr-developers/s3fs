@@ -104,6 +104,7 @@ def test_multiple_objects(s3):
     s3.connect()
     assert s3.ls('test')
     s32 = S3FileSystem(anon=False)
+    assert s32.session
     assert s3.ls('test') == s32.ls('test')
 
 
