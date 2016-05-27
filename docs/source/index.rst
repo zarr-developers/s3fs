@@ -74,12 +74,40 @@ Limitations
 This project is meant for convenience, rather than feature completeness.
 The following are known current omissions:
 
-- there is no append-mode on files
-
-- file access is always binary
+- file access is always binary (although readline and iterating by line are
+possible)
 
 - no permissions/access-control (i.e., no chmod/chmown methods)
 
+
+Credentials
+-----------
+
+The AWS key and secret may be provided explicitly when creating an S3FileSystem.
+A more secure way, not including the credentials directly in code, is to allow
+boto to establish the credentials automatically. Boto will try the following
+methods, in order:
+
+- aws_access_key_id, aws_secret_access_key, and aws_session_token environment
+variables
+
+- configuration files such as `~/.aws/credentials`
+
+- for nodes on EC2, the IAM metadata provider
+
+In a distributed environment, it is not expected that raw credentials should
+be passed between machines. In the explicitly provided credentials case, the
+method `get_delegated_s3pars()` can be used to obtain temporary credentials.
+When not using explicit credentials, it should be expected that every machine
+also has the apropriate environment variables, config files or IAM roles
+available.
+
+If none of the credential methods are available, only anonymous access will
+work, and `anon=True` must be passed to the sonstructor.
+
+Furthermore, `S3FileSystem.current()` will return the most-recently created
+instance, so this method could be used in preference to the constructor in
+cases where the code must be agnostic of the credentials/config used.
 
 Contents
 ========
