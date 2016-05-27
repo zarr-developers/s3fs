@@ -126,9 +126,15 @@ def test_delegate(s3):
     s32 = S3FileSystem(**out)
     assert not s32.anon
     assert out == s32.get_delegated_s3pars()
-    s32.anon = True
-    out = s32.get_delegated_s3pars()
+
+
+def test_not_delegate():
+    s3 = S3FileSystem(anon=True)
+    out = s3.get_delegated_s3pars()
     assert out == {'anon': True}
+    s3 = S3FileSystem(anon=False)  # auto credentials
+    out = s3.get_delegated_s3pars()
+    assert out == {'anon': False}
 
 
 def test_ls(s3):
