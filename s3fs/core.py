@@ -70,14 +70,15 @@ class S3FileSystem(object):
     storage.
 
     Provide credentials either explicitly (``key=``, ``secret=``) or depend
-    upon local configuration files (``~/.aws`` or ``~/.boto``).  See boto3
-    documentation for more information.
+    on boto's credential methods. See boto3 documentation for more
+    information. If no credentials are available, use ``anon=True``.
 
     Parameters
     ----------
-    anon : bool or None (default)
-        Whether to use anonymous connection (public buckets only). If None,
-        tries False and falls back to True.
+    anon : bool (False)
+        Whether to use anonymous connection (public buckets only). If False,
+        uses the key/secret given, or boto's credential resolver (environment
+        variables, config files, EC2 IAM server, in that order)
     key : string (None)
         If not anonymouns, use this key, if specified
     secret : string (None)
@@ -102,7 +103,7 @@ class S3FileSystem(object):
     connect_timeout = 5
     read_timeout = 15
 
-    def __init__(self, anon=None, key=None, secret=None, token=None,
+    def __init__(self, anon=False, key=None, secret=None, token=None,
                  use_ssl=True, **kwargs):
         self.anon = anon
         self.key = key
@@ -111,15 +112,6 @@ class S3FileSystem(object):
         self.kwargs = kwargs
         self.dirs = {}
         self.use_ssl = use_ssl
-        if anon is None:
-            try:
-                self.anon = False
-                self.s3 = self.connect()
-                self.get_delegated_s3pars()
-                return
-            except:
-                logger.debug('Accredited connection failed, trying anonymous')
-                self.anon = True
         self.s3 = self.connect()
         S3FileSystem._singleton[0] = self
 
@@ -167,7 +159,8 @@ class S3FileSystem(object):
         return self._conn[tok]
 
     def get_delegated_s3pars(self, exp=3600):
-        """Get temporary credentials, apropriate for sending across a network
+        """Get temporary credentials from STS, apropriate for sending across a
+        network. Only relevant where the key/secret were explicitly provided.
 
         Parameters
         ----------
@@ -183,8 +176,10 @@ class S3FileSystem(object):
         if self.token:  # already has temporary cred
             return {'key': self.key, 'secret': self.secret, 'token': self.token,
                     'anon': False}
+        if self.key is None or self.secret is None:  # automatic credentials
+            return {'anon': False}
         sts = self.session.client('sts')
-        cred = sts.get_session_token(DurationSeconds=3600)['Credentials']
+        cred = sts.get_session_token(DurationSeconds=exp)['Credentials']
         return {'key': cred['AccessKeyId'], 'secret': cred['SecretAccessKey'],
                 'token': cred['SessionToken'], 'anon': False}
 
@@ -721,11 +716,11 @@ class S3File(object):
         return self.loc
 
     def readline(self, length=-1):
-        '''
+        """
         Read and return a line from the stream.
 
         If length is specified, at most size bytes will be read.
-        '''
+        """
         self._fetch(self.loc, self.loc + 1)
         while True:
             found = self.cache[self.loc - self.start:].find(b'\n') + 1
