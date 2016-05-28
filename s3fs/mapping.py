@@ -42,7 +42,8 @@ class S3Map(MutableMapping):
                 self.s3.mkdir(bucket)
             elif not self.s3.exists(bucket):
                 raise ValueError("Bucket %s does not exist."
-                        " Create bucket with the ``create=True`` keyword")
+                        " Create bucket with the ``create=True`` keyword" %
+                        bucket)
 
     def clear(self):
         """Remove all keys below root - empties out mapping
