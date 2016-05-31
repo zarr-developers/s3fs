@@ -25,6 +25,11 @@ def test_errors(s3):
     with pytest.raises(KeyError):
         d['nonexistent']
 
+    try:
+        S3Map('does-not-exist')
+    except Exception as e:
+        assert 'does-not-exist' in str(e)
+
 
 def test_with_data(s3):
     d = S3Map(root, s3)
