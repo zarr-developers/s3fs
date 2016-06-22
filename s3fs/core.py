@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 import io
 import logging
+import os
 import re
 import socket
 from hashlib import md5
-from contextlib import contextmanager
 
 import boto3
 import boto3.compat
@@ -137,7 +137,10 @@ class S3FileSystem(object):
         """
         anon, key, secret, kwargs, token, ssl = (self.anon, self.key,
                             self.secret, self.kwargs, self.token, self.use_ssl)
-        tok = tokenize(anon, key, secret, kwargs, token, ssl)
+
+        # Include the current PID in the connection key so that different
+        # SSL connections are made for each process.
+        tok = tokenize(anon, key, secret, kwargs, token, ssl, os.getpid())
         if refresh:
             self._conn.pop(tok, None)
         logger.debug("Open S3 connection.  Anonymous: %s", self.anon)
