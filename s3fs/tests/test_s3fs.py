@@ -575,6 +575,13 @@ def test_iterable(s3):
         assert f.readline(1) == b'1'
         assert f.readline() == b'23'
 
+    with s3.open(a) as f:
+        out = list(f)
+    with s3.open(a) as f:
+        out2 = f.readlines()
+    assert out == out2
+    assert b"".join(out) == data
+
 
 def test_readable(s3):
     with s3.open(a, 'wb') as f:
@@ -675,7 +682,7 @@ def test_no_connection_sharing_among_processes(s3):
         "Processes should not share S3 connections."
 
 
-@pytest.xfail("In moto, all users are privilaged")
+@pytest.mark.xfail()
 def test_public_file(s3):
     other_bucket_name = 's3fs_private_test'
 

@@ -771,7 +771,10 @@ class S3File(object):
             self._fetch(self.start, self.end + self.blocksize)
 
     def __next__(self):
-        return self.readline()
+        out = self.readline()
+        if not out:
+            raise StopIteration
+        return out
 
     next = __next__
 
