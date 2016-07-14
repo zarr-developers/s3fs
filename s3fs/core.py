@@ -61,6 +61,12 @@ def split_path(path):
     else:
         return path.split('/', 1)
 
+key_acls = {'private', 'public-read', 'public-read-write',
+             'authenticated-read', 'aws-exec-read', 'bucket-owner-read',
+             'bucket-owner-full-control'}
+buck_acls = {'private', 'public-read', 'public-read-write',
+             'authenticated-read'}
+
 
 class S3FileSystem(object):
     """
@@ -197,7 +203,7 @@ class S3FileSystem(object):
         self.__dict__.update(state)
         self.s3 = self.connect()
 
-    def open(self, path, mode='rb', block_size=5 * 1024 ** 2):
+    def open(self, path, mode='rb', block_size=5 * 1024 ** 2, acl=''):
         """ Open a file for reading or writing
 
         Parameters
@@ -212,7 +218,7 @@ class S3FileSystem(object):
         if 'b' not in mode:
             raise NotImplementedError("Text mode not supported, use mode='%s'"
                                       " and manage bytes" % (mode[0] + 'b'))
-        return S3File(self, path, mode, block_size=block_size)
+        return S3File(self, path, mode, block_size=block_size, acl=acl)
 
     def _lsdir(self, path, refresh=False):
         if path.startswith('s3://'):
@@ -335,6 +341,26 @@ class S3FileSystem(object):
         """ Return all real keys below path """
         return [f['Key'] for f in self._walk(path, refresh)]
 
+    def chmod(self, path, acl):
+        """ Set Access Control on a bucket/key
+
+        Parameters
+        ----------
+        path : string
+            the object to set
+        acl : string
+            the value of ACL to apply
+        """
+        bucket, key = split_path(path)
+        if key:
+            if acl not in key_acls:
+                raise ValueError('ACL not in %s', key_acls)
+            self.s3.put_object_acl(Bucket=bucket, Key=key, ACL=acl)
+        else:
+            if acl not in buck_acls:
+                raise ValueError('ACL not in %s', buck_acls)
+            self.s3.put_bucket_acl(Bucket=bucket, ACL=acl)
+
     def glob(self, path):
         """
         Find files by glob-matching.
@@ -425,9 +451,9 @@ class S3FileSystem(object):
                         break
                     f2.write(data)
 
-    def mkdir(self, path):
+    def mkdir(self, path, acl=""):
         """ Make new bucket or empty key """
-        self.touch(path)
+        self.touch(path, acl=acl)
 
     def rmdir(self, path):
         """ Remove empty key or bucket """
@@ -548,7 +574,7 @@ class S3FileSystem(object):
             parent = path.rsplit('/', 1)[0]
             self.dirs.pop(parent, None)
 
-    def touch(self, path):
+    def touch(self, path, acl=""):
         """
         Create empty key
 
@@ -556,11 +582,15 @@ class S3FileSystem(object):
         """
         bucket, key = split_path(path)
         if key:
-            self.s3.put_object(Bucket=bucket, Key=key)
+            if acl and acl not in key_acls:
+                raise ValueError('ACL not in %s', key_acls)
+            self.s3.put_object(Bucket=bucket, Key=key, ACL=acl)
             self.invalidate_cache(path)
         else:
+            if acl and acl not in buck_acls:
+                raise ValueError('ACL not in %s', buck_acls)
             try:
-                self.s3.create_bucket(Bucket=bucket)
+                self.s3.create_bucket(Bucket=bucket, ACL=acl)
                 self.invalidate_cache('')
                 self.invalidate_cache(bucket)
             except (ClientError, ParamValidationError):
@@ -638,7 +668,7 @@ class S3File(object):
     S3FileSystem.open: used to create ``S3File`` objects
     """
 
-    def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20):
+    def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl=""):
         self.mode = mode
         if mode not in {'rb', 'wb', 'ab'}:
             raise NotImplementedError("File mode must be {'rb', 'wb', 'ab'}, not %s" % mode)
@@ -655,7 +685,10 @@ class S3File(object):
         self.closed = False
         self.trim = True
         self.mpu = None
+        self.acl = acl
         if mode in {'wb', 'ab'}:
+            if acl and acl not in key_acls:
+                raise ValueError('ACL not in %s', key_acls)
             self.buffer = io.BytesIO()
             self.parts = []
             self.size = 0
@@ -669,12 +702,14 @@ class S3File(object):
                     self.write(s3.cat(path))
                 else:
                     try:
-                        self.mpu = s3.s3.create_multipart_upload(Bucket=bucket, Key=key)
+                        self.mpu = s3.s3.create_multipart_upload(Bucket=bucket,
+                                Key=key, ACL=acl)
                     except (ClientError, ParamValidationError) as e:
                         raise IOError('Open for write failed', path, e)
                     self.loc = self.size
-                    out = self.s3.s3.upload_part_copy(Bucket=self.bucket, Key=self.key,
-                                PartNumber=1, UploadId=self.mpu['UploadId'],
+                    out = self.s3.s3.upload_part_copy(Bucket=self.bucket,
+                                Key=self.key, PartNumber=1,
+                                UploadId=self.mpu['UploadId'],
                                 CopySource=path)
                     self.parts.append({'PartNumber': 1,
                                        'ETag': out['CopyPartResult']['ETag']})
@@ -848,7 +883,7 @@ class S3File(object):
 
             try:
                 self.mpu = self.mpu or self.s3.s3.create_multipart_upload(
-                                Bucket=self.bucket, Key=self.key)
+                                Bucket=self.bucket, Key=self.key, ACL=self.acl)
             except (ClientError, ParamValidationError) as e:
                 raise IOError('Initating write failed: %s' % self.path, e)
 
@@ -894,7 +929,7 @@ class S3File(object):
                 self.buffer.seek(0)
                 try:
                     self.s3.s3.put_object(Bucket=self.bucket, Key=self.key,
-                                           Body=self.buffer.read())
+                                          Body=self.buffer.read(), ACL=self.acl)
                 except (ClientError, ParamValidationError) as e:
                     raise IOError('Write failed: %s' % self.path, e)
             self.s3.invalidate_cache(self.path)

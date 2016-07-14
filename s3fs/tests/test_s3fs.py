@@ -673,3 +673,29 @@ def test_no_connection_sharing_among_processes(s3):
     conn_id = executor.submit(_get_s3_id, s3).result()
     assert id(s3.connect()) != conn_id, \
         "Processes should not share S3 connections."
+
+
+@pytest.xfail("In moto, all users are privilaged")
+def test_public_file(s3):
+    other_bucket_name = 's3fs_private_test'
+
+    s3.touch(test_bucket_name)
+    s3.touch(test_bucket_name+'/afile')
+    s3.touch(other_bucket_name, acl='public-read')
+    s3.touch(other_bucket_name+'/afile', acl='public-read')
+
+    s = S3FileSystem(anon=True)
+    with pytest.raises((IOError, OSError)):
+        s.ls(test_bucket_name)
+    s.ls(other_bucket_name)
+
+    s3.chmod(test_bucket_name, acl='public-read')
+    s3.chmod(other_bucket_name, acl='private')
+    with pytest.raises((IOError, OSError)):
+        s.ls(other_bucket_name, refresh=True)
+    assert s.ls(test_bucket_name, refresh=True)
+
+    # public file in private bucket
+    with s3.open(other_bucket_name+'/see_me', 'wb', acl='public-read') as f:
+        f.write(b'hello')
+    assert s.cat(other_bucket_name+'/see_me') == b'hello'
