@@ -381,10 +381,10 @@ class S3FileSystem(object):
     def exists(self, path):
         """ Does such a file/directory exist? """
         bucket, key = split_path(path)
-        if key:
+        if key or bucket not in self.ls(''):
             return not raises(FileNotFoundError, lambda: self.ls(path))
         else:
-            return bucket in self.ls('')
+            return True
 
     def cat(self, path):
         """ Returns contents of file """
