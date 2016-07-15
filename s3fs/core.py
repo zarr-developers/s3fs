@@ -405,6 +405,22 @@ class S3FileSystem(object):
         with self.open(path, 'rb', block_size=size) as f:
             return f.read(size)
 
+    def url(self, path, expires=3600):
+        """ Generate presigned URL to access path by HTTP
+
+        Parameters
+        ----------
+        path : string
+            the key path we are interested in
+        expires : int
+            the number of seconds this signature will be good for.
+        """
+        bucket, key = split_path(path)
+        return self.s3.generate_presigned_url(ClientMethod='get_object',
+                                       Params={'Bucket': bucket, 'Key': key},
+                                       ExpiresIn=expires)
+
+
     def get(self, path, filename):
         """ Stream data from file at path to local filename """
         with self.open(path, 'rb') as f:
@@ -687,6 +703,11 @@ class S3File(object):
     def info(self):
         """ File information about this path """
         return self.s3.info(self.path)
+
+    def url(self):
+        """ HTTP URL to read this file (if it already exists)
+        """
+        return self.s3.url(self.path)
 
     def tell(self):
         """ Current file location """
