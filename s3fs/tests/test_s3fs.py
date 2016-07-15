@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from concurrent.futures import ProcessPoolExecutor
 import io
+import re
+import time
 import pytest
 from itertools import chain
 from s3fs.core import S3FileSystem
@@ -290,6 +292,17 @@ def test_read_keys_from_bucket(s3):
 
     assert (s3.cat('/'.join([test_bucket_name, k])) ==
             s3.cat('s3://' + '/'.join([test_bucket_name, k])))
+
+
+def test_url(s3):
+    fn = test_bucket_name+'/nested/file1'
+    url = s3.url(fn, expires=100)
+    assert 'http' in url
+    assert '/nested/file1' in url
+    exp = int(re.match(".*?Expires=(\d+)", url).groups()[0])
+    assert abs(exp - time.time() - 100) < 5
+    with s3.open(fn) as f:
+        assert 'http' in f.url()
 
 
 def test_seek(s3):
