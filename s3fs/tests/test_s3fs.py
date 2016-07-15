@@ -220,6 +220,14 @@ def test_s3_file_info(s3):
         s3.info(fn+'another')
 
 
+def test_bucket_exists(s3):
+    assert s3.exists(test_bucket_name)
+    assert not s3.exists(test_bucket_name+'x')
+    s3 = S3FileSystem(anon=True)
+    assert s3.exists(test_bucket_name)
+    assert not s3.exists(test_bucket_name+'x')
+
+
 def test_du(s3):
     d = s3.du(test_bucket_name, deep=True)
     assert all(isinstance(v, int) and v >= 0 for v in d.values())
