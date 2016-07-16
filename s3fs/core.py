@@ -344,6 +344,8 @@ class S3FileSystem(object):
     def chmod(self, path, acl):
         """ Set Access Control on a bucket/key
 
+        See http://docs.aws.amazon.com/AmazonS3/latest/dev/acl-overview.html#canned-acl
+
         Parameters
         ----------
         path : string
