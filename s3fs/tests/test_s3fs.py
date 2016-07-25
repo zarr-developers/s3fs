@@ -596,6 +596,13 @@ def test_iterable(s3):
         assert f.readline(1) == b'1'
         assert f.readline() == b'23'
 
+    with s3.open(a) as f:
+        out = list(f)
+    with s3.open(a) as f:
+        out2 = f.readlines()
+    assert out == out2
+    assert b"".join(out) == data
+
 
 def test_readable(s3):
     with s3.open(a, 'wb') as f:
@@ -694,3 +701,35 @@ def test_no_connection_sharing_among_processes(s3):
     conn_id = executor.submit(_get_s3_id, s3).result()
     assert id(s3.connect()) != conn_id, \
         "Processes should not share S3 connections."
+
+
+@pytest.mark.xfail()
+def test_public_file(s3):
+    # works on real s3, not on moto
+    try:
+        test_bucket_name = 's3fs_public_test'
+        other_bucket_name = 's3fs_private_test'
+
+        s3.touch(test_bucket_name)
+        s3.touch(test_bucket_name+'/afile')
+        s3.touch(other_bucket_name, acl='public-read')
+        s3.touch(other_bucket_name+'/afile', acl='public-read')
+
+        s = S3FileSystem(anon=True)
+        with pytest.raises((IOError, OSError)):
+            s.ls(test_bucket_name)
+        s.ls(other_bucket_name)
+
+        s3.chmod(test_bucket_name, acl='public-read')
+        s3.chmod(other_bucket_name, acl='private')
+        with pytest.raises((IOError, OSError)):
+            s.ls(other_bucket_name, refresh=True)
+        assert s.ls(test_bucket_name, refresh=True)
+
+        # public file in private bucket
+        with s3.open(other_bucket_name+'/see_me', 'wb', acl='public-read') as f:
+            f.write(b'hello')
+        assert s.cat(other_bucket_name+'/see_me') == b'hello'
+    finally:
+        s3.rm(test_bucket_name, recursive=True)
+        s3.rm(other_bucket_name, recursive=True)
