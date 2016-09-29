@@ -95,6 +95,7 @@ class S3FileSystem(object):
     use_ssl : bool (True)
         Whether to use SSL in connections to S3; may be faster without, but
         insecure
+    client_kwargs : dict of paramaters for the boto3 client
     kwargs : other parameters for boto3 session
 
     Examples
@@ -113,12 +114,16 @@ class S3FileSystem(object):
     read_timeout = 15
 
     def __init__(self, anon=False, key=None, secret=None, token=None,
-                 use_ssl=True, **kwargs):
+                 use_ssl=True, client_kwargs=None, **kwargs):
         self.anon = anon
         self.key = key
         self.secret = secret
         self.token = token
         self.kwargs = kwargs
+
+        if client_kwargs is None:
+            client_kwargs = {}
+        self.client_kwargs = client_kwargs
         self.dirs = {}
         self.use_ssl = use_ssl
         self.s3 = self.connect()
@@ -144,12 +149,14 @@ class S3FileSystem(object):
         refresh : bool (True)
             Whether to use cached filelists, if already read
         """
-        anon, key, secret, kwargs, token, ssl = (self.anon, self.key,
-                            self.secret, self.kwargs, self.token, self.use_ssl)
+        anon, key, secret, kwargs, ckwargs, token, ssl = \
+              (self.anon, self.key, self.secret, self.kwargs,
+               self.client_kwargs, self.token, self.use_ssl)
 
         # Include the current PID in the connection key so that different
         # SSL connections are made for each process.
-        tok = tokenize(anon, key, secret, kwargs, token, ssl, os.getpid())
+        tok = tokenize(anon, key, secret, kwargs, ckwargs, token,
+                       ssl, os.getpid())
         if refresh:
             self._conn.pop(tok, None)
         logger.debug("Open S3 connection.  Anonymous: %s", self.anon)
@@ -166,7 +173,8 @@ class S3FileSystem(object):
             self.session = boto3.Session(self.key, self.secret, self.token,
                                          **self.kwargs)
         if tok not in self._conn:
-            s3 = self.session.client('s3', config=conf, use_ssl=ssl)
+            s3 = self.session.client('s3', config=conf, use_ssl=ssl,
+                                     **self.client_kwargs)
             self._conn[tok] = s3
         return self._conn[tok]
 

@@ -88,6 +88,11 @@ def test_ssl_off():
     assert s3.s3.meta.endpoint_url.startswith('http://')
 
 
+def test_client_kwargs():
+    s3 = S3FileSystem(client_kwargs={'endpoint_url': 'http://foo'})
+    assert s3.s3.meta.endpoint_url.startswith('http://foo')
+
+
 def test_tokenize():
     from s3fs.core import tokenize
     a = (1, 2, 3)
