@@ -863,7 +863,7 @@ class S3File(object):
         """
         Write data to buffer.
 
-        Buffer only sent to S3 on flush() or if buffer is bigger than blocksize.
+        Buffer only sent to S3 on flush() or if buffer is greater than or equal to blocksize.
 
         Parameters
         ----------
@@ -876,7 +876,7 @@ class S3File(object):
             raise ValueError('I/O operation on closed file.')
         out = self.buffer.write(ensure_writable(data))
         self.loc += out
-        if self.buffer.tell() > self.blocksize:
+        if self.buffer.tell() >= self.blocksize:
             self.flush()
         return out
 
