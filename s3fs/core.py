@@ -214,7 +214,8 @@ class S3FileSystem(object):
         self.__dict__.update(state)
         self.s3 = self.connect()
 
-    def open(self, path, mode='rb', block_size=5 * 1024 ** 2, acl=''):
+    def open(self, path, mode='rb', block_size=5 * 1024 ** 2, acl='',
+             fill_cache=True):
         """ Open a file for reading or writing
 
         Parameters
@@ -225,11 +226,17 @@ class S3FileSystem(object):
             One of 'rb' or 'wb'
         block_size: int
             Size of data-node blocks if reading
+        fill_cache: bool
+            If seeking to new a part of the file beyond the current buffer,
+            with this True, the buffer will be filled between the sections to
+            best support random access. When reading only a few specific chunks
+            out of a file, performance may be better if False.
         """
         if 'b' not in mode:
             raise NotImplementedError("Text mode not supported, use mode='%s'"
                                       " and manage bytes" % (mode[0] + 'b'))
-        return S3File(self, path, mode, block_size=block_size, acl=acl)
+        return S3File(self, path, mode, block_size=block_size, acl=acl,
+                      fill_cache=fill_cache)
 
     def _lsdir(self, path, refresh=False):
         if path.startswith('s3://'):
@@ -685,6 +692,11 @@ class S3File(object):
         S3 key to access
     blocksize : int
         read-ahead size for finding delimiters
+    fill_cache: bool
+        If seeking to new a part of the file beyond the current buffer,
+        with this True, the buffer will be filled between the sections to
+        best support random access. When reading only a few specific chunks
+        out of a file, performance may be better if False.
 
     Examples
     --------
@@ -697,7 +709,8 @@ class S3File(object):
     S3FileSystem.open: used to create ``S3File`` objects
     """
 
-    def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl=""):
+    def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
+                 fill_cache=True):
         self.mode = mode
         if mode not in {'rb', 'wb', 'ab'}:
             raise NotImplementedError("File mode must be {'rb', 'wb', 'ab'}, not %s" % mode)
@@ -717,6 +730,7 @@ class S3File(object):
         self.trim = True
         self.mpu = None
         self.acl = acl
+        self.fill_cache = fill_cache
         if mode in {'wb', 'ab'}:
             if acl and acl not in key_acls:
                 raise ValueError('ACL not in %s', key_acls)
@@ -829,6 +843,9 @@ class S3File(object):
             self.cache = _fetch_range(self.s3.s3, self.bucket, self.key,
                                       start, self.end)
         if start < self.start:
+            if not self.fill_cache and end + self.blocksize < self.start:
+                self.start, self.end = None, None
+                return self._fetch(start, end)
             new = _fetch_range(self.s3.s3, self.bucket, self.key,
                                start, self.start)
             self.start = start
@@ -836,6 +853,9 @@ class S3File(object):
         if end > self.end:
             if self.end > self.size:
                 return
+            if not self.fill_cache and start > self.end:
+                self.start, self.end = None, None
+                return self._fetch(start, end)
             new = _fetch_range(self.s3.s3, self.bucket, self.key,
                                self.end, end + self.blocksize)
             self.end = end + self.blocksize

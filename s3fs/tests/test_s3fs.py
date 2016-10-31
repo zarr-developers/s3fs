@@ -749,6 +749,7 @@ def test_upload_with_s3fs_prefix(s3):
     with s3.open(path, 'ab') as f:
         f.write(b'b' * (10 * 2 ** 20))
 
+
 def test_multipart_upload_blocksize(s3):
     blocksize = 5 * (2 ** 20)
     expected_parts = 3
@@ -770,3 +771,21 @@ def test_multipart_upload_blocksize(s3):
 
         # Ensure that the multipart upload consists of only 3 parts
         assert len(s3f.parts) == expected_parts
+
+
+def test_not_fill_cache(s3):
+    fname = list(files)[0]
+    data = files[fname]
+    with s3.open(test_bucket_name+'/'+fname, 'rb', block_size=5,
+                 fill_cache=False) as f:
+        f.read(6)
+        assert len(f.cache) == 11
+        assert data.startswith(f.cache)
+        f.seek(10)
+        f.read(2)
+        assert f.start < 10  # keeps some old data
+
+        f.seek(31)
+        out = f.read(6)
+        assert len(f.cache) == 11  # dropped
+        assert out == data[31:37]
