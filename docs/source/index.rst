@@ -109,6 +109,22 @@ Furthermore, `S3FileSystem.current()` will return the most-recently created
 instance, so this method could be used in preference to the constructor in
 cases where the code must be agnostic of the credentials/config used.
 
+Requester Pays Buckets
+----------------------
+
+Some buckets, such as the `arXiv raw data
+<https://arxiv.org/help/bulk_data_s3>`__, are configured so that the
+requester of the data pays any transfer fees.  You must be
+authenticated to access these buckets and (because these charges maybe
+unexpected) amazon requires an additional key on many of the API
+calls. To enable ``RequeterPays`` create your file system as
+
+
+.. code-block:: python
+
+   >>> s3 = s3fs.S3FileSystme(anon=False, requester_pays=True)
+
+
 Contents
 ========
 

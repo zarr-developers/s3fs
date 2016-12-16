@@ -96,6 +96,8 @@ class S3FileSystem(object):
         Whether to use SSL in connections to S3; may be faster without, but
         insecure
     client_kwargs : dict of paramaters for the boto3 client
+    requester_pays : bool (False)
+        If RequesterPays buckets are supported.
     kwargs : other parameters for boto3 session
 
     Examples
@@ -114,7 +116,8 @@ class S3FileSystem(object):
     read_timeout = 15
 
     def __init__(self, anon=False, key=None, secret=None, token=None,
-                 use_ssl=True, client_kwargs=None, **kwargs):
+                 use_ssl=True, client_kwargs=None, requester_pays=False,
+                 **kwargs):
         self.anon = anon
         self.key = key
         self.secret = secret
@@ -125,6 +128,7 @@ class S3FileSystem(object):
             client_kwargs = {}
         self.client_kwargs = client_kwargs
         self.dirs = {}
+        self.req_kw = {'RequestPayer': 'requester'} if requester_pays else {}
         self.use_ssl = use_ssl
         self.s3 = self.connect()
         S3FileSystem._singleton[0] = self
@@ -247,7 +251,8 @@ class S3FileSystem(object):
         if path not in self.dirs or refresh:
             try:
                 pag = self.s3.get_paginator('list_objects')
-                it = pag.paginate(Bucket=bucket, Prefix=prefix, Delimiter='/')
+                it = pag.paginate(Bucket=bucket, Prefix=prefix, Delimiter='/',
+                                  **self.req_kw)
                 files = []
                 dirs = None
                 for i in it:
@@ -335,7 +340,8 @@ class S3FileSystem(object):
         else:
             try:
                 bucket, key = split_path(path)
-                out = self.s3.head_object(Bucket=bucket, Key=key)
+                out = self.s3.head_object(Bucket=bucket, Key=key,
+                                          **self.req_kw)
                 out = {'ETag': out['ETag'], 'Key': '/'.join([bucket, key]),
                        'LastModified': out['LastModified'],
                        'Size': out['ContentLength'], 'StorageClass': "STANDARD"}
@@ -465,7 +471,6 @@ class S3FileSystem(object):
         return self.s3.generate_presigned_url(ClientMethod='get_object',
                                        Params={'Bucket': bucket, 'Key': key},
                                        ExpiresIn=expires)
-
 
     def get(self, path, filename):
         """ Stream data from file at path to local filename """
@@ -841,13 +846,13 @@ class S3File(object):
             self.start = start
             self.end = end + self.blocksize
             self.cache = _fetch_range(self.s3.s3, self.bucket, self.key,
-                                      start, self.end)
+                                      start, self.end, req_kw=self.s3.req_kw)
         if start < self.start:
             if not self.fill_cache and end + self.blocksize < self.start:
                 self.start, self.end = None, None
                 return self._fetch(start, end)
             new = _fetch_range(self.s3.s3, self.bucket, self.key,
-                               start, self.start)
+                               start, self.start, req_kw=self.s3.req_kw)
             self.start = start
             self.cache = new + self.cache
         if end > self.end:
@@ -857,7 +862,8 @@ class S3File(object):
                 self.start, self.end = None, None
                 return self._fetch(start, end)
             new = _fetch_range(self.s3.s3, self.bucket, self.key,
-                               self.end, end + self.blocksize)
+                               self.end, end + self.blocksize,
+                               req_kw=self.s3.req_kw)
             self.end = end + self.blocksize
             self.cache = self.cache + new
 
@@ -1021,12 +1027,16 @@ class S3File(object):
         self.close()
 
 
-def _fetch_range(client, bucket, key, start, end, max_attempts=10):
+def _fetch_range(client, bucket, key, start, end, max_attempts=10,
+                 req_kw=None):
+    if req_kw is None:
+        req_kw = {}
     logger.debug("Fetch: %s/%s, %s-%s", bucket, key, start, end)
     for i in range(max_attempts):
         try:
             resp = client.get_object(Bucket=bucket, Key=key,
-                                     Range='bytes=%i-%i' % (start, end - 1))
+                                     Range='bytes=%i-%i' % (start, end - 1),
+                                     **req_kw)
             return resp['Body'].read()
         except S3_RETRYABLE_ERRORS as e:
             logger.debug('Exception %e on S3 download, retrying', e,
