@@ -96,6 +96,8 @@ class S3FileSystem(object):
         Whether to use SSL in connections to S3; may be faster without, but
         insecure
     client_kwargs : dict of paramaters for the boto3 client
+    requester_pays : bool (False)
+        If RequesterPays buckets are supported.
     kwargs : other parameters for boto3 session
 
     Examples
