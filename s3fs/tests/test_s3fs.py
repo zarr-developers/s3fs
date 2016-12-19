@@ -789,3 +789,14 @@ def test_not_fill_cache(s3):
         out = f.read(6)
         assert len(f.cache) == 11  # dropped
         assert out == data[31:37]
+
+
+def test_default_pars(s3):
+    s3 = S3FileSystem(default_block_size=20, default_fill_cache=False)
+    fn = test_bucket_name + '/' + list(files)[0]
+    with s3.open(fn) as f:
+        assert f.blocksize == 20
+        assert f.fill_cache is False
+    with s3.open(fn, block_size=40, fill_cache=True) as f:
+        assert f.blocksize == 40
+        assert f.fill_cache is True
