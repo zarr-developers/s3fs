@@ -98,6 +98,12 @@ class S3FileSystem(object):
     client_kwargs : dict of paramaters for the boto3 client
     requester_pays : bool (False)
         If RequesterPays buckets are supported.
+    default_block_size: None, int
+        If given, the default block size value used for ``open()``, if no
+        specific value is given at all time. The built-in default is 5MB.
+    default_fill_cache: Bool (True)
+        Whether to use cache filling with open by default. Refer to
+        ``S3File.open``.
     kwargs : other parameters for boto3 session
 
     Examples
@@ -114,9 +120,11 @@ class S3FileSystem(object):
     _singleton = [None]
     connect_timeout = 5
     read_timeout = 15
+    default_block_size = 5 * 2**20
 
     def __init__(self, anon=False, key=None, secret=None, token=None,
                  use_ssl=True, client_kwargs=None, requester_pays=False,
+                 default_block_size=None, default_fill_cache=True,
                  **kwargs):
         self.anon = anon
         self.key = key
@@ -126,6 +134,9 @@ class S3FileSystem(object):
 
         if client_kwargs is None:
             client_kwargs = {}
+        if default_block_size is not None:
+            self.default_block_size = default_block_size
+        self.default_fill_cache = default_fill_cache
         self.client_kwargs = client_kwargs
         self.dirs = {}
         self.req_kw = {'RequestPayer': 'requester'} if requester_pays else {}
@@ -218,8 +229,8 @@ class S3FileSystem(object):
         self.__dict__.update(state)
         self.s3 = self.connect()
 
-    def open(self, path, mode='rb', block_size=5 * 1024 ** 2, acl='',
-             fill_cache=True):
+    def open(self, path, mode='rb', block_size=None, acl='',
+             fill_cache=None):
         """ Open a file for reading or writing
 
         Parameters
@@ -236,6 +247,10 @@ class S3FileSystem(object):
             best support random access. When reading only a few specific chunks
             out of a file, performance may be better if False.
         """
+        if block_size is None:
+            block_size = self.default_block_size
+        if fill_cache is None:
+            fill_cache = self.default_fill_cache
         if 'b' not in mode:
             raise NotImplementedError("Text mode not supported, use mode='%s'"
                                       " and manage bytes" % (mode[0] + 'b'))
