@@ -14,7 +14,7 @@ class S3Map(MutableMapping):
     Parameters
     ----------
     root : string
-        prefix for all the files (perhaps justa  bucket name
+        prefix for all the files (perhaps just a bucket name)
     s3 : S3FileSystem
     check : bool (=True)
         performs a touch at the location, to check writeability.
@@ -51,7 +51,7 @@ class S3Map(MutableMapping):
         try:
             self.s3.rm(self.root, recursive=True)
         except (IOError, OSError):
-            # ignore non-existance of root
+            # ignore non-existence of root
             pass
 
     def _key_to_str(self, key):

@@ -89,13 +89,13 @@ class S3FileSystem(object):
         uses the key/secret given, or boto's credential resolver (environment
         variables, config files, EC2 IAM server, in that order)
     key : string (None)
-        If not anonymouns, use this key, if specified
+        If not anonymous, use this key, if specified
     secret : string (None)
         If not anonymous, use this password, if specified
     use_ssl : bool (True)
         Whether to use SSL in connections to S3; may be faster without, but
         insecure
-    client_kwargs : dict of paramaters for the boto3 client
+    client_kwargs : dict of parameters for the boto3 client
     requester_pays : bool (False)
         If RequesterPays buckets are supported.
     default_block_size: None, int
@@ -194,7 +194,7 @@ class S3FileSystem(object):
         return self._conn[tok]
 
     def get_delegated_s3pars(self, exp=3600):
-        """Get temporary credentials from STS, apropriate for sending across a
+        """Get temporary credentials from STS, appropriate for sending across a
         network. Only relevant where the key/secret were explicitly provided.
 
         Parameters
@@ -965,7 +965,7 @@ class S3File(object):
                 self.mpu = self.mpu or self.s3.s3.create_multipart_upload(
                                 Bucket=self.bucket, Key=self.key, ACL=self.acl)
             except (ClientError, ParamValidationError) as e:
-                raise IOError('Initating write failed: %s' % self.path, e)
+                raise IOError('Initiating write failed: %s' % self.path, e)
 
             while True:
                 try:
