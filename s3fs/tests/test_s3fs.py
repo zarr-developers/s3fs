@@ -466,6 +466,21 @@ def test_new_bucket(s3):
     with pytest.raises((IOError, OSError)):
         s3.ls('new')
 
+def test_dynamic_add_rm(s3):
+    s3.mkdir('one')
+    s3.mkdir('one/two')
+    assert s3.exists('one')
+    # The following ls is currently causing s3fs to tag 'one/two' as an empty
+    # key but NOT as a directory. 
+    s3.ls('one')
+    s3.touch("one/two/file_a")
+    assert s3.exists('one/two/file_a')
+    # Now 'one/two' should be tagged as a directory since it contains a file
+    # but this recursive rm does NOT find file_a unless another 'ls' is performed:
+    #s3.ls('one', refresh=True) #Retags 'one/two' as a DIRECTORY.
+    #The retagging should probably be done internally by the 'rm' method.
+    s3.rm('one', recursive=True)
+
 def test_write_small(s3):
     with s3.open(test_bucket_name+'/test', 'wb') as f:
         f.write(b'hello')

@@ -601,6 +601,7 @@ class S3FileSystem(object):
         if not self.exists(path):
             raise FileNotFoundError(path)
         if recursive:
+            #self.ls(path, refresh=True)
             self.bulk_delete(self.walk(path))
             if not self.exists(path):
                 return
