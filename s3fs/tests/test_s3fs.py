@@ -370,7 +370,7 @@ def test_errors(s3):
     with pytest.raises((IOError, OSError)):
         s3.open(test_bucket_name+'/tmp/test/shfoshf', 'rb')
 
-    ## This is fine, no need for interleving directories on S3
+    ## This is fine, no need for interleaving directories on S3
     #with pytest.raises((IOError, OSError)):
     #    s3.touch('tmp/test/shfoshf/x')
 

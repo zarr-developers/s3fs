@@ -51,7 +51,7 @@ Writing with blocked caching:
 
 .. code-block:: python
 
-   >>> s3 = s3fs.S3FileSystme(anon=False)  # uses default credentials
+   >>> s3 = s3fs.S3FileSystem(anon=False)  # uses default credentials
    >>> with s3.open('mybucket/new-file', 'wb') as f:
    ...     f.write(2*2**20 * b'a')
    ...     f.write(2*2**20 * b'a') # data is flushed and file closed
@@ -99,11 +99,11 @@ In a distributed environment, it is not expected that raw credentials should
 be passed between machines. In the explicitly provided credentials case, the
 method `get_delegated_s3pars()` can be used to obtain temporary credentials.
 When not using explicit credentials, it should be expected that every machine
-also has the apropriate environment variables, config files or IAM roles
+also has the appropriate environment variables, config files or IAM roles
 available.
 
 If none of the credential methods are available, only anonymous access will
-work, and `anon=True` must be passed to the sonstructor.
+work, and `anon=True` must be passed to the constructor.
 
 Furthermore, `S3FileSystem.current()` will return the most-recently created
 instance, so this method could be used in preference to the constructor in
@@ -117,12 +117,12 @@ Some buckets, such as the `arXiv raw data
 requester of the data pays any transfer fees.  You must be
 authenticated to access these buckets and (because these charges maybe
 unexpected) amazon requires an additional key on many of the API
-calls. To enable ``RequeterPays`` create your file system as
+calls. To enable ``RequesterPays`` create your file system as
 
 
 .. code-block:: python
 
-   >>> s3 = s3fs.S3FileSystme(anon=False, requester_pays=True)
+   >>> s3 = s3fs.S3FileSystem(anon=False, requester_pays=True)
 
 
 Contents
