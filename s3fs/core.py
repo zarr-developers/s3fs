@@ -364,6 +364,74 @@ class S3FileSystem(object):
             except (ClientError, ParamValidationError):
                 raise FileNotFoundError(path)
 
+    _metadata_cache = {}
+
+    def metadata(self, path, refresh=False):
+        """ Return metadata of path.
+
+        Metadata is cached unless `refresh=True`.
+
+        Parameters
+        ----------
+        path : string/bytes
+            filename to get metadata for
+        refresh : bool (=False)
+            if False, look in local cache for file metadata first
+        """
+        bucket, key = split_path(path)
+
+        if refresh or path not in self._metadata_cache:
+            response = self.s3.head_object(Bucket=bucket,
+                                           Key=key,
+                                           **self.req_kw)
+            self._metadata_cache[path] = response['Metadata']
+
+        return self._metadata_cache[path]
+
+    def getxattr(self, path, attr_name):
+        """ Get an attribute from the metadata.
+
+        Examples
+        --------
+        >>> mys3fs.getxattr('mykey', 'attribute_1')  # doctest: +SKIP
+        'value_1'
+        """
+        xattr = self.metadata(path)
+        if attr_name in xattr:
+            return xattr[attr_name]
+        return None
+
+    def setxattr(self, path, **kw_args):
+        """ Set metadata.
+
+        Attributes have to be of the form documented in the `Metadata Reference`_.
+
+        Examples
+        --------
+        >>> mys3file.setxattr(attribute_1='value1', attribute_2='value2')  # doctest: +SKIP
+
+        .. Metadata Reference:
+        http://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html#object-metadata
+        """
+
+        bucket, key = split_path(path)
+        metadata = self.metadata(path)
+        metadata.update(**kw_args)
+
+        # remove all keys that are None
+        for kw_key in kw_args:
+            if kw_args[kw_key] is None:
+                metadata.pop(kw_key, None)
+
+        self.s3.copy_object(CopySource="{}/{}".format(bucket, key),
+                            Bucket=bucket,
+                            Key=key,
+                            Metadata=metadata,
+                            MetadataDirective='REPLACE')
+
+        # refresh metadata
+        self.metadata(path, refresh=True)
+
     def _walk(self, path, refresh=False):
         if path.startswith('s3://'):
             path = path[len('s3://'):]
@@ -787,6 +855,35 @@ class S3File(object):
     def info(self):
         """ File information about this path """
         return self.s3.info(self.path)
+
+    def metadata(self, refresh=False):
+        """ Return metadata of file.
+        See :func:`~s3fs.S3Filesystem.metadata`.
+
+        Metadata is cached unless `refresh=True`.
+        """
+        return self.s3.metadata(self.path, refresh)
+
+    def getxattr(self, xattr_name):
+        """ Get an attribute from the metadata.
+        See :func:`~s3fs.S3Filesystem.getxattr`.
+
+        Examples
+        --------
+        >>> mys3file.getxattr('attribute_1')  # doctest: +SKIP
+        'value_1'
+        """
+        return self.s3.getxattr(self.path, xattr_name)
+
+    def setxattr(self, **kwargs):
+        """ Set metadata.
+        See :func:`~s3fs.S3Filesystem.setxattr`.
+
+        Examples
+        --------
+        >>> mys3file.setxattr(attribute_1='value1', attribute_2='value2')  # doctest: +SKIP
+        """
+        return self.s3.setxattr(self.path, **kwargs)
 
     def url(self):
         """ HTTP URL to read this file (if it already exists)
