@@ -125,6 +125,44 @@ def test_info(s3):
     assert a not in s3.ls(parent)
     assert s3.info(a)  # now uses head_object
 
+test_xattr_sample_metadata = {'test_xattr': '1'}
+
+def test_xattr(s3):
+    bucket, key = (test_bucket_name, 'tmp/test/xattr')
+    filename = bucket + '/' + key
+    body = b'aaaa'
+    public_read_acl = {'Permission': 'READ', 'Grantee': {'URI': 'http://acs.amazonaws.com/groups/global/AllUsers', 'Type': 'Group'}}
+
+    s3.s3.put_object(Bucket=bucket, Key=key,
+                     ACL='public-read',
+                     Metadata=test_xattr_sample_metadata,
+                     Body=body)
+
+    # save etag for later
+    etag = s3.info(filename)['ETag']
+    assert public_read_acl in s3.s3.get_object_acl(Bucket=bucket, Key=key)['Grants']
+
+    assert s3.getxattr(filename, 'test_xattr') == test_xattr_sample_metadata['test_xattr']
+    assert s3.metadata(filename) == test_xattr_sample_metadata
+
+    s3file = s3.open(filename)
+    assert s3file.getxattr('test_xattr') == test_xattr_sample_metadata['test_xattr']
+    assert s3file.metadata() == test_xattr_sample_metadata
+
+    s3file.setxattr(test_xattr='2')
+    assert s3file.getxattr('test_xattr') == '2'
+    s3file.setxattr(**{'test_xattr': None})
+    assert s3file.metadata() == {}
+    assert s3.cat(filename) == body
+
+    # check that ACL and ETag are preserved after updating metadata
+    assert public_read_acl in s3.s3.get_object_acl(Bucket=bucket, Key=key)['Grants']
+    assert s3.info(filename)['ETag'] == etag
+
+def test_xattr_setxattr_in_write_mode(s3):
+    s3file = s3.open(a, 'wb')
+    with pytest.raises(NotImplementedError):
+        s3file.setxattr(test_xattr='1')
 
 @pytest.mark.xfail()
 def test_delegate(s3):
