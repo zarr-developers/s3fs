@@ -406,6 +406,9 @@ class S3FileSystem(object):
 
         Attributes have to be of the form documented in the `Metadata Reference`_.
 
+        Parameters: key-value pairs like field="value", where the values must be strings. Does not alter existing fields, unless
+        the field appears here - if the value is None, delete the field.
+
         Examples
         --------
         >>> mys3file.setxattr(attribute_1='value1', attribute_2='value2')  # doctest: +SKIP
@@ -430,7 +433,7 @@ class S3FileSystem(object):
                             MetadataDirective='REPLACE')
 
         # refresh metadata
-        self.metadata(path, refresh=True)
+        self._metadata_cache[path] = metadata
 
     def _walk(self, path, refresh=False):
         if path.startswith('s3://'):
@@ -883,6 +886,8 @@ class S3File(object):
         --------
         >>> mys3file.setxattr(attribute_1='value1', attribute_2='value2')  # doctest: +SKIP
         """
+        if self.mode != 'rb':
+            raise NotImplementedError('cannot update metadata while file is open for writing')
         return self.s3.setxattr(self.path, **kwargs)
 
     def url(self):
