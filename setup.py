@@ -4,7 +4,7 @@ import os
 from setuptools import setup
 
 setup(name='s3fs',
-      version='0.0.8',
+      version='0.0.9',
       description='Convenient Filesystem interface over S3',
       url='http://github.com/dask/s3fs/',
       maintainer='Martin Durant',
