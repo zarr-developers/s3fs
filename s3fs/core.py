@@ -89,9 +89,11 @@ class S3FileSystem(object):
         uses the key/secret given, or boto's credential resolver (environment
         variables, config files, EC2 IAM server, in that order)
     key : string (None)
-        If not anonymous, use this key, if specified
+        If not anonymous, use this access key ID, if specified
     secret : string (None)
-        If not anonymous, use this password, if specified
+        If not anonymous, use this secret access key, if specified
+    token : string (None)
+        If not anonymous, use this security token, if specified
     use_ssl : bool (True)
         Whether to use SSL in connections to S3; may be faster without, but
         insecure
