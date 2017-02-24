@@ -106,6 +106,7 @@ class S3FileSystem(object):
     default_fill_cache: Bool (True)
         Whether to use cache filling with open by default. Refer to
         ``S3File.open``.
+    config_kwargs: dict of parameters passed to ``botocore.client.Config``
     kwargs : other parameters for boto3 session
 
     Examples
@@ -127,7 +128,7 @@ class S3FileSystem(object):
     def __init__(self, anon=False, key=None, secret=None, token=None,
                  use_ssl=True, client_kwargs=None, requester_pays=False,
                  default_block_size=None, default_fill_cache=True,
-                 **kwargs):
+                 config_kwargs=None, **kwargs):
         self.anon = anon
         self.key = key
         self.secret = secret
@@ -138,8 +139,11 @@ class S3FileSystem(object):
             client_kwargs = {}
         if default_block_size is not None:
             self.default_block_size = default_block_size
+        if config_kwargs is None:
+            config_kwargs = {}
         self.default_fill_cache = default_fill_cache
         self.client_kwargs = client_kwargs
+        self.config_kwargs = config_kwargs
         self.dirs = {}
         self.req_kw = {'RequestPayer': 'requester'} if requester_pays else {}
         self.use_ssl = use_ssl
@@ -182,11 +186,11 @@ class S3FileSystem(object):
             from botocore import UNSIGNED
             conf = Config(connect_timeout=self.connect_timeout,
                           read_timeout=self.read_timeout,
-                          signature_version=UNSIGNED)
+                          signature_version=UNSIGNED, **self.config_kwargs)
             self.session = boto3.Session(**self.kwargs)
         else:
             conf = Config(connect_timeout=self.connect_timeout,
-                          read_timeout=self.read_timeout)
+                          read_timeout=self.read_timeout, **self.config_kwargs)
             self.session = boto3.Session(self.key, self.secret, self.token,
                                          **self.kwargs)
         if tok not in self._conn:
