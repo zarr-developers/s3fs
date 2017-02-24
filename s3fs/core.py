@@ -103,10 +103,10 @@ class S3FileSystem(object):
     default_block_size: None, int
         If given, the default block size value used for ``open()``, if no
         specific value is given at all time. The built-in default is 5MB.
-    default_fill_cache: Bool (True)
+    default_fill_cache : Bool (True)
         Whether to use cache filling with open by default. Refer to
         ``S3File.open``.
-    config_kwargs: dict of parameters passed to ``botocore.client.Config``
+    config_kwargs : dict of parameters passed to ``botocore.client.Config``
     kwargs : other parameters for boto3 session
 
     Examples
