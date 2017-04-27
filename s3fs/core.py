@@ -71,6 +71,62 @@ buck_acls = {'private', 'public-read', 'public-read-write',
              'authenticated-read'}
 
 
+def title_case(string):
+    """
+    TitleCases a given string.
+
+    Parameters
+    ----------
+    string : underscore seperated string
+    """
+    return ''.join([x.capitalize() x for x in string.split('_')])
+
+
+
+
+
+class SSEParams(object):
+
+    def __init__(self, server_side_encryption=None, sse_cusomer_algorithm=None,
+            sse_customer_key=None, sse_kms_key_id=None):
+        self.ServerSideEncryption = server_side_encryption
+        self.SSECustomerAlgorithm = sse_cusomer_algorithm
+        self.SSECustomerKey = sse_customer_key
+        self.SSEKMSKeyId = sse_kms_key_id
+
+    def to_kwargs(self):
+        return {k: v for k, v in self.__dict__.items() if v is not None}
+
+
+class ParamKwargsHelper(object):
+    """
+    Utility class to help extract the subset of keys that an s3 method is
+    actually using
+
+    Parameters
+    ----------
+    s3 : S3FileSystem
+    """
+
+    def __init__(self, s3):
+        self.s3 = s3
+        self._kwarg_cache = {}
+
+    def _get_valid_keys(self, model_name):
+        if model_name not in self._kwarg_cache:
+            model = self.s3.meta.service_model.operation_model(model_name)
+            valid_keys = set(model.input_shape.members.keys())
+            self._kwarg_cache[model_name] = valid_keys
+        return self._kwarg_cache[model_name]
+
+    def filter_dict(self, method_name, d):
+        model_name = title_case(method_name)
+        valid_keys = self._get_valid_keys(model_name)
+        if isinstance(d, SSEParams):
+            d = d.to_kwargs()
+        return {k: v for k, v in d.items() if k in valid_keys}
+
+
 class S3FileSystem(object):
     """
     Access S3 as if it were a file system.
@@ -152,7 +208,19 @@ class S3FileSystem(object):
         self.writer_kwargs = writer_kwargs or {}
         self.use_ssl = use_ssl
         self.s3 = self.connect()
+        self._kwargs_helper = ParamKwargsHelper(s3)
         S3FileSystem._singleton[0] = self
+
+    def _filter_kwargs(self, s3_method, kwargs):
+        return self._kwargs_helper.filter_dict(s3_method.__name, kwargs)
+
+    def _call_s3(self, method, *akwarglist, **kwargs):
+        additional_kwargs = {}
+        for akwargs in akwarglist:
+            additional_kwargs.update(self._filter_kwargs(method, akwargs))
+        # Add the normal kwargs in
+        additional_kwargs.update(kwargs)
+        return method(**kwargs)
 
     @classmethod
     def current(cls):
@@ -442,13 +510,15 @@ class S3FileSystem(object):
             if kw_args[kw_key] is None:
                 metadata.pop(kw_key, None)
 
-        self.s3.copy_object(CopySource="{}/{}".format(bucket, key),
-                            Bucket=bucket,
-                            Key=key,
-                            Metadata=metadata,
-                            MetadataDirective='REPLACE',
-                            **self.writer_kwargs
-                            )
+        self._call_s3(
+            self.s3.copy_object,
+            self.writer_kwargs,
+            CopySource="{}/{}".format(bucket, key),
+            Bucket=bucket,
+            Key=key,
+            Metadata=metadata,
+            MetadataDirective='REPLACE',
+            )
 
         # refresh metadata
         self._metadata_cache[path] = metadata
@@ -627,9 +697,17 @@ class S3FileSystem(object):
             The paths, in order, to assemble into the final file.
         """
         bucket, key = split_path(path)
-        mpu = self.s3.create_multipart_upload(Bucket=bucket, Key=key, **self.writer_kwargs)
-        out = [self.s3.upload_part_copy(Bucket=bucket, Key=key, UploadId=mpu['UploadId'],
-                            CopySource=f, PartNumber=i+1) for (i, f) in enumerate(filelist)]
+        mpu = self._call_s3(
+            self.s3.create_multipart_upload,
+            self.writer_kwargs,
+            Bucket=bucket,
+            Key=key
+            )
+        out = [self._call_s3(
+                    self.s3.upload_part_copy,
+                    self.writer_kwargs,
+                    Bucket=bucket, Key=key, UploadId=mpu['UploadId'],
+                    CopySource=f, PartNumber=i+1) for (i, f) in enumerate(filelist)]
         parts = [{'PartNumber': i+1, 'ETag': o['CopyPartResult']['ETag']} for (i, o) in enumerate(out)]
         part_info = {'Parts': parts}
         self.s3.complete_multipart_upload(Bucket=bucket, Key=key,
@@ -641,9 +719,11 @@ class S3FileSystem(object):
         buc1, key1 = split_path(path1)
         buc2, key2 = split_path(path2)
         try:
-            self.s3.copy_object(Bucket=buc2, Key=key2,
-                                CopySource='/'.join([buc1, key1]),
-                                **self.writer_kwargs)
+            self._call_s3(
+                self.s3.copy_object,
+                self.writer_kwargs,
+                Bucket=buc2, Key=key2, CopySource='/'.join([buc1, key1])
+                )
         except (ClientError, ParamValidationError):
             raise IOError('Copy failed', (path1, path2))
         self.invalidate_cache(path2)
@@ -731,7 +811,10 @@ class S3FileSystem(object):
         if key:
             if acl and acl not in key_acls:
                 raise ValueError('ACL not in %s', key_acls)
-            self.s3.put_object(Bucket=bucket, Key=key, ACL=acl, **self.writer_kwargs)
+            self._call_s3(
+                self.s3.put_object,
+                self.writer_kwargs,
+                Bucket=bucket, Key=key, ACL=acl)
             self.invalidate_cache(path)
         else:
             if acl and acl not in buck_acls:
@@ -821,7 +904,7 @@ class S3File(object):
     """
 
     def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
-                 fill_cache=True):
+                 fill_cache=True, writer_kwargs=None):
         self.mode = mode
         if mode not in {'rb', 'wb', 'ab'}:
             raise NotImplementedError("File mode must be {'rb', 'wb', 'ab'}, not %s" % mode)
@@ -842,9 +925,11 @@ class S3File(object):
         self.mpu = None
         self.acl = acl
         self.fill_cache = fill_cache
+        self.writer_kwargs = {}
         if mode in {'wb', 'ab'}:
             if acl and acl not in key_acls:
                 raise ValueError('ACL not in %s', key_acls)
+            self.writer_kwargs = writer_kwargs or {}
             self.buffer = io.BytesIO()
             self.parts = []
             self.size = 0
@@ -858,15 +943,22 @@ class S3File(object):
                     self.write(s3.cat(path))
                 else:
                     try:
-                        self.mpu = s3.s3.create_multipart_upload(Bucket=bucket,
-                                Key=key, ACL=acl, **s3.writer_kwargs)
+                        self.mpu = self.s3._call_s3(
+                            self.s3.s3.create_multipart_upload,
+                            self.s3.writer_kwargs,
+                            self.writer_kwargs,
+                            Bucket=bucket, Key=key, ACL=acl)
                     except (ClientError, ParamValidationError) as e:
                         raise IOError('Open for write failed', path, e)
                     self.loc = self.size
-                    out = self.s3.s3.upload_part_copy(Bucket=self.bucket,
-                                Key=self.key, PartNumber=1,
-                                UploadId=self.mpu['UploadId'],
-                                CopySource=path)
+                    out = self.s3._call_s3(
+                        self.s3.s3.upload_part_copy,
+                        self.s3.writer_kwargs,
+                        self.writer_kwargs,
+                        Bucket=self.bucket,
+                        Key=self.key, PartNumber=1,
+                        UploadId=self.mpu['UploadId'],
+                        CopySource=path)
                     self.parts.append({'PartNumber': 1,
                                        'ETag': out['CopyPartResult']['ETag']})
         else:
@@ -874,6 +966,9 @@ class S3File(object):
                 self.size = self.info()['Size']
             except (ClientError, ParamValidationError):
                 raise IOError("File not accessible", path)
+
+    def _call_s3(self, method, **kwargs):
+        return self.s3._call_s3(method, self.s3.writer_kwargs, self.writer_kwargs, **kwargs)
 
     def info(self):
         """ File information about this path """
@@ -1084,15 +1179,16 @@ class S3File(object):
             i = 0
 
             try:
-                self.mpu = self.mpu or self.s3.s3.create_multipart_upload(
-                                Bucket=self.bucket, Key=self.key, ACL=self.acl,
-                                **self.s3.writer_kwargs)
+                self.mpu = self.mpu or self._call_s3(
+                    self.s3.s3.create_multipart_upload,
+                    Bucket=self.bucket, Key=self.key, ACL=self.acl)
             except (ClientError, ParamValidationError) as e:
                 raise IOError('Initiating write failed: %s' % self.path, e)
 
             while True:
                 try:
-                    out = self.s3.s3.upload_part(
+                    out = self._call_s3(
+                        self.s3.s3.upload_part,
                         Bucket=self.bucket,
                         PartNumber=part, UploadId=self.mpu['UploadId'],
                         Body=self.buffer.read(), Key=self.key)
@@ -1124,17 +1220,19 @@ class S3File(object):
             if self.parts:
                 self.flush(force=True)
                 part_info = {'Parts': self.parts}
-                self.s3.s3.complete_multipart_upload(Bucket=self.bucket,
-                                                     Key=self.key,
-                                                     UploadId=self.mpu[
-                                                         'UploadId'],
-                                                     MultipartUpload=part_info)
+                self._call_s3(
+                    self.s3.s3.complete_multipart_upload,
+                    Bucket=self.bucket,
+                    Key=self.key,
+                    UploadId=self.mpu['UploadId'],
+                    MultipartUpload=part_info)
             else:
                 self.buffer.seek(0)
                 try:
-                    self.s3.s3.put_object(Bucket=self.bucket, Key=self.key,
-                                          Body=self.buffer.read(), ACL=self.acl,
-                                          **self.s3.writer_kwargs)
+                    self._call_s3(
+                        self.s3.s3.put_object,
+                        Bucket=self.bucket, Key=self.key,
+                        Body=self.buffer.read(), ACL=self.acl)
                 except (ClientError, ParamValidationError) as e:
                     raise IOError('Write failed: %s' % self.path, e)
             self.s3.invalidate_cache(self.path)
