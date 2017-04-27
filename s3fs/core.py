@@ -79,10 +79,7 @@ def title_case(string):
     ----------
     string : underscore seperated string
     """
-    return ''.join([x.capitalize() x for x in string.split('_')])
-
-
-
+    return ''.join([x.capitalize() for x in string.split('_')])
 
 
 class SSEParams(object):
@@ -208,11 +205,11 @@ class S3FileSystem(object):
         self.writer_kwargs = writer_kwargs or {}
         self.use_ssl = use_ssl
         self.s3 = self.connect()
-        self._kwargs_helper = ParamKwargsHelper(s3)
+        self._kwargs_helper = ParamKwargsHelper(self.s3)
         S3FileSystem._singleton[0] = self
 
     def _filter_kwargs(self, s3_method, kwargs):
-        return self._kwargs_helper.filter_dict(s3_method.__name, kwargs)
+        return self._kwargs_helper.filter_dict(s3_method.__name__, kwargs)
 
     def _call_s3(self, method, *akwarglist, **kwargs):
         additional_kwargs = {}
@@ -303,6 +300,7 @@ class S3FileSystem(object):
         d = self.__dict__.copy()
         del d['s3']
         del d['session']
+        del d['_kwargs_helper']
         logger.debug("Serialize with state: %s", d)
         return d
 
@@ -310,6 +308,8 @@ class S3FileSystem(object):
         self.__dict__.update(state)
         self._conn = {}
         self.s3 = self.connect()
+        self._kwargs_helper = ParamKwargsHelper(self.s3)
+
 
     def open(self, path, mode='rb', block_size=None, acl='',
              fill_cache=None):
