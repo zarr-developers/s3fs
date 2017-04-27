@@ -97,6 +97,8 @@ class S3FileSystem(object):
     use_ssl : bool (True)
         Whether to use SSL in connections to S3; may be faster without, but
         insecure
+    writer_kwargs : dict of parameters that are used when writing data to s3.
+        Typically used for things like "ServerSideEncryption".
     client_kwargs : dict of parameters for the boto3 client
     requester_pays : bool (False)
         If RequesterPays buckets are supported.
@@ -128,7 +130,7 @@ class S3FileSystem(object):
     def __init__(self, anon=False, key=None, secret=None, token=None,
                  use_ssl=True, client_kwargs=None, requester_pays=False,
                  default_block_size=None, default_fill_cache=True,
-                 config_kwargs=None, **kwargs):
+                 config_kwargs=None, writer_kwargs=None, **kwargs):
         self.anon = anon
         self.session = None
         self.key = key
@@ -147,6 +149,7 @@ class S3FileSystem(object):
         self.config_kwargs = config_kwargs
         self.dirs = {}
         self.req_kw = {'RequestPayer': 'requester'} if requester_pays else {}
+        self.writer_kwargs = writer_kwargs or {}
         self.use_ssl = use_ssl
         self.s3 = self.connect()
         S3FileSystem._singleton[0] = self
@@ -443,7 +446,9 @@ class S3FileSystem(object):
                             Bucket=bucket,
                             Key=key,
                             Metadata=metadata,
-                            MetadataDirective='REPLACE')
+                            MetadataDirective='REPLACE',
+                            **self.s3.writer_kwargs,
+                            )
 
         # refresh metadata
         self._metadata_cache[path] = metadata
@@ -622,7 +627,7 @@ class S3FileSystem(object):
             The paths, in order, to assemble into the final file.
         """
         bucket, key = split_path(path)
-        mpu = self.s3.create_multipart_upload(Bucket=bucket, Key=key)
+        mpu = self.s3.create_multipart_upload(Bucket=bucket, Key=key, **self.s3.writer_kwargs)
         out = [self.s3.upload_part_copy(Bucket=bucket, Key=key, UploadId=mpu['UploadId'],
                             CopySource=f, PartNumber=i+1) for (i, f) in enumerate(filelist)]
         parts = [{'PartNumber': i+1, 'ETag': o['CopyPartResult']['ETag']} for (i, o) in enumerate(out)]
@@ -637,7 +642,8 @@ class S3FileSystem(object):
         buc2, key2 = split_path(path2)
         try:
             self.s3.copy_object(Bucket=buc2, Key=key2,
-                                CopySource='/'.join([buc1, key1]))
+                                CopySource='/'.join([buc1, key1]),
+                                **self.s3.writer_kwargs)
         except (ClientError, ParamValidationError):
             raise IOError('Copy failed', (path1, path2))
         self.invalidate_cache(path2)
@@ -725,7 +731,7 @@ class S3FileSystem(object):
         if key:
             if acl and acl not in key_acls:
                 raise ValueError('ACL not in %s', key_acls)
-            self.s3.put_object(Bucket=bucket, Key=key, ACL=acl)
+            self.s3.put_object(Bucket=bucket, Key=key, ACL=acl, **self.s3.writer_kwargs)
             self.invalidate_cache(path)
         else:
             if acl and acl not in buck_acls:
@@ -853,7 +859,7 @@ class S3File(object):
                 else:
                     try:
                         self.mpu = s3.s3.create_multipart_upload(Bucket=bucket,
-                                Key=key, ACL=acl)
+                                Key=key, ACL=acl, **s3.writer_kwargs)
                     except (ClientError, ParamValidationError) as e:
                         raise IOError('Open for write failed', path, e)
                     self.loc = self.size
@@ -1079,7 +1085,8 @@ class S3File(object):
 
             try:
                 self.mpu = self.mpu or self.s3.s3.create_multipart_upload(
-                                Bucket=self.bucket, Key=self.key, ACL=self.acl)
+                                Bucket=self.bucket, Key=self.key, ACL=self.acl,
+                                **self.s3.writer_kwargs)
             except (ClientError, ParamValidationError) as e:
                 raise IOError('Initiating write failed: %s' % self.path, e)
 
@@ -1126,7 +1133,8 @@ class S3File(object):
                 self.buffer.seek(0)
                 try:
                     self.s3.s3.put_object(Bucket=self.bucket, Key=self.key,
-                                          Body=self.buffer.read(), ACL=self.acl)
+                                          Body=self.buffer.read(), ACL=self.acl,
+                                          **self.s3.writer_kwargs)
                 except (ClientError, ParamValidationError) as e:
                     raise IOError('Write failed: %s' % self.path, e)
             self.s3.invalidate_cache(self.path)
