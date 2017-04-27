@@ -447,7 +447,7 @@ class S3FileSystem(object):
                             Key=key,
                             Metadata=metadata,
                             MetadataDirective='REPLACE',
-                            **self.s3.writer_kwargs,
+                            **self.writer_kwargs
                             )
 
         # refresh metadata
@@ -627,7 +627,7 @@ class S3FileSystem(object):
             The paths, in order, to assemble into the final file.
         """
         bucket, key = split_path(path)
-        mpu = self.s3.create_multipart_upload(Bucket=bucket, Key=key, **self.s3.writer_kwargs)
+        mpu = self.s3.create_multipart_upload(Bucket=bucket, Key=key, **self.writer_kwargs)
         out = [self.s3.upload_part_copy(Bucket=bucket, Key=key, UploadId=mpu['UploadId'],
                             CopySource=f, PartNumber=i+1) for (i, f) in enumerate(filelist)]
         parts = [{'PartNumber': i+1, 'ETag': o['CopyPartResult']['ETag']} for (i, o) in enumerate(out)]
@@ -643,7 +643,7 @@ class S3FileSystem(object):
         try:
             self.s3.copy_object(Bucket=buc2, Key=key2,
                                 CopySource='/'.join([buc1, key1]),
-                                **self.s3.writer_kwargs)
+                                **self.writer_kwargs)
         except (ClientError, ParamValidationError):
             raise IOError('Copy failed', (path1, path2))
         self.invalidate_cache(path2)
@@ -731,7 +731,7 @@ class S3FileSystem(object):
         if key:
             if acl and acl not in key_acls:
                 raise ValueError('ACL not in %s', key_acls)
-            self.s3.put_object(Bucket=bucket, Key=key, ACL=acl, **self.s3.writer_kwargs)
+            self.s3.put_object(Bucket=bucket, Key=key, ACL=acl, **self.writer_kwargs)
             self.invalidate_cache(path)
         else:
             if acl and acl not in buck_acls:
