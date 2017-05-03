@@ -65,8 +65,8 @@ def split_path(path):
         return path.split('/', 1)
 
 key_acls = {'private', 'public-read', 'public-read-write',
-             'authenticated-read', 'aws-exec-read', 'bucket-owner-read',
-             'bucket-owner-full-control'}
+            'authenticated-read', 'aws-exec-read', 'bucket-owner-read',
+            'bucket-owner-full-control'}
 buck_acls = {'private', 'public-read', 'public-read-write',
              'authenticated-read'}
 
@@ -130,6 +130,7 @@ class S3FileSystem(object):
                  default_block_size=None, default_fill_cache=True,
                  config_kwargs=None, **kwargs):
         self.anon = anon
+        self.session = None
         self.key = key
         self.secret = secret
         self.token = token
@@ -170,9 +171,9 @@ class S3FileSystem(object):
         refresh : bool (True)
             Whether to use cached filelists, if already read
         """
-        anon, key, secret, kwargs, ckwargs, token, ssl = \
-              (self.anon, self.key, self.secret, self.kwargs,
-               self.client_kwargs, self.token, self.use_ssl)
+        anon, key, secret, kwargs, ckwargs, token, ssl = (
+              self.anon, self.key, self.secret, self.kwargs,
+              self.client_kwargs, self.token, self.use_ssl)
 
         # Include the current PID in the connection key so that different
         # SSL connections are made for each process.
@@ -180,24 +181,27 @@ class S3FileSystem(object):
                        ssl, os.getpid())
         if refresh:
             self._conn.pop(tok, None)
-        logger.debug("Open S3 connection.  Anonymous: %s", self.anon)
-        if self.anon:
-            # TODO: test addition of kwargs (e.g., S3 data centre)
-            from botocore import UNSIGNED
-            conf = Config(connect_timeout=self.connect_timeout,
-                          read_timeout=self.read_timeout,
-                          signature_version=UNSIGNED, **self.config_kwargs)
-            self.session = boto3.Session(**self.kwargs)
-        else:
-            conf = Config(connect_timeout=self.connect_timeout,
-                          read_timeout=self.read_timeout, **self.config_kwargs)
-            self.session = boto3.Session(self.key, self.secret, self.token,
-                                         **self.kwargs)
         if tok not in self._conn:
+            logger.debug("Open S3 connection.  Anonymous: %s", self.anon)
+            if self.anon:
+                from botocore import UNSIGNED
+                conf = Config(connect_timeout=self.connect_timeout,
+                              read_timeout=self.read_timeout,
+                              signature_version=UNSIGNED, **self.config_kwargs)
+                self.session = boto3.Session(**self.kwargs)
+            else:
+                conf = Config(connect_timeout=self.connect_timeout,
+                              read_timeout=self.read_timeout,
+                              **self.config_kwargs)
+                self.session = boto3.Session(self.key, self.secret, self.token,
+                                             **self.kwargs)
             s3 = self.session.client('s3', config=conf, use_ssl=ssl,
                                      **self.client_kwargs)
-            self._conn[tok] = s3
-        return self._conn[tok]
+            self._conn[tok] = (s3, self.session)
+        else:
+            s3, session = self._conn[tok]
+            self.session = session
+        return s3
 
     def get_delegated_s3pars(self, exp=3600):
         """Get temporary credentials from STS, appropriate for sending across a
@@ -233,6 +237,7 @@ class S3FileSystem(object):
 
     def __setstate__(self, state):
         self.__dict__.update(state)
+        self._conn = {}
         self.s3 = self.connect()
 
     def open(self, path, mode='rb', block_size=None, acl='',
@@ -252,6 +257,8 @@ class S3FileSystem(object):
             with this True, the buffer will be filled between the sections to
             best support random access. When reading only a few specific chunks
             out of a file, performance may be better if False.
+        acl: str
+            Canned ACL to set when writing
         """
         if block_size is None:
             block_size = self.default_block_size
@@ -784,17 +791,17 @@ class S3File(object):
     Parameters
     ----------
     s3 : boto3 connection
-    bucket : string
-        S3 bucket to access
-    key : string
-        S3 key to access
-    blocksize : int
+    path : string
+        S3 bucket/key to access
+    block_size : int
         read-ahead size for finding delimiters
     fill_cache: bool
         If seeking to new a part of the file beyond the current buffer,
         with this True, the buffer will be filled between the sections to
         best support random access. When reading only a few specific chunks
         out of a file, performance may be better if False.
+    acl: str
+        Canned ACL to apply
 
     Examples
     --------
@@ -1078,9 +1085,10 @@ class S3File(object):
 
             while True:
                 try:
-                    out = self.s3.s3.upload_part(Bucket=self.bucket,
-                            PartNumber=part, UploadId=self.mpu['UploadId'],
-                            Body=self.buffer.read(), Key=self.key)
+                    out = self.s3.s3.upload_part(
+                        Bucket=self.bucket,
+                        PartNumber=part, UploadId=self.mpu['UploadId'],
+                        Body=self.buffer.read(), Key=self.key)
                     break
                 except S3_RETRYABLE_ERRORS:
                     if i < retries:
