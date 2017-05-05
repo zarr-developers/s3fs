@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
+import json
 from concurrent.futures import ProcessPoolExecutor
 import io
 import re
 import time
 import pytest
 from itertools import chain
-from s3fs.core import S3FileSystem
+from s3fs.core import S3FileSystem, SSEParams
 from s3fs.utils import seek_delimiter, ignoring, tmpfile
 import moto
 
 from botocore.exceptions import NoCredentialsError
 
 test_bucket_name = 'test'
+secure_bucket_name = 'test-secure'
 files = {'test/accounts.1.json':  (b'{"amount": 100, "name": "Alice"}\n'
                                    b'{"amount": 200, "name": "Bob"}\n'
                                    b'{"amount": 300, "name": "Charlie"}\n'
@@ -48,6 +50,29 @@ def s3():
     import boto3
     client = boto3.client('s3')
     client.create_bucket(Bucket=test_bucket_name, ACL='public-read')
+
+    # initialize secure bucket
+    bucket = client.create_bucket(Bucket=secure_bucket_name, ACL='public-read')
+    policy = json.dumps({
+        "Version": "2012-10-17",
+        "Id": "PutObjPolicy",
+        "Statement": [
+            {
+                "Sid": "DenyUnEncryptedObjectUploads",
+                "Effect": "Deny",
+                "Principal": "*",
+                "Action": "s3:PutObject",
+                "Resource": "arn:aws:s3:::{bucket_name}/*".format(bucket_name=secure_bucket_name),
+                "Condition": {
+                    "StringNotEquals": {
+                        "s3:x-amz-server-side-encryption": "aws:kms"
+                    }
+                }
+            }
+        ]
+    })
+    client.put_bucket_policy(Bucket=secure_bucket_name, Policy=policy)
+
     for k in [a, b, c, d]:
         try:
             client.delete_object(Bucket=test_bucket_name, Key=k)
@@ -61,11 +86,13 @@ def s3():
         for f, data in flist.items():
             try:
                 client.delete_object(Bucket=test_bucket_name, Key=f, Body=data)
+                client.delete_object(Bucket=secure_bucket_name, Key=f, Body=data)
             except:
                 pass
     for k in [a, b, c, d]:
         try:
             client.delete_object(Bucket=test_bucket_name, Key=k)
+            client.delete_object(Bucket=secure_bucket_name, Key=k)
         except:
             pass
     m.stop()
@@ -189,7 +216,7 @@ def test_not_delegate():
 
 
 def test_ls(s3):
-    assert s3.ls('') == [test_bucket_name]
+    assert set(s3.ls('')) == {test_bucket_name, secure_bucket_name}
     with pytest.raises((OSError, IOError)):
         s3.ls('nonexistent')
     fn = test_bucket_name+'/test/accounts.1.json'
@@ -447,6 +474,7 @@ def test_errors(s3):
     with pytest.raises(ValueError):
         s3.walk('s3://')
 
+
 def test_read_small(s3):
     fn = test_bucket_name+'/2014-01-01.csv'
     with s3.open(fn, 'rb', block_size=10) as f:
@@ -492,6 +520,7 @@ def test_read_s3_block(s3):
 
     assert s3.read_block(path, 5, None) == s3.read_block(path, 5, 1000)
 
+
 def test_new_bucket(s3):
     assert not s3.exists('new')
     s3.mkdir('new')
@@ -509,6 +538,7 @@ def test_new_bucket(s3):
     with pytest.raises((IOError, OSError)):
         s3.ls('new')
 
+
 def test_dynamic_add_rm(s3):
     s3.mkdir('one')
     s3.mkdir('one/two')
@@ -519,12 +549,26 @@ def test_dynamic_add_rm(s3):
     s3.rm('one', recursive=True)
     assert not s3.exists('one')
 
+
 def test_write_small(s3):
     with s3.open(test_bucket_name+'/test', 'wb') as f:
         f.write(b'hello')
     assert s3.cat(test_bucket_name+'/test') == b'hello'
     s3.open(test_bucket_name+'/test', 'wb').close()
     assert s3.info(test_bucket_name+'/test')['Size'] == 0
+
+
+def test_write_small_secure(s3):
+    # Unfortunately moto does not yet support enforcing SSE policies.  It also
+    # does not return the correct objects that can be used to test the results
+    # effectively.
+    # This test is left as a placeholder in case moto eventually supports this.
+    sse_params = SSEParams(server_side_encryption='aws:kms')
+    with s3.open(secure_bucket_name+'/test', 'wb', writer_kwargs=sse_params) as f:
+        f.write(b'hello')
+    assert s3.cat(secure_bucket_name+'/test') == b'hello'
+    head = s3.s3.head_object(Bucket=secure_bucket_name, Key='test')
+
 
 def test_write_fails(s3):
     with pytest.raises(NotImplementedError):
@@ -545,6 +589,7 @@ def test_write_fails(s3):
         f.write(b'hello')
     with pytest.raises((OSError, IOError)):
         s3.open('nonexistentbucket/temp', 'wb').close()
+
 
 def test_write_blocks(s3):
     with s3.open(test_bucket_name+'/temp', 'wb') as f:
@@ -573,6 +618,7 @@ def test_readline(s3):
                                                else b'')
             assert result == expected
 
+
 def test_readline_from_cache(s3):
     data = b'a,b\n11,22\n3,4'
     with s3.open(a, 'wb') as f:
@@ -594,6 +640,7 @@ def test_readline_from_cache(s3):
         assert f.loc == 13
         assert f.cache == data
 
+
 def test_readline_partial(s3):
     data = b'aaaaa,bbbbb\n12345,6789\n'
     with s3.open(a, 'wb') as f:
@@ -608,6 +655,7 @@ def test_readline_partial(s3):
         result = f.readline()
         assert result == b'12345,6789\n'
 
+
 def test_readline_empty(s3):
     data = b''
     with s3.open(a, 'wb') as f:
@@ -615,6 +663,7 @@ def test_readline_empty(s3):
     with s3.open(a, 'rb') as f:
         result = f.readline()
         assert result == data
+
 
 def test_readline_blocksize(s3):
     data = b'ab\n' + b'a' * (10 * 2**20) + b'\nab'
@@ -638,6 +687,7 @@ def test_next(s3):
     with s3.open(test_bucket_name + '/2014-01-01.csv') as f:
         result = next(f)
         assert result == expected
+
 
 def test_iterable(s3):
     data = b'abc\n123'
@@ -684,6 +734,7 @@ def test_writable(s3):
 
     with s3.open(a, 'rb') as f:
         assert not f.writable()
+
 
 def test_merge(s3):
     with s3.open(a, 'wb') as f:

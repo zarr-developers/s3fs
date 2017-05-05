@@ -84,10 +84,10 @@ def title_case(string):
 
 class SSEParams(object):
 
-    def __init__(self, server_side_encryption=None, sse_cusomer_algorithm=None,
-            sse_customer_key=None, sse_kms_key_id=None):
+    def __init__(self, server_side_encryption=None, sse_customer_algorithm=None,
+                 sse_customer_key=None, sse_kms_key_id=None):
         self.ServerSideEncryption = server_side_encryption
-        self.SSECustomerAlgorithm = sse_cusomer_algorithm
+        self.SSECustomerAlgorithm = sse_customer_algorithm
         self.SSECustomerKey = sse_customer_key
         self.SSEKMSKeyId = sse_kms_key_id
 
@@ -312,7 +312,7 @@ class S3FileSystem(object):
 
 
     def open(self, path, mode='rb', block_size=None, acl='',
-             fill_cache=None):
+             fill_cache=None, writer_kwargs=None):
         """ Open a file for reading or writing
 
         Parameters
@@ -330,6 +330,9 @@ class S3FileSystem(object):
             out of a file, performance may be better if False.
         acl: str
             Canned ACL to set when writing
+        writer_kwargs: dict-like
+            Additional parameters used for file writing.  Typically used for
+            ServerSideEncryption.
         """
         if block_size is None:
             block_size = self.default_block_size
@@ -339,7 +342,7 @@ class S3FileSystem(object):
             raise NotImplementedError("Text mode not supported, use mode='%s'"
                                       " and manage bytes" % (mode[0] + 'b'))
         return S3File(self, path, mode, block_size=block_size, acl=acl,
-                      fill_cache=fill_cache)
+                      fill_cache=fill_cache, writer_kwargs=writer_kwargs)
 
     def _lsdir(self, path, refresh=False):
         if path.startswith('s3://'):
@@ -656,10 +659,10 @@ class S3FileSystem(object):
                         break
                     f2.write(data)
 
-    def put(self, filename, path):
+    def put(self, filename, path, writer_kwargs=None):
         """ Stream data from local filename to file at path """
         with open(filename, 'rb') as f:
-            with self.open(path, 'wb') as f2:
+            with self.open(path, 'wb', writer_kwargs=writer_kwargs) as f2:
                 while True:
                     data = f.read(f2.blocksize)
                     if len(data) == 0:
