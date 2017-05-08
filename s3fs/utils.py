@@ -6,6 +6,8 @@ import tempfile
 import shutil
 import sys
 
+from s3fs.core import SSEParams
+
 PY2 = sys.version_info[0] == 2
 PY3 = sys.version_info[0] == 3
 
@@ -135,3 +137,43 @@ def ensure_writable(b):
     if PY2 and isinstance(b, array.array):
         return b.tostring()
     return b
+
+
+def title_case(string):
+    """
+    TitleCases a given string.
+
+    Parameters
+    ----------
+    string : underscore seperated string
+    """
+    return ''.join([x.capitalize() for x in string.split('_')])
+
+
+class ParamKwargsHelper(object):
+    """
+    Utility class to help extract the subset of keys that an s3 method is
+    actually using
+
+    Parameters
+    ----------
+    s3 : boto S3FileSystem
+    """
+    _kwarg_cache = {}
+
+    def __init__(self, s3):
+        self.s3 = s3
+
+    def _get_valid_keys(self, model_name):
+        if model_name not in self._kwarg_cache:
+            model = self.s3.meta.service_model.operation_model(model_name)
+            valid_keys = set(model.input_shape.members.keys())
+            self._kwarg_cache[model_name] = valid_keys
+        return self._kwarg_cache[model_name]
+
+    def filter_dict(self, method_name, d):
+        model_name = title_case(method_name)
+        valid_keys = self._get_valid_keys(model_name)
+        if isinstance(d, SSEParams):
+            d = d.to_kwargs()
+        return {k: v for k, v in d.items() if k in valid_keys}

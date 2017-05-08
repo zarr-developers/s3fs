@@ -8,9 +8,10 @@ from hashlib import md5
 
 import boto3
 import boto3.compat
-from botocore.exceptions import ClientError, ParamValidationError
 from botocore.client import Config
+from botocore.exceptions import ClientError, ParamValidationError
 
+from s3fs.utils import ParamKwargsHelper
 from .utils import read_block, raises, ensure_writable
 
 logger = logging.getLogger(__name__)
@@ -71,17 +72,6 @@ buck_acls = {'private', 'public-read', 'public-read-write',
              'authenticated-read'}
 
 
-def title_case(string):
-    """
-    TitleCases a given string.
-
-    Parameters
-    ----------
-    string : underscore seperated string
-    """
-    return ''.join([x.capitalize() for x in string.split('_')])
-
-
 class SSEParams(object):
 
     def __init__(self, server_side_encryption=None, sse_customer_algorithm=None,
@@ -93,35 +83,6 @@ class SSEParams(object):
 
     def to_kwargs(self):
         return {k: v for k, v in self.__dict__.items() if v is not None}
-
-
-class ParamKwargsHelper(object):
-    """
-    Utility class to help extract the subset of keys that an s3 method is
-    actually using
-
-    Parameters
-    ----------
-    s3 : S3FileSystem
-    """
-
-    def __init__(self, s3):
-        self.s3 = s3
-        self._kwarg_cache = {}
-
-    def _get_valid_keys(self, model_name):
-        if model_name not in self._kwarg_cache:
-            model = self.s3.meta.service_model.operation_model(model_name)
-            valid_keys = set(model.input_shape.members.keys())
-            self._kwarg_cache[model_name] = valid_keys
-        return self._kwarg_cache[model_name]
-
-    def filter_dict(self, method_name, d):
-        model_name = title_case(method_name)
-        valid_keys = self._get_valid_keys(model_name)
-        if isinstance(d, SSEParams):
-            d = d.to_kwargs()
-        return {k: v for k, v in d.items() if k in valid_keys}
 
 
 class S3FileSystem(object):
