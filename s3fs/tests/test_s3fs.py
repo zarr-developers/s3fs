@@ -6,8 +6,8 @@ import re
 import time
 import pytest
 from itertools import chain
-from s3fs.core import S3FileSystem, SSEParams
-from s3fs.utils import seek_delimiter, ignoring, tmpfile
+from s3fs.core import S3FileSystem
+from s3fs.utils import seek_delimiter, ignoring, tmpfile, SSEParams
 import moto
 
 from botocore.exceptions import NoCredentialsError

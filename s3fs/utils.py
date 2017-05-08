@@ -6,8 +6,6 @@ import tempfile
 import shutil
 import sys
 
-from s3fs.core import SSEParams
-
 PY2 = sys.version_info[0] == 2
 PY3 = sys.version_info[0] == 3
 
@@ -177,3 +175,16 @@ class ParamKwargsHelper(object):
         if isinstance(d, SSEParams):
             d = d.to_kwargs()
         return {k: v for k, v in d.items() if k in valid_keys}
+
+
+class SSEParams(object):
+
+    def __init__(self, server_side_encryption=None, sse_customer_algorithm=None,
+                 sse_customer_key=None, sse_kms_key_id=None):
+        self.ServerSideEncryption = server_side_encryption
+        self.SSECustomerAlgorithm = sse_customer_algorithm
+        self.SSECustomerKey = sse_customer_key
+        self.SSEKMSKeyId = sse_kms_key_id
+
+    def to_kwargs(self):
+        return {k: v for k, v in self.__dict__.items() if v is not None}

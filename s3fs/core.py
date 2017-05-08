@@ -72,19 +72,6 @@ buck_acls = {'private', 'public-read', 'public-read-write',
              'authenticated-read'}
 
 
-class SSEParams(object):
-
-    def __init__(self, server_side_encryption=None, sse_customer_algorithm=None,
-                 sse_customer_key=None, sse_kms_key_id=None):
-        self.ServerSideEncryption = server_side_encryption
-        self.SSECustomerAlgorithm = sse_customer_algorithm
-        self.SSECustomerKey = sse_customer_key
-        self.SSEKMSKeyId = sse_kms_key_id
-
-    def to_kwargs(self):
-        return {k: v for k, v in self.__dict__.items() if v is not None}
-
-
 class S3FileSystem(object):
     """
     Access S3 as if it were a file system.
