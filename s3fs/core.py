@@ -131,7 +131,7 @@ class S3FileSystem(object):
     def __init__(self, anon=False, key=None, secret=None, token=None,
                  use_ssl=True, client_kwargs=None, requester_pays=False,
                  default_block_size=None, default_fill_cache=True,
-                 config_kwargs=None, writer_kwargs=None, **kwargs):
+                 config_kwargs=None, s3_additional_kwargs=None, **kwargs):
         self.anon = anon
         self.session = None
         self.key = key
@@ -150,7 +150,7 @@ class S3FileSystem(object):
         self.config_kwargs = config_kwargs
         self.dirs = {}
         self.req_kw = {'RequestPayer': 'requester'} if requester_pays else {}
-        self.writer_kwargs = writer_kwargs or {}
+        self.s3_additional_kwargs = s3_additional_kwargs or {}
         self.use_ssl = use_ssl
         self.s3 = self.connect()
         self._kwargs_helper = ParamKwargsHelper(self.s3)
@@ -160,7 +160,7 @@ class S3FileSystem(object):
         return self._kwargs_helper.filter_dict(s3_method.__name__, kwargs)
 
     def _call_s3(self, method, *akwarglist, **kwargs):
-        additional_kwargs = {}
+        additional_kwargs = self.s3_additional_kwargs.copy()
         for akwargs in akwarglist:
             additional_kwargs.update(self._filter_kwargs(method, akwargs))
         # Add the normal kwargs in
@@ -258,9 +258,8 @@ class S3FileSystem(object):
         self.s3 = self.connect()
         self._kwargs_helper = ParamKwargsHelper(self.s3)
 
-
     def open(self, path, mode='rb', block_size=None, acl='',
-             fill_cache=None, writer_kwargs=None):
+             fill_cache=None, **kwargs):
         """ Open a file for reading or writing
 
         Parameters
@@ -278,7 +277,7 @@ class S3FileSystem(object):
             out of a file, performance may be better if False.
         acl: str
             Canned ACL to set when writing
-        writer_kwargs: dict-like
+        kwargs: dict-like
             Additional parameters used for file writing.  Typically used for
             ServerSideEncryption.
         """
@@ -290,7 +289,7 @@ class S3FileSystem(object):
             raise NotImplementedError("Text mode not supported, use mode='%s'"
                                       " and manage bytes" % (mode[0] + 'b'))
         return S3File(self, path, mode, block_size=block_size, acl=acl,
-                      fill_cache=fill_cache, writer_kwargs=writer_kwargs)
+                      fill_cache=fill_cache, s3_additional_kwargs=kwargs)
 
     def _lsdir(self, path, refresh=False):
         if path.startswith('s3://'):
@@ -300,7 +299,7 @@ class S3FileSystem(object):
         prefix = prefix + '/' if prefix else ""
         if path not in self.dirs or refresh:
             try:
-                pag = self.s3.get_paginator('list_objects')
+                pag = self.s3.get_paginator('list_objects_v2')
                 it = pag.paginate(Bucket=bucket, Prefix=prefix, Delimiter='/',
                                   **self.req_kw)
                 files = []
@@ -351,6 +350,8 @@ class S3FileSystem(object):
             otherwise, returns list of filenames
         refresh : bool (=False)
             if False, look in local cache for file details first
+        kwargs : dict
+            additional arguments passed on
         """
         if path.startswith('s3://'):
             path = path[len('s3://'):]
@@ -359,7 +360,7 @@ class S3FileSystem(object):
         else:
             return self._lsdir(path, refresh)
 
-    def ls(self, path, detail=False, refresh=False):
+    def ls(self, path, detail=False, refresh=False, **kwargs):
         """ List single "directory" with or without details """
         if path.startswith('s3://'):
             path = path[len('s3://'):]
@@ -367,7 +368,7 @@ class S3FileSystem(object):
         files = self._ls(path, refresh=refresh)
         if not files:
             if split_path(path)[1]:
-                files = [self.info(path)]
+                files = [self.info(path, **kwargs)]
             elif path:
                 raise FileNotFoundError(path)
         if detail:
@@ -375,7 +376,7 @@ class S3FileSystem(object):
         else:
             return [f['Key'] for f in files]
 
-    def info(self, path, refresh=False):
+    def info(self, path, refresh=False, **kwargs):
         """ Detail on the specific file pointed to by path.
 
         Gets details only for a specific key, directories/buckets cannot be
@@ -390,8 +391,8 @@ class S3FileSystem(object):
         else:
             try:
                 bucket, key = split_path(path)
-                out = self.s3.head_object(Bucket=bucket, Key=key,
-                                          **self.req_kw)
+                out = self._call_s3(self.s3.head_object,
+                                    kwargs, Bucket=bucket, Key=key, **self.req_kw)
                 out = {'ETag': out['ETag'], 'Key': '/'.join([bucket, key]),
                        'LastModified': out['LastModified'],
                        'Size': out['ContentLength'], 'StorageClass': "STANDARD"}
@@ -401,7 +402,7 @@ class S3FileSystem(object):
 
     _metadata_cache = {}
 
-    def metadata(self, path, refresh=False):
+    def metadata(self, path, refresh=False, **kwargs):
         """ Return metadata of path.
 
         Metadata is cached unless `refresh=True`.
@@ -416,14 +417,16 @@ class S3FileSystem(object):
         bucket, key = split_path(path)
 
         if refresh or path not in self._metadata_cache:
-            response = self.s3.head_object(Bucket=bucket,
-                                           Key=key,
-                                           **self.req_kw)
+            response = self._call_s3(self.s3.head_object,
+                                     kwargs,
+                                     Bucket=bucket,
+                                     Key=key,
+                                     **self.req_kw)
             self._metadata_cache[path] = response['Metadata']
 
         return self._metadata_cache[path]
 
-    def getxattr(self, path, attr_name):
+    def getxattr(self, path, attr_name, **kwargs):
         """ Get an attribute from the metadata.
 
         Examples
@@ -431,22 +434,29 @@ class S3FileSystem(object):
         >>> mys3fs.getxattr('mykey', 'attribute_1')  # doctest: +SKIP
         'value_1'
         """
-        xattr = self.metadata(path)
+        xattr = self.metadata(path, **kwargs)
         if attr_name in xattr:
             return xattr[attr_name]
         return None
 
-    def setxattr(self, path, **kw_args):
+    def setxattr(self, path, copy_kwargs=None, **kw_args):
         """ Set metadata.
 
         Attributes have to be of the form documented in the `Metadata Reference`_.
 
-        Parameters: key-value pairs like field="value", where the values must be strings. Does not alter existing fields, unless
-        the field appears here - if the value is None, delete the field.
+        Parameters
+        ---------
+        kw_args : key-value pairs like field="value", where the values must be strings. Does not alter existing fields, 
+            unless the field appears here - if the value is None, delete the field.
+        copy_args : dict, optional
+            dictionary of additional params to use for the underlying s3.copy_object.
 
         Examples
         --------
         >>> mys3file.setxattr(attribute_1='value1', attribute_2='value2')  # doctest: +SKIP
+        # Example for use with copy_args
+        >>> mys3file.setxattr(copy_kwargs={'ContentType': 'application/pdf'}, attribute_1='value1')  # doctest: +SKIP
+        
 
         .. Metadata Reference:
         http://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html#object-metadata
@@ -455,6 +465,7 @@ class S3FileSystem(object):
         bucket, key = split_path(path)
         metadata = self.metadata(path)
         metadata.update(**kw_args)
+        copy_kwargs = copy_kwargs or {}
 
         # remove all keys that are None
         for kw_key in kw_args:
@@ -463,7 +474,7 @@ class S3FileSystem(object):
 
         self._call_s3(
             self.s3.copy_object,
-            self.writer_kwargs,
+            copy_kwargs,
             CopySource="{}/{}".format(bucket, key),
             Bucket=bucket,
             Key=key,
@@ -490,7 +501,7 @@ class S3FileSystem(object):
         """ Return all real keys below path """
         return [f['Key'] for f in self._walk(path, refresh)]
 
-    def chmod(self, path, acl):
+    def chmod(self, path, acl, **kwargs):
         """ Set Access Control on a bucket/key
 
         See http://docs.aws.amazon.com/AmazonS3/latest/dev/acl-overview.html#canned-acl
@@ -506,11 +517,13 @@ class S3FileSystem(object):
         if key:
             if acl not in key_acls:
                 raise ValueError('ACL not in %s', key_acls)
-            self.s3.put_object_acl(Bucket=bucket, Key=key, ACL=acl)
+            self._call_s3(self.s3.put_object_acl,
+                          kwargs, Bucket=bucket, Key=key, ACL=acl)
         else:
             if acl not in buck_acls:
                 raise ValueError('ACL not in %s', buck_acls)
-            self.s3.put_bucket_acl(Bucket=bucket, ACL=acl)
+            self._call_s3(self.s3.put_bucket_acl,
+                          kwargs, Bucket=bucket, ACL=acl)
 
     def glob(self, path):
         """
@@ -543,11 +556,11 @@ class S3FileSystem(object):
             out = self.ls(path0)
         return out
 
-    def du(self, path, total=False, deep=False):
+    def du(self, path, total=False, deep=False, **kwargs):
         """ Bytes in keys at path """
         if deep:
             files = self.walk(path)
-            files = [self.info(f) for f in files]
+            files = [self.info(f, **kwargs) for f in files]
         else:
             files = self.ls(path, detail=True)
         if total:
@@ -563,26 +576,26 @@ class S3FileSystem(object):
         else:
             return True
 
-    def cat(self, path):
+    def cat(self, path, **kwargs):
         """ Returns contents of file """
-        with self.open(path, 'rb') as f:
+        with self.open(path, 'rb', **kwargs) as f:
             return f.read()
 
-    def tail(self, path, size=1024):
+    def tail(self, path, size=1024, **kwargs):
         """ Return last bytes of file """
-        length = self.info(path)['Size']
+        length = self.info(path, **kwargs)['Size']
         if size > length:
-            return self.cat(path)
-        with self.open(path, 'rb') as f:
+            return self.cat(path, **kwargs)
+        with self.open(path, 'rb', **kwargs) as f:
             f.seek(length - size)
             return f.read(size)
 
-    def head(self, path, size=1024):
+    def head(self, path, size=1024, **kwargs):
         """ Return first bytes of file """
-        with self.open(path, 'rb', block_size=size) as f:
+        with self.open(path, 'rb', block_size=size, **kwargs) as f:
             return f.read(size)
 
-    def url(self, path, expires=3600):
+    def url(self, path, expires=3600, **kwargs):
         """ Generate presigned URL to access path by HTTP
 
         Parameters
@@ -594,12 +607,12 @@ class S3FileSystem(object):
         """
         bucket, key = split_path(path)
         return self.s3.generate_presigned_url(ClientMethod='get_object',
-                                       Params={'Bucket': bucket, 'Key': key},
+                                       Params=dict(Bucket=bucket, Key=key, **kwargs),
                                        ExpiresIn=expires)
 
-    def get(self, path, filename):
+    def get(self, path, filename, **kwargs):
         """ Stream data from file at path to local filename """
-        with self.open(path, 'rb') as f:
+        with self.open(path, 'rb', **kwargs) as f:
             with open(filename, 'wb') as f2:
                 while True:
                     data = f.read(f.blocksize)
@@ -607,34 +620,34 @@ class S3FileSystem(object):
                         break
                     f2.write(data)
 
-    def put(self, filename, path, writer_kwargs=None):
+    def put(self, filename, path, **kwargs):
         """ Stream data from local filename to file at path """
         with open(filename, 'rb') as f:
-            with self.open(path, 'wb', writer_kwargs=writer_kwargs) as f2:
+            with self.open(path, 'wb', **kwargs) as f2:
                 while True:
                     data = f.read(f2.blocksize)
                     if len(data) == 0:
                         break
                     f2.write(data)
 
-    def mkdir(self, path, acl=""):
+    def mkdir(self, path, acl="", **kwargs):
         """ Make new bucket or empty key """
-        self.touch(path, acl=acl)
+        self.touch(path, acl=acl, **kwargs)
 
-    def rmdir(self, path):
+    def rmdir(self, path, **kwargs):
         """ Remove empty key or bucket """
         bucket, key = split_path(path)
         if (key and self.info(path)['Size'] == 0) or not key:
-            self.rm(path)
+            self.rm(path, **kwargs)
         else:
             raise IOError('Path is not directory-like', path)
 
-    def mv(self, path1, path2):
+    def mv(self, path1, path2, **kwargs):
         """ Move file between locations on S3 """
-        self.copy(path1, path2)
+        self.copy(path1, path2, **kwargs)
         self.rm(path1)
 
-    def merge(self, path, filelist):
+    def merge(self, path, filelist, **kwargs):
         """ Create single S3 file from list of S3 files
 
         Uses multi-part, no data is downloaded. The original files are
@@ -650,13 +663,13 @@ class S3FileSystem(object):
         bucket, key = split_path(path)
         mpu = self._call_s3(
             self.s3.create_multipart_upload,
-            self.writer_kwargs,
+            kwargs,
             Bucket=bucket,
             Key=key
             )
         out = [self._call_s3(
                     self.s3.upload_part_copy,
-                    self.writer_kwargs,
+                    kwargs,
                     Bucket=bucket, Key=key, UploadId=mpu['UploadId'],
                     CopySource=f, PartNumber=i+1) for (i, f) in enumerate(filelist)]
         parts = [{'PartNumber': i+1, 'ETag': o['CopyPartResult']['ETag']} for (i, o) in enumerate(out)]
@@ -665,21 +678,21 @@ class S3FileSystem(object):
                     UploadId=mpu['UploadId'], MultipartUpload=part_info)
         self.invalidate_cache(path)
 
-    def copy(self, path1, path2):
+    def copy(self, path1, path2, **kwargs):
         """ Copy file between locations on S3 """
         buc1, key1 = split_path(path1)
         buc2, key2 = split_path(path2)
         try:
             self._call_s3(
                 self.s3.copy_object,
-                self.writer_kwargs,
+                kwargs,
                 Bucket=buc2, Key=key2, CopySource='/'.join([buc1, key1])
                 )
         except (ClientError, ParamValidationError):
             raise IOError('Copy failed', (path1, path2))
         self.invalidate_cache(path2)
 
-    def bulk_delete(self, pathlist):
+    def bulk_delete(self, pathlist, **kwargs):
         """
         Remove multiple keys with one call
 
@@ -701,13 +714,16 @@ class S3FileSystem(object):
         delete_keys = {'Objects': [{'Key' : split_path(path)[1]} for path
                                    in pathlist]}
         try:
-            self.s3.delete_objects(Bucket=bucket, Delete=delete_keys)
+            self._call_s3(
+                self.s3.delete_objects,
+                kwargs,
+                Bucket=bucket, Delete=delete_keys)
             for path in pathlist:
                 self.invalidate_cache(path)
         except ClientError:
             raise IOError('Bulk delete failed')
 
-    def rm(self, path, recursive=False):
+    def rm(self, path, recursive=False, **kwargs):
         """
         Remove keys and/or bucket.
 
@@ -723,13 +739,14 @@ class S3FileSystem(object):
             raise FileNotFoundError(path)
         if recursive:
             self.invalidate_cache(path)
-            self.bulk_delete(self.walk(path))
+            self.bulk_delete(self.walk(path), **kwargs)
             if not self.exists(path):
                 return
         bucket, key = split_path(path)
         if key:
             try:
-                self.s3.delete_object(Bucket=bucket, Key=key)
+                self._call_s3(
+                    self.s3.delete_object, kwargs, Bucket=bucket, Key=key)
             except ClientError:
                 raise IOError('Delete key failed', (bucket, key))
             self.invalidate_cache(path)
@@ -752,7 +769,7 @@ class S3FileSystem(object):
             parent = path.rsplit('/', 1)[0]
             self.dirs.pop(parent, None)
 
-    def touch(self, path, acl=""):
+    def touch(self, path, acl="", **kwargs):
         """
         Create empty key
 
@@ -763,8 +780,7 @@ class S3FileSystem(object):
             if acl and acl not in key_acls:
                 raise ValueError('ACL not in %s', key_acls)
             self._call_s3(
-                self.s3.put_object,
-                self.writer_kwargs,
+                self.s3.put_object, kwargs,
                 Bucket=bucket, Key=key, ACL=acl)
             self.invalidate_cache(path)
         else:
@@ -777,7 +793,7 @@ class S3FileSystem(object):
             except (ClientError, ParamValidationError):
                 raise IOError('Bucket create failed', path)
 
-    def read_block(self, fn, offset, length, delimiter=None):
+    def read_block(self, fn, offset, length, delimiter=None, **kwargs):
         """ Read a block of bytes from an S3 file
 
         Starting at ``offset`` of the file, read ``length`` bytes.  If
@@ -814,7 +830,7 @@ class S3FileSystem(object):
         --------
         distributed.utils.read_block
         """
-        with self.open(fn, 'rb') as f:
+        with self.open(fn, 'rb', **kwargs) as f:
             size = f.info()['Size']
             if length is None:
                 length = size
@@ -855,7 +871,7 @@ class S3File(object):
     """
 
     def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
-                 fill_cache=True, writer_kwargs=None):
+                 fill_cache=True, s3_additional_kwargs=None):
         self.mode = mode
         if mode not in {'rb', 'wb', 'ab'}:
             raise NotImplementedError("File mode must be {'rb', 'wb', 'ab'}, not %s" % mode)
@@ -876,11 +892,10 @@ class S3File(object):
         self.mpu = None
         self.acl = acl
         self.fill_cache = fill_cache
-        self.writer_kwargs = {}
+        self.s3_additional_kwargs = s3_additional_kwargs or {}
         if mode in {'wb', 'ab'}:
             if acl and acl not in key_acls:
                 raise ValueError('ACL not in %s', key_acls)
-            self.writer_kwargs = writer_kwargs or {}
             self.buffer = io.BytesIO()
             self.parts = []
             self.size = 0
@@ -896,16 +911,14 @@ class S3File(object):
                     try:
                         self.mpu = self.s3._call_s3(
                             self.s3.s3.create_multipart_upload,
-                            self.s3.writer_kwargs,
-                            self.writer_kwargs,
+                            self.s3_additional_kwargs,
                             Bucket=bucket, Key=key, ACL=acl)
                     except (ClientError, ParamValidationError) as e:
                         raise IOError('Open for write failed', path, e)
                     self.loc = self.size
                     out = self.s3._call_s3(
                         self.s3.s3.upload_part_copy,
-                        self.s3.writer_kwargs,
-                        self.writer_kwargs,
+                        self.s3_additional_kwargs,
                         Bucket=self.bucket,
                         Key=self.key, PartNumber=1,
                         UploadId=self.mpu['UploadId'],
@@ -918,22 +931,22 @@ class S3File(object):
             except (ClientError, ParamValidationError):
                 raise IOError("File not accessible", path)
 
-    def _call_s3(self, method, **kwargs):
-        return self.s3._call_s3(method, self.s3.writer_kwargs, self.writer_kwargs, **kwargs)
+    def _call_s3(self, method, *kwarglist, **kwargs):
+        return self.s3._call_s3(method, self.s3_additional_kwargs, *kwarglist, **kwargs)
 
-    def info(self):
+    def info(self, **kwargs):
         """ File information about this path """
-        return self.s3.info(self.path)
+        return self.s3.info(self.path, **kwargs)
 
-    def metadata(self, refresh=False):
+    def metadata(self, refresh=False, **kwargs):
         """ Return metadata of file.
         See :func:`~s3fs.S3Filesystem.metadata`.
 
         Metadata is cached unless `refresh=True`.
         """
-        return self.s3.metadata(self.path, refresh)
+        return self.s3.metadata(self.path, refresh, **kwargs)
 
-    def getxattr(self, xattr_name):
+    def getxattr(self, xattr_name, **kwargs):
         """ Get an attribute from the metadata.
         See :func:`~s3fs.S3Filesystem.getxattr`.
 
@@ -942,9 +955,9 @@ class S3File(object):
         >>> mys3file.getxattr('attribute_1')  # doctest: +SKIP
         'value_1'
         """
-        return self.s3.getxattr(self.path, xattr_name)
+        return self.s3.getxattr(self.path, xattr_name, **kwargs)
 
-    def setxattr(self, **kwargs):
+    def setxattr(self, copy_kwargs=None, **kwargs):
         """ Set metadata.
         See :func:`~s3fs.S3Filesystem.setxattr`.
 
@@ -954,12 +967,12 @@ class S3File(object):
         """
         if self.mode != 'rb':
             raise NotImplementedError('cannot update metadata while file is open for writing')
-        return self.s3.setxattr(self.path, **kwargs)
+        return self.s3.setxattr(self.path, copy_kwargs=copy_kwargs, **kwargs)
 
-    def url(self):
+    def url(self, **kwargs):
         """ HTTP URL to read this file (if it already exists)
         """
-        return self.s3.url(self.path)
+        return self.s3.url(self.path, **kwargs)
 
     def tell(self):
         """ Current file location """
