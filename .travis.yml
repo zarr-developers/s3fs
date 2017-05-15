@@ -17,7 +17,7 @@ install:
   - conda update conda
 
   # Install dependencies
-  - conda create -n test python=$TRAVIS_PYTHON_VERSION pytest boto3 
+  - conda create -n test python=$TRAVIS_PYTHON_VERSION pytest boto3 mock
   - source activate test
   - pip install moto
 

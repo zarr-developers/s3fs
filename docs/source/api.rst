@@ -47,3 +47,12 @@ API
 .. currentmodule:: s3fs.mapping
 
 .. autoclass:: S3Map
+
+.. currentmodule:: s3fs.utils
+
+.. autoclass:: ParamKwargsHelper
+
+.. autoclass:: SSEParams
+
+
+
