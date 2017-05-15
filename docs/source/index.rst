@@ -125,6 +125,25 @@ calls. To enable ``RequesterPays`` create your file system as
    >>> s3 = s3fs.S3FileSystem(anon=False, requester_pays=True)
 
 
+Serverside Encryption
+---------------------
+
+For some buckets you are required to use some of the built in server side encryption
+arguments for the underlying s3 api calls.  s3fs supports these in a few ways
+
+
+.. code-block:: python
+
+   >>> s3 = s3fs.S3FileSystem(s3_additional_kwargs={'ServerSideEncryption': 'AES256'})
+
+This will create an s3 filesystem instance that will append the ServerSideEncryption
+argument to all s3 calls (where applicable).
+
+The same applies for `s3.open`.  Most of the methods on the filesystem object will also accept
+and forward keyword arguments to the underlying calls.  The most recently specified argument is
+applied last in the case where both `s3_additional_kwargs` and a method's `**kwargs` are used.
+
+
 Contents
 ========
 

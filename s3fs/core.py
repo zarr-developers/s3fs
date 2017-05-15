@@ -98,8 +98,8 @@ class S3FileSystem(object):
     use_ssl : bool (True)
         Whether to use SSL in connections to S3; may be faster without, but
         insecure
-    writer_kwargs : dict of parameters that are used when writing data to s3.
-        Typically used for things like "ServerSideEncryption".
+    s3_additional_kwargs : dict of parameters that are used when calling s3 api methods.
+           Typically used for things like "ServerSideEncryption".
     client_kwargs : dict of parameters for the boto3 client
     requester_pays : bool (False)
         If RequesterPays buckets are supported.
@@ -278,8 +278,7 @@ class S3FileSystem(object):
         acl: str
             Canned ACL to set when writing
         kwargs: dict-like
-            Additional parameters used for file writing.  Typically used for
-            ServerSideEncryption.
+            Additional parameters used for s3 methods.  Typically used for ServerSideEncryption.
         """
         if block_size is None:
             block_size = self.default_block_size
