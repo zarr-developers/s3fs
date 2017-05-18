@@ -165,7 +165,7 @@ class S3FileSystem(object):
             additional_kwargs.update(self._filter_kwargs(method, akwargs))
         # Add the normal kwargs in
         additional_kwargs.update(kwargs)
-        return method(**kwargs)
+        return method(**additional_kwargs)
 
     @classmethod
     def current(cls):
