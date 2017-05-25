@@ -578,11 +578,6 @@ def test_write_fails(s3):
         s3.open(test_bucket_name+'/temp', 'rb').write(b'hello')
     with pytest.raises(ValueError):
         s3.open(test_bucket_name+'/temp', 'wb', block_size=10)
-    with pytest.raises(ValueError):
-        with s3.open(test_bucket_name+'/temp', 'wb') as f:
-            f.write(b'hello')
-            f.flush()
-            f.write(b'world')
     f = s3.open(test_bucket_name+'/temp', 'wb')
     f.close()
     with pytest.raises(ValueError):
@@ -594,6 +589,9 @@ def test_write_fails(s3):
 def test_write_blocks(s3):
     with s3.open(test_bucket_name+'/temp', 'wb') as f:
         f.write(b'a' * 2*2**20)
+        assert f.buffer.tell() == 2*2**20
+        assert not(f.parts)
+        f.flush()
         assert f.buffer.tell() == 2*2**20
         assert not(f.parts)
         f.write(b'a' * 2*2**20)
