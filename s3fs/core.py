@@ -1092,7 +1092,7 @@ class S3File(object):
         """
         Write data to buffer.
 
-        Buffer only sent to S3 on flush() or if buffer is greater than or equal to blocksize.
+        Buffer only sent to S3 on close() or if buffer is greater than or equal to blocksize.
 
         Parameters
         ----------
@@ -1127,8 +1127,8 @@ class S3File(object):
         """
         if self.mode in {'wb', 'ab'} and not self.closed:
             if self.buffer.tell() < self.blocksize and not force:
-                raise ValueError('Parts must be greater than %s',
-                                 self.blocksize)
+                # ignore if not enough data for a block and not closing
+                return
             if self.buffer.tell() == 0:
                 # no data in the buffer to write
                 return
