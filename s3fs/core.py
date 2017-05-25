@@ -1117,8 +1117,7 @@ class S3File(object):
         the buffer is smaller than the block-size, this is a no-op.
 
         Due to S3 multi-upload policy, you can only safely force flush to S3
-        when you are finished writing.  It is unsafe to call this function
-        repeatedly.
+        when you are finished writing.
 
         Parameters
         ----------
