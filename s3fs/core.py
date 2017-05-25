@@ -1113,7 +1113,8 @@ class S3File(object):
         """
         Write buffered data to S3.
 
-        Uploads the current buffer, if it is larger than the block-size.
+        Uploads the current buffer, if it is larger than the block-size. If
+        the buffer is smaller than the block-size, this is a no-op.
 
         Due to S3 multi-upload policy, you can only safely force flush to S3
         when you are finished writing.  It is unsafe to call this function
