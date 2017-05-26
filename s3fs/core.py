@@ -154,7 +154,7 @@ class S3FileSystem(object):
         self.use_ssl = use_ssl
         self.s3 = self.connect()
         self._kwargs_helper = ParamKwargsHelper(self.s3)
-        self.__class__._singleton[0] = self
+        self._singleton[0] = self
 
     def _filter_kwargs(self, s3_method, kwargs):
         return self._kwargs_helper.filter_dict(s3_method.__name__, kwargs)
