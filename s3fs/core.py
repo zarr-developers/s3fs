@@ -154,7 +154,7 @@ class S3FileSystem(object):
         self.use_ssl = use_ssl
         self.s3 = self.connect()
         self._kwargs_helper = ParamKwargsHelper(self.s3)
-        S3FileSystem._singleton[0] = self
+        self._singleton[0] = self
 
     def _filter_kwargs(self, s3_method, kwargs):
         return self._kwargs_helper.filter_dict(s3_method.__name__, kwargs)
@@ -174,7 +174,7 @@ class S3FileSystem(object):
         If no S3FileSystem has been created, then create one
         """
         if not cls._singleton[0]:
-            return S3FileSystem()
+            return cls()
         else:
             return cls._singleton[0]
 
