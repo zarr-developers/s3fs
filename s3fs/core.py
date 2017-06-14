@@ -162,9 +162,11 @@ class S3FileSystem(object):
     def _call_s3(self, method, *akwarglist, **kwargs):
         additional_kwargs = self.s3_additional_kwargs.copy()
         for akwargs in akwarglist:
-            additional_kwargs.update(self._filter_kwargs(method, akwargs))
+            additional_kwargs.update(akwargs)
         # Add the normal kwargs in
         additional_kwargs.update(kwargs)
+        # filter all kwargs
+        additional_kwargs = self._filter_kwargs(method, additional_kwargs)
         return method(**additional_kwargs)
 
     @classmethod
@@ -445,7 +447,7 @@ class S3FileSystem(object):
 
         Parameters
         ---------
-        kw_args : key-value pairs like field="value", where the values must be strings. Does not alter existing fields, 
+        kw_args : key-value pairs like field="value", where the values must be strings. Does not alter existing fields,
             unless the field appears here - if the value is None, delete the field.
         copy_args : dict, optional
             dictionary of additional params to use for the underlying s3.copy_object.
@@ -455,7 +457,7 @@ class S3FileSystem(object):
         >>> mys3file.setxattr(attribute_1='value1', attribute_2='value2')  # doctest: +SKIP
         # Example for use with copy_args
         >>> mys3file.setxattr(copy_kwargs={'ContentType': 'application/pdf'}, attribute_1='value1')  # doctest: +SKIP
-        
+
 
         .. Metadata Reference:
         http://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html#object-metadata

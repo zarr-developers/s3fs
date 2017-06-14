@@ -569,6 +569,19 @@ def test_write_small_secure(s3):
     assert s3.cat(secure_bucket_name+'/test') == b'hello'
     head = s3.s3.head_object(Bucket=secure_bucket_name, Key='test')
 
+def test_write_large_secure(s3):
+    mock = moto.mock_s3()
+    mock.start()
+
+    # build our own s3fs with the relevant additional kwarg
+    s3 = S3FileSystem(s3_additional_kwargs = {'ServerSideEncryption': 'AES256'})
+    s3.mkdir('mybucket')
+
+    with s3.open('mybucket/myfile', 'wb') as f:
+        f.write(b'hello hello' * 10**6)
+
+    assert s3.cat('mybucket/myfile') == b'hello hello' * 10**6
+
 
 def test_write_fails(s3):
     with pytest.raises(NotImplementedError):
