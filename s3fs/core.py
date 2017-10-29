@@ -99,7 +99,7 @@ class S3FileSystem(object):
         Whether to use SSL in connections to S3; may be faster without, but
         insecure
     s3_additional_kwargs : dict of parameters that are used when calling s3 api methods.
-           Typically used for things like "ServerSideEncryption".
+        Typically used for things like "ServerSideEncryption".
     client_kwargs : dict of parameters for the boto3 client
     requester_pays : bool (False)
         If RequesterPays buckets are supported.
@@ -289,8 +289,11 @@ class S3FileSystem(object):
         if 'b' not in mode:
             raise NotImplementedError("Text mode not supported, use mode='%s'"
                                       " and manage bytes" % (mode[0] + 'b'))
+        acl = acl or self.s3_additional_kwargs.get('ACL', '')
+        kw = self.s3_additional_kwargs.copy()
+        kw.update(kwargs)
         return S3File(self, path, mode, block_size=block_size, acl=acl,
-                      fill_cache=fill_cache, s3_additional_kwargs=kwargs)
+                      fill_cache=fill_cache, s3_additional_kwargs=kw)
 
     def _lsdir(self, path, refresh=False):
         if path.startswith('s3://'):
@@ -633,6 +636,7 @@ class S3FileSystem(object):
 
     def mkdir(self, path, acl="", **kwargs):
         """ Make new bucket or empty key """
+        acl = acl or self.s3_additional_kwargs.get('ACL', '')
         self.touch(path, acl=acl, **kwargs)
 
     def rmdir(self, path, **kwargs):
@@ -777,6 +781,7 @@ class S3FileSystem(object):
         If path is a bucket only, attempt to create bucket.
         """
         bucket, key = split_path(path)
+        acl = acl or self.s3_additional_kwargs.get('ACL', '')
         if key:
             if acl and acl not in key_acls:
                 raise ValueError('ACL not in %s', key_acls)
