@@ -307,9 +307,9 @@ class S3FileSystem(object):
                 it = pag.paginate(Bucket=bucket, Prefix=prefix, Delimiter='/',
                                   **self.req_kw)
                 files = []
-                dirs = None
+                dirs = []
                 for i in it:
-                    dirs = dirs or i.get('CommonPrefixes', None)
+                    dirs.extend(i.get('CommonPrefixes', []))
                     files.extend(i.get('Contents', []))
                 if dirs:
                     files.extend([{'Key': l['Prefix'][:-1], 'Size': 0,
