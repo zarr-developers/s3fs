@@ -153,11 +153,14 @@ def test_info(s3):
     s3.touch(b)
     assert s3.info(a) == s3.ls(a, detail=True)[0]
     parent = a.rsplit('/', 1)[0]
-    s3.dirs[parent].pop(0)  # disappear our file!
-    assert a not in s3.ls(parent)
-    assert s3.info(a)  # now uses head_object
+    s3.dirs.pop(a)  # remove full path from the cache
+    s3.ls(parent)  # fill the cache with parent dir
+    assert s3.info(a) == s3.dirs[parent][0]  # correct value
+    assert id(s3.info(a)) == id(s3.dirs[parent][0])  # is object from cache
+
 
 test_xattr_sample_metadata = {'test_xattr': '1'}
+
 
 def test_xattr(s3):
     bucket, key = (test_bucket_name, 'tmp/test/xattr')
