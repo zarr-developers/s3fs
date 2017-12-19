@@ -6,6 +6,7 @@ import re
 import time
 import pytest
 from itertools import chain
+from os.path import join
 from s3fs.core import S3FileSystem
 from s3fs.utils import seek_delimiter, ignoring, tmpfile, SSEParams
 import moto
@@ -259,6 +260,17 @@ def test_rm(s3):
     s3.rm(test_bucket_name, recursive=True)
     assert not s3.exists(test_bucket_name+'/2014-01-01.csv')
     assert not s3.exists(test_bucket_name)
+
+
+def test_rmdir(s3):
+    s3.touch(a)
+    s3.touch(a + "/nested")
+    s3.touch(b)
+    parent = a.rsplit('/', 1)[0]
+    s3.rmdir(parent)  #  issue 109
+
+    with pytest.raises(IOError):  # doesn't delete non empty directory
+        s3.rmdir(test_bucket_name + "/nested")
 
 
 def test_bulk_delete(s3):

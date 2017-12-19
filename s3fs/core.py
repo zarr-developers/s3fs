@@ -405,7 +405,8 @@ class S3FileSystem(object):
                     'LastModified': out['LastModified'],
                     'Size': out['ContentLength'], 'StorageClass': "STANDARD"}
             return out
-        except (ClientError, ParamValidationError):
+        except (ClientError, ParamValidationError) as e:
+            logger.debug("Failed to head path %s", path, exc_info=True)
             raise FileNotFoundError(path)
 
     _metadata_cache = {}
@@ -646,7 +647,7 @@ class S3FileSystem(object):
     def rmdir(self, path, **kwargs):
         """ Remove empty key or bucket """
         bucket, key = split_path(path)
-        if (key and self.info(path)['Size'] == 0) or not key:
+        if (key and self.du(path, total=True) == 0) or not key:
             self.rm(path, **kwargs)
         else:
             raise IOError('Path is not directory-like', path)
