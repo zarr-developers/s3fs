@@ -266,11 +266,18 @@ def test_rmdir(s3):
     s3.touch(a)
     s3.touch(a + "/nested")
     s3.touch(b)
-    parent = a.rsplit('/', 1)[0]
-    s3.rmdir(parent)  #  issue 109
 
-    with pytest.raises(IOError):  # doesn't delete non empty directory
-        s3.rmdir(test_bucket_name + "/nested")
+    with pytest.raises(IOError, message="Directory is not empty"):  # doesn't delete non empty directory
+        s3.rmdir(a)
+
+    s3.rmdir(a + "/nested/")
+    s3.rmdir(a)
+    assert a not in s3.ls(test_bucket_name)
+
+    bucket = 'test1_bucket'
+    s3.mkdir(bucket)
+    s3.rmdir(bucket)
+    assert bucket not in s3.ls('/')
 
 
 def test_bulk_delete(s3):

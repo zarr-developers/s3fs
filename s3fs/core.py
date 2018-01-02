@@ -646,8 +646,11 @@ class S3FileSystem(object):
 
     def rmdir(self, path, **kwargs):
         """ Remove empty key or bucket """
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
+        path = path.rstrip('/')
         bucket, key = split_path(path)
-        if (key and self.du(path, total=True) == 0) or not key:
+        if ((key and self.du(path, total=True) == 0) or not key) and not self._ls(path):
             self.rm(path, **kwargs)
         else:
             raise IOError('Path is not directory-like', path)
