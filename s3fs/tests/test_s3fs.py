@@ -263,16 +263,18 @@ def test_rm(s3):
 
 
 def test_rmdir(s3):
+    nested = a + "/nested"
     s3.touch(a)
-    s3.touch(a + "/nested")
+    s3.touch(nested)
     s3.touch(b)
 
-    with pytest.raises(IOError, message="Directory is not empty"):  # doesn't delete non empty directory
+    with pytest.raises(IOError):  # doesn't delete non empty directory
         s3.rmdir(a)
 
-    s3.rmdir(a + "/nested/")
+    s3.rmdir(nested)
     s3.rmdir(a)
     assert a not in s3.ls(test_bucket_name)
+    assert nested not in s3.ls(test_bucket_name)
 
     bucket = 'test1_bucket'
     s3.mkdir(bucket)

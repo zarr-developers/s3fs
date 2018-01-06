@@ -650,7 +650,7 @@ class S3FileSystem(object):
             path = path[len('s3://'):]
         path = path.rstrip('/')
         bucket, key = split_path(path)
-        if ((key and self.du(path, total=True) == 0) or not key) and not self._ls(path):
+        if not self._ls(path) and ((key and self.info(path)['Size'] == 0) or not key):
             self.rm(path, **kwargs)
         else:
             raise IOError('Path is not directory-like', path)
