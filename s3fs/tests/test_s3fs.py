@@ -6,6 +6,7 @@ import re
 import time
 import pytest
 from itertools import chain
+from os.path import join
 from s3fs.core import S3FileSystem
 from s3fs.utils import seek_delimiter, ignoring, tmpfile, SSEParams
 import moto
@@ -153,11 +154,14 @@ def test_info(s3):
     s3.touch(b)
     assert s3.info(a) == s3.ls(a, detail=True)[0]
     parent = a.rsplit('/', 1)[0]
-    s3.dirs[parent].pop(0)  # disappear our file!
-    assert a not in s3.ls(parent)
-    assert s3.info(a)  # now uses head_object
+    s3.dirs.pop(a)  # remove full path from the cache
+    s3.ls(parent)  # fill the cache with parent dir
+    assert s3.info(a) == s3.dirs[parent][0]  # correct value
+    assert id(s3.info(a)) == id(s3.dirs[parent][0])  # is object from cache
+
 
 test_xattr_sample_metadata = {'test_xattr': '1'}
+
 
 def test_xattr(s3):
     bucket, key = (test_bucket_name, 'tmp/test/xattr')
@@ -256,6 +260,26 @@ def test_rm(s3):
     s3.rm(test_bucket_name, recursive=True)
     assert not s3.exists(test_bucket_name+'/2014-01-01.csv')
     assert not s3.exists(test_bucket_name)
+
+
+def test_rmdir(s3):
+    nested = a + "/nested"
+    s3.touch(a)
+    s3.touch(nested)
+    s3.touch(b)
+
+    with pytest.raises(IOError):  # doesn't delete non empty directory
+        s3.rmdir(a)
+
+    s3.rmdir(nested)
+    s3.rmdir(a)
+    assert a not in s3.ls(test_bucket_name)
+    assert nested not in s3.ls(test_bucket_name)
+
+    bucket = 'test1_bucket'
+    s3.mkdir(bucket)
+    s3.rmdir(bucket)
+    assert bucket not in s3.ls('/')
 
 
 def test_bulk_delete(s3):

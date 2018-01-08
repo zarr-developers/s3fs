@@ -380,29 +380,34 @@ class S3FileSystem(object):
         else:
             return [f['Key'] for f in files]
 
-    def info(self, path, refresh=False, **kwargs):
+    def info(self, path, **kwargs):
         """ Detail on the specific file pointed to by path.
 
         Gets details only for a specific key, directories/buckets cannot be
         used with info.
         """
         parent = path.rsplit('/', 1)[0]
-        files = self._lsdir(parent, refresh=refresh)
-        files = [f for f in files if f['Key'] == path and f['StorageClass'] not
-                 in ['DIRECTORY', 'BUCKET']]
-        if len(files) == 1:
-            return files[0]
-        else:
-            try:
-                bucket, key = split_path(path)
-                out = self._call_s3(self.s3.head_object,
-                                    kwargs, Bucket=bucket, Key=key, **self.req_kw)
-                out = {'ETag': out['ETag'], 'Key': '/'.join([bucket, key]),
-                       'LastModified': out['LastModified'],
-                       'Size': out['ContentLength'], 'StorageClass': "STANDARD"}
-                return out
-            except (ClientError, ParamValidationError):
-                raise FileNotFoundError(path)
+
+        if path in self.dirs:
+            files = self.dirs[path]
+            if len(files) == 1:
+                return files[0]
+        elif parent in self.dirs:
+            for f in self.dirs[parent]:
+                if f['Key'] == path:
+                    return f
+
+        try:
+            bucket, key = split_path(path)
+            out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
+                                Key=key, **self.req_kw)
+            out = {'ETag': out['ETag'], 'Key': '/'.join([bucket, key]),
+                    'LastModified': out['LastModified'],
+                    'Size': out['ContentLength'], 'StorageClass': "STANDARD"}
+            return out
+        except (ClientError, ParamValidationError) as e:
+            logger.debug("Failed to head path %s", path, exc_info=True)
+            raise FileNotFoundError(path)
 
     _metadata_cache = {}
 
@@ -641,8 +646,11 @@ class S3FileSystem(object):
 
     def rmdir(self, path, **kwargs):
         """ Remove empty key or bucket """
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
+        path = path.rstrip('/')
         bucket, key = split_path(path)
-        if (key and self.info(path)['Size'] == 0) or not key:
+        if not self._ls(path) and ((key and self.info(path)['Size'] == 0) or not key):
             self.rm(path, **kwargs)
         else:
             raise IOError('Path is not directory-like', path)
