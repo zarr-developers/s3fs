@@ -936,5 +936,6 @@ def test_default_pars(s3):
 def test_tags(s3):
     tagset = {'tag1': 'value1', 'tag2': 'value2'}
     fname = list(files)[0]
+    s3.touch(fname)
     s3.put_tags(fname, tagset)
     assert s3.get_tags(fname) == tagset
