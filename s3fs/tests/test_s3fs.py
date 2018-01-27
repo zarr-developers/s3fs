@@ -939,3 +939,10 @@ def test_default_pars(s3):
     with s3.open(fn, block_size=40, fill_cache=True) as f:
         assert f.blocksize == 40
         assert f.fill_cache is True
+
+
+def test_tags(s3):
+    tagset = {'tag1': 'value1', 'tag2': 'value2'}
+    fname = list(files)[0]
+    s3.put_tags(fname, tagset)
+    assert s3.get_tags(fname) == tagset
