@@ -1250,7 +1250,7 @@ class S3File(object):
                 except (ClientError, ParamValidationError) as e:
                     raise IOError('Write failed: %s' % self.path, e)
             self.s3.invalidate_cache(self.path)
-            self.parts.clear()
+            self.parts = []
             self.buffer = None
         self.closed = True
 
