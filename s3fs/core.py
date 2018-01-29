@@ -447,7 +447,7 @@ class S3FileSystem(object):
                                  Bucket=bucket, Key=key)
         return {v['Key']: v['Value'] for v in response['TagSet']}
 
-    def put_tags(self, path, tags):
+    def put_tags(self, path, tags, mode='o'):
         """Set tags for given existing key
 
         Tags are a str:str mapping that can be attached to any key, see
@@ -461,12 +461,24 @@ class S3FileSystem(object):
         path: str
             Existing key to attach tags to
         tags: dict str, str
-            Tags to apply. Will over-write any existing tags.
+            Tags to apply.
+        mode:
+            One of 'o' or 'm'
+            'o': Will over-write any existing tags.
+            'm': Will merge in new tags with existing tags.  Incurs two remote calls.
         """
         bucket, key = split_path(path)
-        tag = {'TagSet': [
-                   {'Key': k, 'Value': v} for k, v in tags.items()]
-               }
+
+        if mode == 'm':
+            existing_tags = self.get_tags(path=path)
+            existing_tags.update(tags)
+            new_tags = [{'Key': k, 'Value': v} for k, v in existing_tags.items()]
+        elif mode == 'o':
+            new_tags = [{'Key': k, 'Value': v} for k, v in tags.items()]
+        else:
+            raise ValueError("Mode must be {'o', 'm'}, not %s" % mode)
+
+        tag = {'TagSet': new_tags}
         self._call_s3(self.s3.put_object_tagging,
                       Bucket=bucket, Key=key, Tagging=tag)
 
