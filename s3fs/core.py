@@ -435,6 +435,41 @@ class S3FileSystem(object):
 
         return self._metadata_cache[path]
 
+    def get_tags(self, path):
+        """Retrieve tag key/values for the given path
+
+        Returns
+        -------
+        {str: str}
+        """
+        bucket, key = split_path(path)
+        response = self._call_s3(self.s3.get_object_tagging,
+                                 Bucket=bucket, Key=key)
+        return {v['Key']: v['Value'] for v in response['TagSet']}
+
+    def put_tags(self, path, tags):
+        """Set tags for given existing key
+
+        Tags are a str:str mapping that can be attached to any key, see
+        https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/allocation-tag-restrictions.html
+
+        This is similar to, but distinct from, key metadata, which is usually
+        set at key creation time.
+
+        Parameters
+        ----------
+        path: str
+            Existing key to attach tags to
+        tags: dict str, str
+            Tags to apply. Will over-write any existing tags.
+        """
+        bucket, key = split_path(path)
+        tag = {'TagSet': [
+                   {'Key': k, 'Value': v} for k, v in tags.items()]
+               }
+        self._call_s3(self.s3.put_object_tagging,
+                      Bucket=bucket, Key=key, Tagging=tag)
+
     def getxattr(self, path, attr_name, **kwargs):
         """ Get an attribute from the metadata.
 
@@ -946,7 +981,8 @@ class S3File(object):
                 raise IOError("File not accessible", path)
 
     def _call_s3(self, method, *kwarglist, **kwargs):
-        return self.s3._call_s3(method, self.s3_additional_kwargs, *kwarglist, **kwargs)
+        return self.s3._call_s3(method, self.s3_additional_kwargs, *kwarglist,
+                                **kwargs)
 
     def info(self, **kwargs):
         """ File information about this path """
@@ -1214,6 +1250,8 @@ class S3File(object):
                 except (ClientError, ParamValidationError) as e:
                     raise IOError('Write failed: %s' % self.path, e)
             self.s3.invalidate_cache(self.path)
+            self.parts = []
+            self.buffer = None
         self.closed = True
 
     def readable(self):

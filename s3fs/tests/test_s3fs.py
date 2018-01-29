@@ -892,24 +892,16 @@ def test_upload_with_s3fs_prefix(s3):
 def test_multipart_upload_blocksize(s3):
     blocksize = 5 * (2 ** 20)
     expected_parts = 3
-    with tmpfile() as fn:
-        # Create a tempfile of size `3 * blocksize`
-        with open(fn, 'wb') as f:
-            f.write(b'b' * expected_parts * blocksize)
 
-        # Write the file in chunks of size `blocksize`
-        # This is the same as `S3FileSystem.put`, but `put` doesn't give
-        # access to the S3File for testing
-        with open(fn, 'rb') as f:
-            with s3.open(a, 'wb', block_size=blocksize) as s3f:
-                while True:
-                    data = f.read(blocksize)
-                    if len(data) == 0:
-                        break
-                    s3f.write(data)
+    s3f = s3.open(a, 'wb', block_size=blocksize)
+    for _ in range(3):
+        data = b'b' * blocksize
+        s3f.write(data)
 
-        # Ensure that the multipart upload consists of only 3 parts
-        assert len(s3f.parts) == expected_parts
+    # Ensure that the multipart upload consists of only 3 parts
+    assert len(s3f.parts) == expected_parts
+    s3f.close()
+    assert len(s3f.parts) == 0
 
 
 def test_not_fill_cache(s3):
@@ -939,3 +931,11 @@ def test_default_pars(s3):
     with s3.open(fn, block_size=40, fill_cache=True) as f:
         assert f.blocksize == 40
         assert f.fill_cache is True
+
+
+def test_tags(s3):
+    tagset = {'tag1': 'value1', 'tag2': 'value2'}
+    fname = list(files)[0]
+    s3.touch(fname)
+    s3.put_tags(fname, tagset)
+    assert s3.get_tags(fname) == tagset
