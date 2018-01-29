@@ -471,13 +471,12 @@ class S3FileSystem(object):
 
         if mode == 'm':
             existing_tags = self.get_tags(path=path)
-            merged_tags = existing_tags.copy()
-            merged_tags.update(tags)
-            new_tags = [{'Key': k, 'Value': v} for k, v in merged_tags.items()]
+            existing_tags.update(tags)
+            new_tags = [{'Key': k, 'Value': v} for k, v in existing_tags.items()]
         elif mode == 'o':
             new_tags = [{'Key': k, 'Value': v} for k, v in tags.items()]
         else:
-            raise NotImplementedError("Mode must be {'o', 'm'}, not %s" % mode)
+            raise ValueError("Mode must be {'o', 'm'}, not %s" % mode)
 
         tag = {'TagSet': new_tags}
         self._call_s3(self.s3.put_object_tagging,

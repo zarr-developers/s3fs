@@ -939,3 +939,9 @@ def test_tags(s3):
     s3.touch(fname)
     s3.put_tags(fname, tagset)
     assert s3.get_tags(fname) == tagset
+
+    # Ensure merge mode updates value of existing key and adds new one
+    new_tagset = {'tag2': 'updatedvalue2', 'tag3': 'value3'}
+    tagset.update(new_tagset)
+    s3.put_tags(fname, tagset, mode='m')
+    assert s3.get_tags(fname) == tagset
