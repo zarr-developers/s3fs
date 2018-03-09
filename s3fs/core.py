@@ -160,14 +160,17 @@ class S3FileSystem(object):
         return self._kwargs_helper.filter_dict(s3_method.__name__, kwargs)
 
     def _call_s3(self, method, *akwarglist, **kwargs):
+        additional_kwargs = self._get_s3_method_kwargs(method, *akwarglist, **kwargs)
+        return method(**additional_kwargs)
+
+    def _get_s3_method_kwargs(self, method, *akwarglist, **kwargs):
         additional_kwargs = self.s3_additional_kwargs.copy()
         for akwargs in akwarglist:
             additional_kwargs.update(akwargs)
         # Add the normal kwargs in
         additional_kwargs.update(kwargs)
         # filter all kwargs
-        additional_kwargs = self._filter_kwargs(method, additional_kwargs)
-        return method(**additional_kwargs)
+        return self._filter_kwargs(method, additional_kwargs)
 
     @classmethod
     def current(cls):
@@ -738,7 +741,7 @@ class S3FileSystem(object):
                     UploadId=mpu['UploadId'], MultipartUpload=part_info)
         self.invalidate_cache(path)
 
-    def copy(self, path1, path2, **kwargs):
+    def copy_basic(self, path1, path2, **kwargs):
         """ Copy file between locations on S3 """
         buc1, key1 = split_path(path1)
         buc2, key2 = split_path(path2)
@@ -750,6 +753,29 @@ class S3FileSystem(object):
                 )
         except (ClientError, ParamValidationError):
             raise IOError('Copy failed', (path1, path2))
+
+    def copy_managed(self, path1, path2, **kwargs):
+        buc1, key1 = split_path(path1)
+        buc2, key2 = split_path(path2)
+        copy_source = {
+            'Bucket': buc1,
+            'Key': key1
+        }
+        try:
+            self.s3.copy(
+                CopySource=copy_source,
+                Bucket=buc2,
+                Key=key2,
+                ExtraArgs=self._get_s3_method_kwargs(
+                    self.s3.copy_object,
+                    kwargs
+                )
+            )
+        except (ClientError, ParamValidationError):
+            raise IOError('Copy failed', (path1, path2))
+
+    def copy(self, path1, path2, **kwargs):
+        self.copy_managed(path1, path2, **kwargs)
         self.invalidate_cache(path2)
 
     def bulk_delete(self, pathlist, **kwargs):

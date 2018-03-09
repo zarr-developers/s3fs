@@ -5,8 +5,8 @@ language: python
 matrix:
   include:
     - python: 2.7
-    - python: 3.4
     - python: 3.5
+    - python: 3.6
 
 install:
   # Install conda
@@ -17,9 +17,8 @@ install:
   - conda update conda
 
   # Install dependencies
-  - conda create -n test python=$TRAVIS_PYTHON_VERSION pytest boto3 mock
+  - conda create -n test -c conda-forge python=$TRAVIS_PYTHON_VERSION pytest mock moto boto3
   - source activate test
-  - pip install moto
 
 script:
   - py.test -x --doctest-modules --pyargs s3fs
