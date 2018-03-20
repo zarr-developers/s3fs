@@ -263,7 +263,7 @@ class S3FileSystem(object):
         self.s3 = self.connect()
         self._kwargs_helper = ParamKwargsHelper(self.s3)
 
-    def open(self, path, mode='rb', block_size=None, acl='',
+    def open(self, path, mode='rb', block_size=None, acl='', version_id=None,
              fill_cache=None, **kwargs):
         """ Open a file for reading or writing
 
@@ -295,7 +295,7 @@ class S3FileSystem(object):
         acl = acl or self.s3_additional_kwargs.get('ACL', '')
         kw = self.s3_additional_kwargs.copy()
         kw.update(kwargs)
-        return S3File(self, path, mode, block_size=block_size, acl=acl,
+        return S3File(self, path, mode, block_size=block_size, acl=acl, version_id=version_id,
                       fill_cache=fill_cache, s3_additional_kwargs=kw)
 
     def _lsdir(self, path, refresh=False):
@@ -383,7 +383,7 @@ class S3FileSystem(object):
         else:
             return [f['Key'] for f in files]
 
-    def info(self, path, **kwargs):
+    def info(self, path, version_id=None, **kwargs):
         """ Detail on the specific file pointed to by path.
 
         Gets details only for a specific key, directories/buckets cannot be
@@ -402,15 +402,33 @@ class S3FileSystem(object):
 
         try:
             bucket, key = split_path(path)
+            if version_id is not None:
+                kwargs['VersionId'] = version_id
             out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
                                 Key=key, **self.req_kw)
-            out = {'ETag': out['ETag'], 'Key': '/'.join([bucket, key]),
-                    'LastModified': out['LastModified'],
-                    'Size': out['ContentLength'], 'StorageClass': "STANDARD"}
+            out = {
+                'ETag': out['ETag'],
+                'Key': '/'.join([bucket, key]),
+                'LastModified': out['LastModified'],
+                'Size': out['ContentLength'],
+                'StorageClass': "STANDARD",
+                'VersionId': out.get('VersionId')
+            }
             return out
         except (ClientError, ParamValidationError) as e:
             logger.debug("Failed to head path %s", path, exc_info=True)
             raise FileNotFoundError(path)
+
+    def object_version_info(self, path, **kwargs):
+        bucket, key = split_path(path)
+        kwargs = {}
+        out = {'IsTruncated': True}
+        versions = []
+        while out['IsTruncated']:
+            out = self._call_s3(self.s3.list_object_versions, kwargs, Bucket=bucket, Prefix=key, **self.req_kw)
+            versions.extend(out['Versions'])
+            kwargs['VersionIdMarker'] = out.get('NextVersionIdMarker', '')
+        return versions
 
     _metadata_cache = {}
 
@@ -938,13 +956,16 @@ class S3File(object):
         S3 bucket/key to access
     block_size : int
         read-ahead size for finding delimiters
-    fill_cache: bool
+    fill_cache : bool
         If seeking to new a part of the file beyond the current buffer,
         with this True, the buffer will be filled between the sections to
         best support random access. When reading only a few specific chunks
         out of a file, performance may be better if False.
     acl: str
         Canned ACL to apply
+    version_id : str
+        Optional version to read the file at.  If not specified this will default to the current
+        version of the object.  This is only used for reading.
 
     Examples
     --------
@@ -957,7 +978,7 @@ class S3File(object):
     S3FileSystem.open: used to create ``S3File`` objects
     """
 
-    def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
+    def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="", version_id=None,
                  fill_cache=True, s3_additional_kwargs=None):
         self.mode = mode
         if mode not in {'rb', 'wb', 'ab'}:
@@ -977,6 +998,7 @@ class S3File(object):
         self.closed = False
         self.trim = True
         self.mpu = None
+        self.version_id = version_id
         self.acl = acl
         self.fill_cache = fill_cache
         self.s3_additional_kwargs = s3_additional_kwargs or {}
@@ -1014,7 +1036,9 @@ class S3File(object):
                                        'ETag': out['CopyPartResult']['ETag']})
         else:
             try:
-                self.size = self.info()['Size']
+                info = self.info()
+                self.size = info['Size']
+                self.version_id = info.get('VersionId')
             except (ClientError, ParamValidationError):
                 raise IOError("File not accessible", path)
 
@@ -1024,7 +1048,7 @@ class S3File(object):
 
     def info(self, **kwargs):
         """ File information about this path """
-        return self.s3.info(self.path, **kwargs)
+        return self.s3.info(self.path, version_id=self.version_id, **kwargs)
 
     def metadata(self, refresh=False, **kwargs):
         """ Return metadata of file.
@@ -1129,13 +1153,13 @@ class S3File(object):
             # First read
             self.start = start
             self.end = end + self.blocksize
-            self.cache = _fetch_range(self.s3.s3, self.bucket, self.key,
+            self.cache = _fetch_range(self.s3.s3, self.bucket, self.key, self.version_id,
                                       start, self.end, req_kw=self.s3.req_kw)
         if start < self.start:
             if not self.fill_cache and end + self.blocksize < self.start:
                 self.start, self.end = None, None
                 return self._fetch(start, end)
-            new = _fetch_range(self.s3.s3, self.bucket, self.key,
+            new = _fetch_range(self.s3.s3, self.bucket, self.key, self.version_id,
                                start, self.start, req_kw=self.s3.req_kw)
             self.start = start
             self.cache = new + self.cache
@@ -1145,7 +1169,7 @@ class S3File(object):
             if not self.fill_cache and start > self.end:
                 self.start, self.end = None, None
                 return self._fetch(start, end)
-            new = _fetch_range(self.s3.s3, self.bucket, self.key,
+            new = _fetch_range(self.s3.s3, self.bucket, self.key, self.version_id,
                                self.end, end + self.blocksize,
                                req_kw=self.s3.req_kw)
             self.end = end + self.blocksize
@@ -1319,15 +1343,20 @@ class S3File(object):
         self.close()
 
 
-def _fetch_range(client, bucket, key, start, end, max_attempts=10,
+def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,
                  req_kw=None):
     if req_kw is None:
         req_kw = {}
     logger.debug("Fetch: %s/%s, %s-%s", bucket, key, start, end)
     for i in range(max_attempts):
         try:
+            if version_id is not None:
+                kwargs = {'VersionId': version_id}
+            else:
+                kwargs = {}
             resp = client.get_object(Bucket=bucket, Key=key,
                                      Range='bytes=%i-%i' % (start, end - 1),
+                                     **kwargs,
                                      **req_kw)
             return resp['Body'].read()
         except S3_RETRYABLE_ERRORS as e:

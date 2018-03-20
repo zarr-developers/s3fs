@@ -15,6 +15,7 @@ from botocore.exceptions import NoCredentialsError
 
 test_bucket_name = 'test'
 secure_bucket_name = 'test-secure'
+versioned_bucket_name = 'test-versioned'
 files = {'test/accounts.1.json':  (b'{"amount": 100, "name": "Alice"}\n'
                                    b'{"amount": 200, "name": "Bob"}\n'
                                    b'{"amount": 300, "name": "Charlie"}\n'
@@ -51,6 +52,10 @@ def s3():
     import boto3
     client = boto3.client('s3')
     client.create_bucket(Bucket=test_bucket_name, ACL='public-read')
+
+    bucket = client.create_bucket(Bucket=versioned_bucket_name, ACL='public-read')
+    bucket_versioning = boto3.resource('s3').BucketVersioning(versioned_bucket_name)
+    bucket_versioning.enable()
 
     # initialize secure bucket
     bucket = client.create_bucket(Bucket=secure_bucket_name, ACL='public-read')
@@ -195,10 +200,12 @@ def test_xattr(s3):
     assert public_read_acl in s3.s3.get_object_acl(Bucket=bucket, Key=key)['Grants']
     assert s3.info(filename)['ETag'] == etag
 
+
 def test_xattr_setxattr_in_write_mode(s3):
     s3file = s3.open(a, 'wb')
     with pytest.raises(NotImplementedError):
         s3file.setxattr(test_xattr='1')
+
 
 @pytest.mark.xfail()
 def test_delegate(s3):
@@ -220,7 +227,7 @@ def test_not_delegate():
 
 
 def test_ls(s3):
-    assert set(s3.ls('')) == {test_bucket_name, secure_bucket_name}
+    assert set(s3.ls('')) == {test_bucket_name, secure_bucket_name, versioned_bucket_name}
     with pytest.raises((OSError, IOError)):
         s3.ls('nonexistent')
     fn = test_bucket_name+'/test/accounts.1.json'
@@ -946,3 +953,32 @@ def test_tags(s3):
     s3.put_tags(fname, new_tagset, mode='m')
     tagset.update(new_tagset)
     assert s3.get_tags(fname) == tagset
+
+
+def test_versions(s3):
+    versioned_file = versioned_bucket_name + '/versioned_file'
+    with s3.open(versioned_file, 'wb') as fo:
+        fo.write(b'1')
+    with s3.open(versioned_file, 'wb') as fo:
+        fo.write(b'2')
+    versions = s3.object_version_info(versioned_file)
+    assert len(versions) == 2
+
+    with s3.open(versioned_file) as fo:
+        assert fo.version_id == '1'
+        assert fo.read() == b'2'
+
+    with s3.open(versioned_file, version_id='0') as fo:
+        assert fo.version_id == '0'
+        assert fo.read() == b'1'
+
+
+def test_list_versions_many(s3):
+    # moto doesn't actually behave in the same way that s3 does here so this doesn't test
+    # anaything really in moto 1.2
+    versioned_file = versioned_bucket_name + '/versioned_file2'
+    for i in range(1200):
+        with s3.open(versioned_file, 'wb') as fo:
+            fo.write(b'1')
+    versions = s3.object_version_info(versioned_file)
+    assert len(versions) == 1200
