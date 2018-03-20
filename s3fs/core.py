@@ -383,22 +383,30 @@ class S3FileSystem(object):
         else:
             return [f['Key'] for f in files]
 
-    def info(self, path, version_id=None, **kwargs):
+    def info(self, path, version_id=None, refresh=False, **kwargs):
         """ Detail on the specific file pointed to by path.
 
         Gets details only for a specific key, directories/buckets cannot be
         used with info.
+
+        Parameters
+        ----------
+        version_id : str, optional
+            version of the key to perform the head_object on
+        refresh : bool
+            If true, don't look in the info cache
         """
         parent = path.rsplit('/', 1)[0]
 
-        if path in self.dirs:
-            files = self.dirs[path]
-            if len(files) == 1:
-                return files[0]
-        elif parent in self.dirs:
-            for f in self.dirs[parent]:
-                if f['Key'] == path:
-                    return f
+        if not refresh:
+            if path in self.dirs:
+                files = self.dirs[path]
+                if len(files) == 1:
+                    return files[0]
+            elif parent in self.dirs:
+                for f in self.dirs[parent]:
+                    if f['Key'] == path:
+                        return f
 
         try:
             bucket, key = split_path(path)
@@ -1048,7 +1056,7 @@ class S3File(object):
 
     def info(self, **kwargs):
         """ File information about this path """
-        return self.s3.info(self.path, version_id=self.version_id, **kwargs)
+        return self.s3.info(self.path, version_id=self.version_id, refresh=True, **kwargs)
 
     def metadata(self, refresh=False, **kwargs):
         """ Return metadata of file.
