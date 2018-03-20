@@ -1351,13 +1351,12 @@ def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,
     for i in range(max_attempts):
         try:
             if version_id is not None:
-                kwargs = {'VersionId': version_id}
+                kwargs = dict({'VersionId': version_id}, **req_kw)
             else:
-                kwargs = {}
+                kwargs = req_kw
             resp = client.get_object(Bucket=bucket, Key=key,
                                      Range='bytes=%i-%i' % (start, end - 1),
-                                     **kwargs,
-                                     **req_kw)
+                                     **kwargs)
             return resp['Body'].read()
         except S3_RETRYABLE_ERRORS as e:
             logger.debug('Exception %e on S3 download, retrying', e,
