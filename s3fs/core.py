@@ -584,6 +584,33 @@ class S3FileSystem(object):
             self._call_s3(self.s3.put_bucket_acl,
                           kwargs, Bucket=bucket, ACL=acl)
 
+    @staticmethod
+    def _normalize_slashes(path):
+        """Normalizes slashes (/) in path.
+
+        Specifically, replaces multiple consecutive slashes with a single slash
+        and removes any trailing slashes.
+        """
+        return re.sub(r"/+", "/", path).rstrip("/")
+
+    @staticmethod
+    def _compile_glob_to_re(glob_pattern):
+        """Translates a glob pattern into a compiled regex pattern.
+
+        Implementation follows `fnmatch.translate`.
+        """
+        regex = '^'
+        for c in glob_pattern:
+            if c == '*':
+                regex += '[^/]*'
+            elif c == '?':
+                regex += '.'
+            else:
+                regex += re.escape(c)
+        regex += '$'
+
+        return re.compile(regex)
+
     def glob(self, path):
         """
         Find files by glob-matching.
@@ -598,19 +625,18 @@ class S3FileSystem(object):
         if "*" in bucket:
             raise ValueError('Bucket cannot contain a "*"')
         if '*' not in path:
-            path = path.rstrip('/') + '/*'
-        if '/' in path[:path.index('*')]:
-            ind = path[:path.index('*')].rindex('/')
-            root = path[:ind + 1]
-        else:
-            root = '/'
+            path = path + '/*'
+
+        # A slash (/) is guaranteed to exist before the first occurrence of
+        # star (*) in the path: since the * is NOT in the bucket name, there
+        # must be a / between the bucket name and the *.
+        ind = path[:path.index('*')].rindex('/')
+        root = path[:ind + 1]
         allfiles = self.walk(root)
-        pattern = re.compile("^" + path.replace('//', '/')
-                             .rstrip('/')
-                             .replace('*', '[^/]*')
-                             .replace('?', '.') + "$")
-        out = [f for f in allfiles if re.match(pattern,
-               f.replace('//', '/').rstrip('/'))]
+
+        pattern = self._compile_glob_to_re(self._normalize_slashes(path))
+        out = [f for f in allfiles
+               if re.match(pattern, self._normalize_slashes(f))]
         if not out:
             out = self.ls(path0)
         return out
