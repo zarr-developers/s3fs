@@ -149,20 +149,6 @@ def title_case(string):
     return ''.join([x.capitalize() for x in string.split('_')])
 
 
-def normalize_slashes(path):
-    """
-    Returns a version of path where slashes (/) are normalized.
-
-    Specifically, replaces multiple consecutive slashes with a single slash
-    and removes any trailing slashes.
-
-    Parameters
-    ----------
-    path : the path to normalize
-    """
-    return re.sub(r"/+", "/", path).rstrip("/")
-
-
 class ParamKwargsHelper(object):
     """
     Utility class to help extract the subset of keys that an s3 method is

@@ -12,7 +12,7 @@ from botocore.client import Config
 from botocore.exceptions import ClientError, ParamValidationError
 
 from s3fs.utils import ParamKwargsHelper
-from .utils import read_block, raises, ensure_writable, normalize_slashes
+from .utils import read_block, raises, ensure_writable
 
 logger = logging.getLogger(__name__)
 
@@ -607,10 +607,9 @@ class S3FileSystem(object):
         root = path[:ind + 1]
         allfiles = self.walk(root)
 
-        glob_pattern = normalize_slashes(path)
         # Translate the glob pattern into regex (similar to `fnmatch`).
         regex_text = '^'
-        for c in glob_pattern:
+        for c in path:
             if c == '*':
                 regex_text += '[^/]*'
             elif c == '?':
@@ -620,7 +619,7 @@ class S3FileSystem(object):
         regex_text += '$'
         regex_pattern = re.compile(regex_text)
 
-        out = [f for f in allfiles if regex_pattern.match(normalize_slashes(f))]
+        out = [f for f in allfiles if regex_pattern.match(f)]
         if not out:
             out = self.ls(path0)
         return out
