@@ -5,6 +5,7 @@ import os
 import tempfile
 import shutil
 import sys
+import re
 
 PY2 = sys.version_info[0] == 2
 PY3 = sys.version_info[0] == 3
@@ -146,6 +147,20 @@ def title_case(string):
     string : underscore seperated string
     """
     return ''.join([x.capitalize() for x in string.split('_')])
+
+
+def normalize_slashes(path):
+    """
+    Returns a version of path where slashes (/) are normalized.
+
+    Specifically, replaces multiple consecutive slashes with a single slash
+    and removes any trailing slashes.
+
+    Parameters
+    ----------
+    path : the path to normalize
+    """
+    return re.sub(r"/+", "/", path).rstrip("/")
 
 
 class ParamKwargsHelper(object):

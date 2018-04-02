@@ -12,7 +12,7 @@ from botocore.client import Config
 from botocore.exceptions import ClientError, ParamValidationError
 
 from s3fs.utils import ParamKwargsHelper
-from .utils import read_block, raises, ensure_writable
+from .utils import read_block, raises, ensure_writable, normalize_slashes
 
 logger = logging.getLogger(__name__)
 
@@ -584,33 +584,6 @@ class S3FileSystem(object):
             self._call_s3(self.s3.put_bucket_acl,
                           kwargs, Bucket=bucket, ACL=acl)
 
-    @staticmethod
-    def _normalize_slashes(path):
-        """Normalizes slashes (/) in path.
-
-        Specifically, replaces multiple consecutive slashes with a single slash
-        and removes any trailing slashes.
-        """
-        return re.sub(r"/+", "/", path).rstrip("/")
-
-    @staticmethod
-    def _compile_glob_to_re(glob_pattern):
-        """Translates a glob pattern into a compiled regex pattern.
-
-        Implementation follows `fnmatch.translate`.
-        """
-        regex = '^'
-        for c in glob_pattern:
-            if c == '*':
-                regex += '[^/]*'
-            elif c == '?':
-                regex += '.'
-            else:
-                regex += re.escape(c)
-        regex += '$'
-
-        return re.compile(regex)
-
     def glob(self, path):
         """
         Find files by glob-matching.
@@ -634,9 +607,20 @@ class S3FileSystem(object):
         root = path[:ind + 1]
         allfiles = self.walk(root)
 
-        pattern = self._compile_glob_to_re(self._normalize_slashes(path))
-        out = [f for f in allfiles
-               if re.match(pattern, self._normalize_slashes(f))]
+        glob_pattern = normalize_slashes(path)
+        # Translate the glob pattern into regex (similar to `fnmatch`).
+        regex_text = '^'
+        for c in glob_pattern:
+            if c == '*':
+                regex_text += '[^/]*'
+            elif c == '?':
+                regex_text += '.'
+            else:
+                regex_text += re.escape(c)
+        regex_text += '$'
+        regex_pattern = re.compile(regex_text)
+
+        out = [f for f in allfiles if regex_pattern.match(normalize_slashes(f))]
         if not out:
             out = self.ls(path0)
         return out
