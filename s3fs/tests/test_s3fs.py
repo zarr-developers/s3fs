@@ -37,6 +37,8 @@ text_files = {'nested/file1': b'hello\n',
               'nested/file2': b'world',
               'nested/nested2/file1': b'hello\n',
               'nested/nested2/file2': b'world'}
+glob_files = {'file.dat': b'',
+              'filexdat': b''}
 a = test_bucket_name+'/tmp/test/a'
 b = test_bucket_name+'/tmp/test/b'
 c = test_bucket_name+'/tmp/test/c'
@@ -79,11 +81,11 @@ def s3():
             client.delete_object(Bucket=test_bucket_name, Key=k)
         except:
             pass
-    for flist in [files, csv_files, text_files]:
+    for flist in [files, csv_files, text_files, glob_files]:
         for f, data in flist.items():
             client.put_object(Bucket=test_bucket_name, Key=f, Body=data)
     yield S3FileSystem(anon=False)
-    for flist in [files, csv_files, text_files]:
+    for flist in [files, csv_files, text_files, glob_files]:
         for f, data in flist.items():
             try:
                 client.delete_object(Bucket=test_bucket_name, Key=f, Body=data)
@@ -372,6 +374,9 @@ def test_s3_glob(s3):
     with pytest.raises(ValueError):
         s3.glob('*')
 
+    # Make sure glob() deals with the dot character (.) correctly.
+    assert test_bucket_name+'/file.dat' in s3.glob(test_bucket_name+'/file.*')
+    assert test_bucket_name+'/filexdat' not in s3.glob(test_bucket_name+'/file.*')
 
 def test_get_list_of_summary_objects(s3):
     L = s3.ls(test_bucket_name + '/test')

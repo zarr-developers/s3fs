@@ -598,19 +598,28 @@ class S3FileSystem(object):
         if "*" in bucket:
             raise ValueError('Bucket cannot contain a "*"')
         if '*' not in path:
-            path = path.rstrip('/') + '/*'
-        if '/' in path[:path.index('*')]:
-            ind = path[:path.index('*')].rindex('/')
-            root = path[:ind + 1]
-        else:
-            root = '/'
+            path = path + '/*'
+
+        # A slash (/) is guaranteed to exist before the first occurrence of
+        # star (*) in the path: since the * is NOT in the bucket name, there
+        # must be a / between the bucket name and the *.
+        ind = path[:path.index('*')].rindex('/')
+        root = path[:ind + 1]
         allfiles = self.walk(root)
-        pattern = re.compile("^" + path.replace('//', '/')
-                             .rstrip('/')
-                             .replace('*', '[^/]*')
-                             .replace('?', '.') + "$")
-        out = [f for f in allfiles if re.match(pattern,
-               f.replace('//', '/').rstrip('/'))]
+
+        # Translate the glob pattern into regex (similar to `fnmatch`).
+        regex_text = '^'
+        for c in path:
+            if c == '*':
+                regex_text += '[^/]*'
+            elif c == '?':
+                regex_text += '.'
+            else:
+                regex_text += re.escape(c)
+        regex_text += '$'
+        regex_pattern = re.compile(regex_text)
+
+        out = [f for f in allfiles if regex_pattern.match(f)]
         if not out:
             out = self.ls(path0)
         return out
