@@ -957,6 +957,7 @@ def test_tags(s3):
 
 def test_versions(s3):
     versioned_file = versioned_bucket_name + '/versioned_file'
+    s3 = S3FileSystem(anon=False, version_aware=True)
     with s3.open(versioned_file, 'wb') as fo:
         fo.write(b'1')
     with s3.open(versioned_file, 'wb') as fo:
@@ -975,10 +976,28 @@ def test_versions(s3):
 
 def test_list_versions_many(s3):
     # moto doesn't actually behave in the same way that s3 does here so this doesn't test
-    # anaything really in moto 1.2
+    # anything really in moto 1.2
+    s3 = S3FileSystem(anon=False, version_aware=True)
     versioned_file = versioned_bucket_name + '/versioned_file2'
     for i in range(1200):
         with s3.open(versioned_file, 'wb') as fo:
             fo.write(b'1')
     versions = s3.object_version_info(versioned_file)
     assert len(versions) == 1200
+
+
+def test_versions_unaware(s3):
+    versioned_file = versioned_bucket_name + '/versioned_file3'
+    s3 = S3FileSystem(anon=False, version_aware=False)
+    with s3.open(versioned_file, 'wb') as fo:
+        fo.write(b'1')
+    with s3.open(versioned_file, 'wb') as fo:
+        fo.write(b'2')
+
+    with s3.open(versioned_file) as fo:
+        assert fo.version_id is None
+        assert fo.read() == b'2'
+
+    with pytest.raises(ValueError):
+        with s3.open(versioned_file, version_id='0'):
+            fo.read()
