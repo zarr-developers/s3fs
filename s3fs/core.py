@@ -109,6 +109,9 @@ class S3FileSystem(object):
     default_fill_cache : Bool (True)
         Whether to use cache filling with open by default. Refer to
         ``S3File.open``.
+    version_aware : bool (False)
+        Whether to support bucket versioning.  If enable this will require the user to
+        have the neccesary IAM permissions for dealing with versioned objects.
     config_kwargs : dict of parameters passed to ``botocore.client.Config``
     kwargs : other parameters for boto3 session
 
@@ -131,7 +134,8 @@ class S3FileSystem(object):
     def __init__(self, anon=False, key=None, secret=None, token=None,
                  use_ssl=True, client_kwargs=None, requester_pays=False,
                  default_block_size=None, default_fill_cache=True,
-                 config_kwargs=None, s3_additional_kwargs=None, **kwargs):
+                 version_aware=False, config_kwargs=None, s3_additional_kwargs=None,
+                 **kwargs):
         self.anon = anon
         self.session = None
         self.key = key
@@ -146,6 +150,7 @@ class S3FileSystem(object):
         if config_kwargs is None:
             config_kwargs = {}
         self.default_fill_cache = default_fill_cache
+        self.version_aware = version_aware
         self.client_kwargs = client_kwargs
         self.config_kwargs = config_kwargs
         self.dirs = {}
@@ -263,7 +268,7 @@ class S3FileSystem(object):
         self.s3 = self.connect()
         self._kwargs_helper = ParamKwargsHelper(self.s3)
 
-    def open(self, path, mode='rb', block_size=None, acl='',
+    def open(self, path, mode='rb', block_size=None, acl='', version_id=None,
              fill_cache=None, **kwargs):
         """ Open a file for reading or writing
 
@@ -282,6 +287,9 @@ class S3FileSystem(object):
             out of a file, performance may be better if False.
         acl: str
             Canned ACL to set when writing
+        version_id : str
+            Explicit version of the object to open.  This requires that the s3 filesystem is
+            version aware and bucket versioning is enabled on the relavant bucket.
         kwargs: dict-like
             Additional parameters used for s3 methods.  Typically used for ServerSideEncryption.
         """
@@ -295,7 +303,9 @@ class S3FileSystem(object):
         acl = acl or self.s3_additional_kwargs.get('ACL', '')
         kw = self.s3_additional_kwargs.copy()
         kw.update(kwargs)
-        return S3File(self, path, mode, block_size=block_size, acl=acl,
+        if not self.version_aware and version_id:
+            raise ValueError("version_id cannot be specified if the filesystem is not version aware")
+        return S3File(self, path, mode, block_size=block_size, acl=acl, version_id=version_id,
                       fill_cache=fill_cache, s3_additional_kwargs=kw)
 
     def _lsdir(self, path, refresh=False):
@@ -383,34 +393,64 @@ class S3FileSystem(object):
         else:
             return [f['Key'] for f in files]
 
-    def info(self, path, **kwargs):
+    def info(self, path, version_id=None, refresh=False, **kwargs):
         """ Detail on the specific file pointed to by path.
 
         Gets details only for a specific key, directories/buckets cannot be
         used with info.
+
+        Parameters
+        ----------
+        version_id : str, optional
+            version of the key to perform the head_object on
+        refresh : bool
+            If true, don't look in the info cache
         """
         parent = path.rsplit('/', 1)[0]
 
-        if path in self.dirs:
-            files = self.dirs[path]
-            if len(files) == 1:
-                return files[0]
-        elif parent in self.dirs:
-            for f in self.dirs[parent]:
-                if f['Key'] == path:
-                    return f
+        if not refresh:
+            if path in self.dirs:
+                files = self.dirs[path]
+                if len(files) == 1:
+                    return files[0]
+            elif parent in self.dirs:
+                for f in self.dirs[parent]:
+                    if f['Key'] == path:
+                        return f
 
         try:
             bucket, key = split_path(path)
+            if version_id is not None:
+                if not self.version_aware:
+                    raise ValueError("version_id cannot be specified if the filesystem is not version aware")
+                kwargs['VersionId'] = version_id
             out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
                                 Key=key, **self.req_kw)
-            out = {'ETag': out['ETag'], 'Key': '/'.join([bucket, key]),
-                    'LastModified': out['LastModified'],
-                    'Size': out['ContentLength'], 'StorageClass': "STANDARD"}
+            out = {
+                'ETag': out['ETag'],
+                'Key': '/'.join([bucket, key]),
+                'LastModified': out['LastModified'],
+                'Size': out['ContentLength'],
+                'StorageClass': "STANDARD",
+                'VersionId': out.get('VersionId')
+            }
             return out
         except (ClientError, ParamValidationError) as e:
             logger.debug("Failed to head path %s", path, exc_info=True)
             raise FileNotFoundError(path)
+
+    def object_version_info(self, path, **kwargs):
+        if not self.version_aware:
+            raise ValueError("version specific functionality is disabled for non-version aware filesystems")
+        bucket, key = split_path(path)
+        kwargs = {}
+        out = {'IsTruncated': True}
+        versions = []
+        while out['IsTruncated']:
+            out = self._call_s3(self.s3.list_object_versions, kwargs, Bucket=bucket, Prefix=key, **self.req_kw)
+            versions.extend(out['Versions'])
+            kwargs['VersionIdMarker'] = out.get('NextVersionIdMarker', '')
+        return versions
 
     _metadata_cache = {}
 
@@ -942,18 +982,22 @@ class S3File(object):
 
     Parameters
     ----------
-    s3 : boto3 connection
+    s3 : S3FileSystem
+        boto3 connection
     path : string
         S3 bucket/key to access
     block_size : int
         read-ahead size for finding delimiters
-    fill_cache: bool
+    fill_cache : bool
         If seeking to new a part of the file beyond the current buffer,
         with this True, the buffer will be filled between the sections to
         best support random access. When reading only a few specific chunks
         out of a file, performance may be better if False.
     acl: str
         Canned ACL to apply
+    version_id : str
+        Optional version to read the file at.  If not specified this will default to the current
+        version of the object.  This is only used for reading.
 
     Examples
     --------
@@ -966,7 +1010,7 @@ class S3File(object):
     S3FileSystem.open: used to create ``S3File`` objects
     """
 
-    def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
+    def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="", version_id=None,
                  fill_cache=True, s3_additional_kwargs=None):
         self.mode = mode
         if mode not in {'rb', 'wb', 'ab'}:
@@ -986,6 +1030,7 @@ class S3File(object):
         self.closed = False
         self.trim = True
         self.mpu = None
+        self.version_id = version_id
         self.acl = acl
         self.fill_cache = fill_cache
         self.s3_additional_kwargs = s3_additional_kwargs or {}
@@ -1023,7 +1068,10 @@ class S3File(object):
                                        'ETag': out['CopyPartResult']['ETag']})
         else:
             try:
-                self.size = self.info()['Size']
+                info = self.info()
+                self.size = info['Size']
+                if self.s3.version_aware:
+                    self.version_id = info.get('VersionId')
             except (ClientError, ParamValidationError):
                 raise IOError("File not accessible", path)
 
@@ -1033,7 +1081,12 @@ class S3File(object):
 
     def info(self, **kwargs):
         """ File information about this path """
-        return self.s3.info(self.path, **kwargs)
+        # When the bucket is version aware we need to explicitly get the correct filesize and
+        # for the particular version.  In the case where self.version_id is None, this will be the
+        # most recent version.
+        refresh = self.s3.version_aware
+        return self.s3.info(self.path, version_id=self.version_id, refresh=refresh,
+                            **kwargs)
 
     def metadata(self, refresh=False, **kwargs):
         """ Return metadata of file.
@@ -1134,17 +1187,22 @@ class S3File(object):
         return list(self)
 
     def _fetch(self, start, end):
+        # if we have not enabled version_aware then we should use the latest version.
+        if self.s3.version_aware:
+            version_id = self.version_id
+        else:
+            version_id = None
         if self.start is None and self.end is None:
             # First read
             self.start = start
             self.end = end + self.blocksize
-            self.cache = _fetch_range(self.s3.s3, self.bucket, self.key,
+            self.cache = _fetch_range(self.s3.s3, self.bucket, self.key, version_id,
                                       start, self.end, req_kw=self.s3.req_kw)
         if start < self.start:
             if not self.fill_cache and end + self.blocksize < self.start:
                 self.start, self.end = None, None
                 return self._fetch(start, end)
-            new = _fetch_range(self.s3.s3, self.bucket, self.key,
+            new = _fetch_range(self.s3.s3, self.bucket, self.key, version_id,
                                start, self.start, req_kw=self.s3.req_kw)
             self.start = start
             self.cache = new + self.cache
@@ -1154,7 +1212,7 @@ class S3File(object):
             if not self.fill_cache and start > self.end:
                 self.start, self.end = None, None
                 return self._fetch(start, end)
-            new = _fetch_range(self.s3.s3, self.bucket, self.key,
+            new = _fetch_range(self.s3.s3, self.bucket, self.key, version_id,
                                self.end, end + self.blocksize,
                                req_kw=self.s3.req_kw)
             self.end = end + self.blocksize
@@ -1328,16 +1386,20 @@ class S3File(object):
         self.close()
 
 
-def _fetch_range(client, bucket, key, start, end, max_attempts=10,
+def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,
                  req_kw=None):
     if req_kw is None:
         req_kw = {}
     logger.debug("Fetch: %s/%s, %s-%s", bucket, key, start, end)
     for i in range(max_attempts):
         try:
+            if version_id is not None:
+                kwargs = dict({'VersionId': version_id}, **req_kw)
+            else:
+                kwargs = req_kw
             resp = client.get_object(Bucket=bucket, Key=key,
                                      Range='bytes=%i-%i' % (start, end - 1),
-                                     **req_kw)
+                                     **kwargs)
             return resp['Body'].read()
         except S3_RETRYABLE_ERRORS as e:
             logger.debug('Exception %e on S3 download, retrying', e,

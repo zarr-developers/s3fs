@@ -150,6 +150,33 @@ encryption parameters in particular.  An instance can be passed instead of a
 regular python dictionary as the `s3_additional_kwargs` parameter.
 
 
+Bucket Version Awareness
+------------------------
+
+If your bucket has object versioning enabled then you can add version-aware support
+to s3fs.  This ensures that if a file is opened at a particular point in time that
+version will be used for reading.
+
+This mitigates the issue where more than one user is concurrently reading and writing
+to the same object.
+
+.. code-block:: python
+
+   s3 = s3fs.S3FileSytem(version_aware=True)
+
+   # Open the file at the latest version
+   fo = s3.open('versioned_bucket/object')
+
+   versions = s3.object_version_info('versioned_bucket/object')
+
+   # open the file at a particular version
+   fo_old_version = s3.open('versioned_bucket/object', version_id='SOMEVERSIONID')
+   >>>
+
+In order for this to function the user must have the necessary IAM permissions to perform
+a GetObjectVersion
+
+
 Contents
 ========
 
