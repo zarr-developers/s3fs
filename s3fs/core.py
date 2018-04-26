@@ -584,7 +584,7 @@ class S3FileSystem(object):
         # refresh metadata
         self._metadata_cache[path] = metadata
 
-    def _walk(self, path, refresh=False):
+    def _walk(self, path, refresh=False, directories=False):
         if path.startswith('s3://'):
             path = path[len('s3://'):]
         if path in ['', '/']:
@@ -594,11 +594,11 @@ class S3FileSystem(object):
             if f['StorageClass'] == 'DIRECTORY':
                 filenames.extend(self._walk(f['Key'], refresh))
         return [f for f in filenames if f['StorageClass'] not in
-                ['BUCKET', 'DIRECTORY']]
+                (['BUCKET'] + ['DIRECTORY'] if not directories else [])]
 
-    def walk(self, path, refresh=False):
+    def walk(self, path, refresh=False, directories=False):
         """ Return all real keys below path """
-        return [f['Key'] for f in self._walk(path, refresh)]
+        return [f['Key'] for f in self._walk(path, refresh, directories)]
 
     def chmod(self, path, acl, **kwargs):
         """ Set Access Control on a bucket/key
@@ -645,10 +645,10 @@ class S3FileSystem(object):
         # must be a / between the bucket name and the *.
         ind = path[:path.index('*')].rindex('/')
         root = path[:ind + 1]
-        allfiles = self.walk(root)
+        allfiles = self.walk(root, directories=True)
 
         # Translate the glob pattern into regex (similar to `fnmatch`).
-        regex_text = '^'
+        regex_text = ''
         for c in path:
             if c == '*':
                 regex_text += '[^/]*'
@@ -657,9 +657,11 @@ class S3FileSystem(object):
             else:
                 regex_text += re.escape(c)
         regex_text += '$'
+
         regex_pattern = re.compile(regex_text)
 
-        out = [f for f in allfiles if regex_pattern.match(f)]
+        out = set([f for f in allfiles for m in [regex_pattern.match(f)] if m])
+
         if not out:
             out = self.ls(path0)
         return out
