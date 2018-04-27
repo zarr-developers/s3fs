@@ -70,14 +70,12 @@ def seek_delimiter(file, delimiter, blocksize):
         last = full[-len(delimiter):]
 
 
-
 def read_block(f, offset, length, delimiter=None):
     """ Read a block of bytes from a file
 
     Parameters
     ----------
-    fn: string
-        Path to filename on S3
+    f: file
     offset: int
         Byte offset to start read
     length: int
@@ -120,8 +118,8 @@ def read_block(f, offset, length, delimiter=None):
         length = end - start
 
     f.seek(offset)
-    bytes = f.read(length)
-    return bytes
+    b = f.read(length)
+    return b
 
 
 def raises(exc, lamda):
