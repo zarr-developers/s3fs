@@ -6,7 +6,6 @@ import re
 import time
 import pytest
 from itertools import chain
-from os.path import join
 from s3fs.core import S3FileSystem
 from s3fs.utils import seek_delimiter, ignoring, tmpfile, SSEParams
 import moto
@@ -49,61 +48,63 @@ d = test_bucket_name+'/tmp/test/d'
 @pytest.yield_fixture
 def s3():
     # writable local S3 system
-    m = moto.mock_s3()
-    m.start()
-    import boto3
-    client = boto3.client('s3')
-    client.create_bucket(Bucket=test_bucket_name, ACL='public-read')
+    try:
+        m = moto.mock_s3()
+        m.start()
+        import boto3
+        client = boto3.client('s3')
+        client.create_bucket(Bucket=test_bucket_name, ACL='public-read')
 
-    bucket = client.create_bucket(Bucket=versioned_bucket_name, ACL='public-read')
-    bucket_versioning = boto3.resource('s3').BucketVersioning(versioned_bucket_name)
-    bucket_versioning.enable()
+        bucket = client.create_bucket(Bucket=versioned_bucket_name, ACL='public-read')
+        bucket_versioning = boto3.resource('s3').BucketVersioning(versioned_bucket_name)
+        bucket_versioning.enable()
 
-    # initialize secure bucket
-    bucket = client.create_bucket(Bucket=secure_bucket_name, ACL='public-read')
-    policy = json.dumps({
-        "Version": "2012-10-17",
-        "Id": "PutObjPolicy",
-        "Statement": [
-            {
-                "Sid": "DenyUnEncryptedObjectUploads",
-                "Effect": "Deny",
-                "Principal": "*",
-                "Action": "s3:PutObject",
-                "Resource": "arn:aws:s3:::{bucket_name}/*".format(bucket_name=secure_bucket_name),
-                "Condition": {
-                    "StringNotEquals": {
-                        "s3:x-amz-server-side-encryption": "aws:kms"
+        # initialize secure bucket
+        bucket = client.create_bucket(Bucket=secure_bucket_name, ACL='public-read')
+        policy = json.dumps({
+            "Version": "2012-10-17",
+            "Id": "PutObjPolicy",
+            "Statement": [
+                {
+                    "Sid": "DenyUnEncryptedObjectUploads",
+                    "Effect": "Deny",
+                    "Principal": "*",
+                    "Action": "s3:PutObject",
+                    "Resource": "arn:aws:s3:::{bucket_name}/*".format(bucket_name=secure_bucket_name),
+                    "Condition": {
+                        "StringNotEquals": {
+                            "s3:x-amz-server-side-encryption": "aws:kms"
+                        }
                     }
                 }
-            }
-        ]
-    })
-    client.put_bucket_policy(Bucket=secure_bucket_name, Policy=policy)
+            ]
+        })
+        client.put_bucket_policy(Bucket=secure_bucket_name, Policy=policy)
 
-    for k in [a, b, c, d]:
-        try:
-            client.delete_object(Bucket=test_bucket_name, Key=k)
-        except:
-            pass
-    for flist in [files, csv_files, text_files, glob_files]:
-        for f, data in flist.items():
-            client.put_object(Bucket=test_bucket_name, Key=f, Body=data)
-    yield S3FileSystem(anon=False)
-    for flist in [files, csv_files, text_files, glob_files]:
-        for f, data in flist.items():
+        for k in [a, b, c, d]:
             try:
-                client.delete_object(Bucket=test_bucket_name, Key=f, Body=data)
-                client.delete_object(Bucket=secure_bucket_name, Key=f, Body=data)
+                client.delete_object(Bucket=test_bucket_name, Key=k)
             except:
                 pass
-    for k in [a, b, c, d]:
-        try:
-            client.delete_object(Bucket=test_bucket_name, Key=k)
-            client.delete_object(Bucket=secure_bucket_name, Key=k)
-        except:
-            pass
-    m.stop()
+        for flist in [files, csv_files, text_files, glob_files]:
+            for f, data in flist.items():
+                client.put_object(Bucket=test_bucket_name, Key=f, Body=data)
+        yield S3FileSystem(anon=False)
+        for flist in [files, csv_files, text_files, glob_files]:
+            for f, data in flist.items():
+                try:
+                    client.delete_object(Bucket=test_bucket_name, Key=f, Body=data)
+                    client.delete_object(Bucket=secure_bucket_name, Key=f, Body=data)
+                except:
+                    pass
+        for k in [a, b, c, d]:
+            try:
+                client.delete_object(Bucket=test_bucket_name, Key=k)
+                client.delete_object(Bucket=secure_bucket_name, Key=k)
+            except:
+                pass
+    finally:
+        m.stop()
 
 
 def test_simple(s3):
