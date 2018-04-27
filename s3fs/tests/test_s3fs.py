@@ -240,6 +240,8 @@ def test_pickle(s3):
     import pickle
     s32 = pickle.loads(pickle.dumps(s3))
     assert s3.ls('test') == s32.ls('test')
+    s33 = pickle.loads(pickle.dumps(s32))
+    assert s3.ls('test') == s33.ls('test')
 
 
 def test_ls_touch(s3):
