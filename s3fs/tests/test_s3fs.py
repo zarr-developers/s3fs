@@ -380,7 +380,10 @@ def test_s3_glob(s3):
     assert fn in s3.glob(test_bucket_name+'/nested/*')
     assert fn in s3.glob(test_bucket_name+'/nested/file*')
     assert fn in s3.glob(test_bucket_name+'/*/*')
-    assert all(f in s3.walk(test_bucket_name) for f in s3.glob(test_bucket_name+'/nested/*'))
+    assert all(any(p.startswith(f + '/') or p == f
+                   for p in s3.walk(test_bucket_name, directories=True))
+                       for f in s3.glob(test_bucket_name+'/nested/*'))
+
     with pytest.raises(ValueError):
         s3.glob('*')
 
