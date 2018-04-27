@@ -259,7 +259,6 @@ class S3FileSystem(object):
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        self._conn = {}
         self.s3 = self.connect()
         self._kwargs_helper = ParamKwargsHelper(self.s3)
 
