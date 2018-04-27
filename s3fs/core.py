@@ -660,11 +660,8 @@ class S3FileSystem(object):
 
         regex_pattern = re.compile(regex_text)
 
-        out = set([f for f in allfiles for m in [regex_pattern.match(f)] if m])
-
-        if not out:
-            out = self.ls(path0)
-        return out
+        seen = set()
+        return [f for f in allfiles if regex_pattern.match(f) and not (f in seen or seen.add(f))]
 
     def du(self, path, total=False, deep=False, **kwargs):
         """ Bytes in keys at path """
