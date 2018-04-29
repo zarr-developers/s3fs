@@ -637,18 +637,16 @@ class S3FileSystem(object):
         bucket, key = split_path(path)
         if "*" in bucket:
             raise ValueError('Bucket cannot contain a "*"')
-        if '*' not in path:
-            path = path + '/*'
 
         # A slash (/) is guaranteed to exist before the first occurrence of
         # star (*) in the path: since the * is NOT in the bucket name, there
         # must be a / between the bucket name and the *.
-        ind = path[:path.index('*')].rindex('/')
-        root = path[:ind + 1]
+        star_pos = path.find('*')
+        root = path if star_pos == -1 else path[:path[:star_pos].rindex('/') + 1]
         allfiles = self.walk(root, directories=True)
 
         # Translate the glob pattern into regex (similar to `fnmatch`).
-        regex_text = ''
+        regex_text = '('
         for c in path:
             if c == '*':
                 regex_text += '[^/]*'
@@ -656,12 +654,14 @@ class S3FileSystem(object):
                 regex_text += '.'
             else:
                 regex_text += re.escape(c)
-        regex_text += '$'
+        regex_text += ')'
 
         regex_pattern = re.compile(regex_text)
 
         seen = set()
-        return [f for f in allfiles if regex_pattern.match(f) and not (f in seen or seen.add(f))]
+        return [p for f in allfiles
+                      for m in [regex_pattern.match(f)] if m
+                          for p in [m.group(0)] if not (p in seen or seen.add(p))]
 
     def du(self, path, total=False, deep=False, **kwargs):
         """ Bytes in keys at path """
