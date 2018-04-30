@@ -1407,6 +1407,10 @@ class S3File(object):
         """Return whether the S3File was opened for writing"""
         return self.mode in {'wb', 'ab'}
 
+    def read1(self, length=-1):
+        """Shim for allowing buffered I/O stream wrappers."""
+        return self.read(length)
+
     def __del__(self):
         self.close()
 
