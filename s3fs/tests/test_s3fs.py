@@ -1015,3 +1015,15 @@ def test_versions_unaware(s3):
     with pytest.raises(ValueError):
         with s3.open(versioned_file, version_id='0'):
             fo.read()
+
+
+def test_text_io(s3):
+    """Ensure using TextIOWrapper works."""
+    s3.mkdir('bucket')
+
+    with s3.open('bucket/file.txt', 'wb') as fd:
+        fd.write(u'\u00af\\_(\u30c4)_/\u00af'.encode('utf-16-le'))
+
+    with s3.open('bucket/file.txt', 'rb') as fd:
+        with io.TextIOWrapper(fd, 'utf-16-le') as stream:
+            assert stream.readline() == u'\u00af\\_(\u30c4)_/\u00af'
