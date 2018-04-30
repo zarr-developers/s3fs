@@ -376,13 +376,16 @@ def test_s3_glob(s3):
     fn = test_bucket_name+'/nested/file1'
     assert fn not in s3.glob(test_bucket_name+'/')
     assert fn not in s3.glob(test_bucket_name+'/*')
-    assert fn in s3.glob(test_bucket_name+'/nested')
+    assert fn not in s3.glob(test_bucket_name+'/nested')
     assert fn in s3.glob(test_bucket_name+'/nested/*')
     assert fn in s3.glob(test_bucket_name+'/nested/file*')
     assert fn in s3.glob(test_bucket_name+'/*/*')
     assert all(any(p.startswith(f + '/') or p == f
                    for p in s3.walk(test_bucket_name, directories=True))
                        for f in s3.glob(test_bucket_name+'/nested/*'))
+    assert [test_bucket_name + '/nested/nested2'] == s3.glob(test_bucket_name + '/nested/nested2')
+    assert [ 'test/nested/nested2/file1',
+             'test/nested/nested2/file2'] == s3.glob(test_bucket_name + '/nested/nested2/*')
 
     with pytest.raises(ValueError):
         s3.glob('*')
