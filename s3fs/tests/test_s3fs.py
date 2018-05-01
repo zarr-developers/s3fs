@@ -615,6 +615,7 @@ def test_write_small_secure(s3):
     assert s3.cat(secure_bucket_name+'/test') == b'hello'
     head = s3.s3.head_object(Bucket=secure_bucket_name, Key='test')
 
+
 def test_write_large_secure(s3):
     mock = moto.mock_s3()
     mock.start()
@@ -630,8 +631,6 @@ def test_write_large_secure(s3):
 
 
 def test_write_fails(s3):
-    with pytest.raises(NotImplementedError):
-        s3.open(test_bucket_name+'/temp', 'w')
     with pytest.raises(ValueError):
         s3.touch(test_bucket_name+'/temp')
         s3.open(test_bucket_name+'/temp', 'rb').write(b'hello')
@@ -1015,3 +1014,51 @@ def test_versions_unaware(s3):
     with pytest.raises(ValueError):
         with s3.open(versioned_file, version_id='0'):
             fo.read()
+
+
+def test_text_io__stream_wrapper_works(s3):
+    """Ensure using TextIOWrapper works."""
+    s3.mkdir('bucket')
+
+    with s3.open('bucket/file.txt', 'wb') as fd:
+        fd.write(u'\u00af\\_(\u30c4)_/\u00af'.encode('utf-16-le'))
+
+    with s3.open('bucket/file.txt', 'rb') as fd:
+        with io.TextIOWrapper(fd, 'utf-16-le') as stream:
+            assert stream.readline() == u'\u00af\\_(\u30c4)_/\u00af'
+
+
+def test_text_io__basic(s3):
+    """Text mode is now allowed."""
+    s3.mkdir('bucket')
+
+    with s3.open('bucket/file.txt', 'w') as fd:
+        fd.write(u'\u00af\\_(\u30c4)_/\u00af')
+
+    with s3.open('bucket/file.txt', 'r') as fd:
+        assert fd.read() == u'\u00af\\_(\u30c4)_/\u00af'
+
+
+def test_text_io__override_encoding(s3):
+    """Allow overriding the default text encoding."""
+    s3.mkdir('bucket')
+
+    with s3.open('bucket/file.txt', 'w', encoding='ibm500') as fd:
+        fd.write(u'Hello, World!')
+
+    with s3.open('bucket/file.txt', 'r', encoding='ibm500') as fd:
+        assert fd.read() == u'Hello, World!'
+
+
+def test_readinto(s3):
+    s3.mkdir('bucket')
+
+    with s3.open('bucket/file.txt', 'wb') as fd:
+        fd.write(b'Hello, World!')
+
+    contents = bytearray()
+
+    with s3.open('bucket/file.txt', 'rb') as fd:
+        assert fd.readinto(contents) == 13
+
+    assert contents == b'Hello, World!'
