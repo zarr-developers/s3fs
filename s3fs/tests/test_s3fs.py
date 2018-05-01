@@ -630,8 +630,6 @@ def test_write_large_secure(s3):
 
 
 def test_write_fails(s3):
-    with pytest.raises(NotImplementedError):
-        s3.open(test_bucket_name+'/temp', 'w')
     with pytest.raises(ValueError):
         s3.touch(test_bucket_name+'/temp')
         s3.open(test_bucket_name+'/temp', 'rb').write(b'hello')
@@ -1044,8 +1042,22 @@ def test_text_io__override_encoding(s3):
     """Allow overriding the default text encoding."""
     s3.mkdir('bucket')
 
-    with s3.open('bucket/file.txt', 'w') as fd:
-        fd.write(u'Hello, World!'.encode('ibm500'))
+    with s3.open('bucket/file.txt', 'w', encoding='ibm500') as fd:
+        fd.write(u'Hello, World!')
 
     with s3.open('bucket/file.txt', 'r', encoding='ibm500') as fd:
         assert fd.read() == u'Hello, World!'
+
+
+def test_readinto(s3):
+    s3.mkdir('bucket')
+
+    with s3.open('bucket/file.txt', 'wb') as fd:
+        fd.write(b'Hello, World!')
+
+    contents = bytearray()
+
+    with s3.open('bucket/file.txt', 'rb') as fd:
+        assert fd.readinto(contents) == 13
+
+    assert contents == b'Hello, World!'

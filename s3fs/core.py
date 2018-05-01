@@ -1073,7 +1073,6 @@ class S3File(io.BufferedIOBase):
         self.loc = 0
         self.start = None
         self.end = None
-        self.closed = False
         self.trim = True
         self.mpu = None
         self.version_id = version_id
@@ -1397,18 +1396,18 @@ class S3File(io.BufferedIOBase):
                     UploadId=self.mpu['UploadId'],
                     MultipartUpload=part_info)
             else:
-                self.buffer.seek(0)
                 try:
                     self._call_s3(
                         self.s3.s3.put_object,
                         Bucket=self.bucket, Key=self.key,
-                        Body=self.buffer.read(), ACL=self.acl)
+                        Body=self.buffer.getvalue(), ACL=self.acl)
                 except (ClientError, ParamValidationError) as e:
                     raise IOError('Write failed: %s' % self.path, e)
             self.s3.invalidate_cache(self.path)
             self.parts = []
-            self.buffer = None
-        self.closed = True
+            self.buffer.seek(0)
+            self.buffer.truncate(0)
+        super(S3File, self).close()
 
     def readable(self):
         """Return whether the S3File was opened for reading"""
