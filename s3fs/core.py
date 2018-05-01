@@ -1058,9 +1058,9 @@ class S3File(io.BufferedIOBase):
         super(S3File, self).__init__()
 
         self.mode = mode
-        if mode not in _VALID_FILE_MODES:
-            raise NotImplementedError("File mode must be %s, not %s"
-                                      % (_VALID_FILE_MODES, mode))
+        if mode not in {'rb', 'wb', 'ab'}:
+            raise NotImplementedError("File mode must be {'rb', 'wb', 'ab'}, "
+                                      "not %s" % mode)
         if path.startswith('s3://'):
             path = path[len('s3://'):]
         self.path = path
