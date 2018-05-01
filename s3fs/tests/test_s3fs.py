@@ -1017,7 +1017,7 @@ def test_versions_unaware(s3):
             fo.read()
 
 
-def test_text_io(s3):
+def test_text_io__stream_wrapper_works(s3):
     """Ensure using TextIOWrapper works."""
     s3.mkdir('bucket')
 
@@ -1027,3 +1027,25 @@ def test_text_io(s3):
     with s3.open('bucket/file.txt', 'rb') as fd:
         with io.TextIOWrapper(fd, 'utf-16-le') as stream:
             assert stream.readline() == u'\u00af\\_(\u30c4)_/\u00af'
+
+
+def test_text_io__basic(s3):
+    """Text mode is now allowed."""
+    s3.mkdir('bucket')
+
+    with s3.open('bucket/file.txt', 'w') as fd:
+        fd.write(u'\u00af\\_(\u30c4)_/\u00af')
+
+    with s3.open('bucket/file.txt', 'r') as fd:
+        assert fd.read() == u'\u00af\\_(\u30c4)_/\u00af'
+
+
+def test_text_io__override_encoding(s3):
+    """Allow overriding the default text encoding."""
+    s3.mkdir('bucket')
+
+    with s3.open('bucket/file.txt', 'w') as fd:
+        fd.write(u'Hello, World!'.encode('ibm500'))
+
+    with s3.open('bucket/file.txt', 'r', encoding='ibm500') as fd:
+        assert fd.read() == u'Hello, World!'
