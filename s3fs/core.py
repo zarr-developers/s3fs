@@ -33,6 +33,9 @@ except NameError:
         pass
 
 
+_VALID_FILE_MODES = {'r', 'w', 'a', 'rb', 'wb', 'ab'}
+
+
 def tokenize(*args, **kwargs):
     """ Deterministic token
 
@@ -271,7 +274,7 @@ class S3FileSystem(object):
         self._kwargs_helper = ParamKwargsHelper(self.s3)
 
     def open(self, path, mode='rb', block_size=None, acl='', version_id=None,
-             fill_cache=None, **kwargs):
+             fill_cache=None, encoding=None, **kwargs):
         """ Open a file for reading or writing
 
         Parameters
@@ -279,7 +282,8 @@ class S3FileSystem(object):
         path: string
             Path of file on S3
         mode: string
-            One of 'rb' or 'wb'
+            One of 'r', 'w', 'a', 'rb', 'wb', or 'ab'. These have the same meaning
+            as they do for the built-in `open` function.
         block_size: int
             Size of data-node blocks if reading
         fill_cache: bool
@@ -292,7 +296,10 @@ class S3FileSystem(object):
         version_id : str
             Explicit version of the object to open.  This requires that the s3
             filesystem is version aware and bucket versioning is enabled on the
-            relavant bucket.
+            relevant bucket.
+        encoding : str
+            The encoding to use if opening the file in text mode. The platform's
+            default text encoding is used if not given.
         kwargs: dict-like
             Additional parameters used for s3 methods.  Typically used for
             ServerSideEncryption.
@@ -301,18 +308,21 @@ class S3FileSystem(object):
             block_size = self.default_block_size
         if fill_cache is None:
             fill_cache = self.default_fill_cache
-        if 'b' not in mode:
-            raise NotImplementedError("Text mode not supported, use mode='%s'"
-                                      " and manage bytes" % (mode[0] + 'b'))
+
         acl = acl or self.s3_additional_kwargs.get('ACL', '')
         kw = self.s3_additional_kwargs.copy()
         kw.update(kwargs)
         if not self.version_aware and version_id:
             raise ValueError("version_id cannot be specified if the filesystem "
                              "is not version aware")
-        return S3File(self, path, mode, block_size=block_size, acl=acl,
-                      version_id=version_id, fill_cache=fill_cache,
-                      s3_additional_kwargs=kw)
+
+        fdesc = S3File(self, path, mode, block_size=block_size, acl=acl,
+                       version_id=version_id, fill_cache=fill_cache,
+                       s3_additional_kwargs=kw)
+
+        if 'b' in mode:
+            return fdesc
+        return io.TextIOWrapper(fdesc, encoding=encoding)
 
     def _lsdir(self, path, refresh=False):
         if path.startswith('s3://'):
@@ -1005,7 +1015,7 @@ class S3FileSystem(object):
         return b
 
 
-class S3File(object):
+class S3File(io.BufferedIOBase):
     """
     Open S3 key as a file. Data is only loaded and cached on demand.
 
@@ -1015,6 +1025,9 @@ class S3File(object):
         boto3 connection
     path : string
         S3 bucket/key to access
+    mode : str
+        One of 'r', 'w', 'a', 'rb', 'wb', or 'ab'. These have the same meaning
+        as they do for the built-in `open` function.
     block_size : int
         read-ahead size for finding delimiters
     fill_cache : bool
@@ -1042,10 +1055,12 @@ class S3File(object):
 
     def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
                  version_id=None, fill_cache=True, s3_additional_kwargs=None):
+        super(S3File, self).__init__()
+
         self.mode = mode
-        if mode not in {'rb', 'wb', 'ab'}:
-            raise NotImplementedError("File mode must be {'rb', 'wb', 'ab'}, "
-                                      "not %s" % mode)
+        if mode not in _VALID_FILE_MODES:
+            raise NotImplementedError("File mode must be %s, not %s"
+                                      % (_VALID_FILE_MODES, mode))
         if path.startswith('s3://'):
             path = path[len('s3://'):]
         self.path = path
@@ -1065,7 +1080,7 @@ class S3File(object):
         self.acl = acl
         self.fill_cache = fill_cache
         self.s3_additional_kwargs = s3_additional_kwargs or {}
-        if mode in {'wb', 'ab'}:
+        if self.writable():
             if acl and acl not in key_acls:
                 raise ValueError('ACL not in %s', key_acls)
             self.buffer = io.BytesIO()
@@ -1074,7 +1089,7 @@ class S3File(object):
             if block_size < 5 * 2 ** 20:
                 raise ValueError('Block size must be >=5MB')
             self.forced = False
-            if mode == 'ab' and s3.exists(path):
+            if 'a' in mode and s3.exists(path):
                 self.size = s3.info(path)['Size']
                 if self.size < 5*2**20:
                     # existing file too small for multi-upload: download
@@ -1146,7 +1161,7 @@ class S3File(object):
         --------
         >>> mys3file.setxattr(attribute_1='value1', attribute_2='value2')  # doctest: +SKIP
         """
-        if self.mode != 'rb':
+        if self.writable():
             raise NotImplementedError('cannot update metadata while file '
                                       'is open for writing')
         return self.s3.setxattr(self.path, copy_kwargs=copy_kwargs, **kwargs)
@@ -1170,7 +1185,7 @@ class S3File(object):
         whence : {0, 1, 2}
             from start of file, current location or end of file, resp.
         """
-        if not self.mode == 'rb':
+        if not self.readable():
             raise ValueError('Seek only available in read mode')
         if whence == 0:
             nloc = loc
@@ -1261,7 +1276,7 @@ class S3File(object):
         length : int (-1)
             Number of bytes to read; if <0, all remaining bytes.
         """
-        if self.mode != 'rb':
+        if not self.readable():
             raise ValueError('File not in read mode')
         if length < 0:
             length = self.size
@@ -1290,7 +1305,7 @@ class S3File(object):
         data : bytes
             Set of bytes to be written.
         """
-        if self.mode not in {'wb', 'ab'}:
+        if not self.writable():
             raise ValueError('File not in write mode')
         if self.closed:
             raise ValueError('I/O operation on closed file.')
@@ -1317,7 +1332,7 @@ class S3File(object):
             blocks are allowed to be.
         retries: int
         """
-        if self.mode in {'wb', 'ab'} and not self.closed:
+        if self.writable() and not self.closed:
             if self.buffer.tell() < self.blocksize and not force:
                 # ignore if not enough data for a block and not closing
                 return
@@ -1371,7 +1386,7 @@ class S3File(object):
         if self.closed:
             return
         self.cache = None
-        if self.mode in {'wb', 'ab'}:
+        if self.writable():
             if self.parts:
                 self.flush(force=True)
                 part_info = {'Parts': self.parts}
@@ -1397,7 +1412,7 @@ class S3File(object):
 
     def readable(self):
         """Return whether the S3File was opened for reading"""
-        return self.mode == 'rb'
+        return 'r' in self.mode
 
     def seekable(self):
         """Return whether the S3File is seekable (only in read mode)"""
@@ -1405,11 +1420,7 @@ class S3File(object):
 
     def writable(self):
         """Return whether the S3File was opened for writing"""
-        return self.mode in {'wb', 'ab'}
-
-    def read1(self, length=-1):
-        """Shim for allowing buffered I/O stream wrappers."""
-        return self.read(length)
+        return 'w' in self.mode or 'a' in self.mode
 
     def __del__(self):
         self.close()
@@ -1424,6 +1435,22 @@ class S3File(object):
 
     def __exit__(self, *args):
         self.close()
+
+    # Implementations of BufferedIOBase stub methods
+
+    def read1(self, length=-1):
+        return self.read(length)
+
+    def detach(self):
+        raise io.UnsupportedOperation()
+
+    def readinto(self, b):
+        data = self.read()
+        b[:len(data)] = data
+        return len(data)
+
+    def readinto1(self, b):
+        return self.readinto(b)
 
 
 def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,
