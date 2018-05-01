@@ -615,6 +615,7 @@ def test_write_small_secure(s3):
     assert s3.cat(secure_bucket_name+'/test') == b'hello'
     head = s3.s3.head_object(Bucket=secure_bucket_name, Key='test')
 
+
 def test_write_large_secure(s3):
     mock = moto.mock_s3()
     mock.start()
@@ -630,8 +631,6 @@ def test_write_large_secure(s3):
 
 
 def test_write_fails(s3):
-    with pytest.raises(NotImplementedError):
-        s3.open(test_bucket_name+'/temp', 'w')
     with pytest.raises(ValueError):
         s3.touch(test_bucket_name+'/temp')
         s3.open(test_bucket_name+'/temp', 'rb').write(b'hello')
@@ -1044,7 +1043,7 @@ def test_text_io__override_encoding(s3):
     """Allow overriding the default text encoding."""
     s3.mkdir('bucket')
 
-    with s3.open('bucket/file.txt', 'w') as fd:
+    with s3.open('bucket/file.txt', 'wb') as fd:
         fd.write(u'Hello, World!'.encode('ibm500'))
 
     with s3.open('bucket/file.txt', 'r', encoding='ibm500') as fd:
