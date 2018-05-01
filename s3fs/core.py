@@ -1015,7 +1015,7 @@ class S3FileSystem(object):
         return b
 
 
-class S3File(object):
+class S3File(io.BufferedIOBase):
     """
     Open S3 key as a file. Data is only loaded and cached on demand.
 
