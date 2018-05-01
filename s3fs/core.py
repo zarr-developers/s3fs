@@ -1015,7 +1015,7 @@ class S3FileSystem(object):
         return b
 
 
-class S3File(io.BufferedIOBase):
+class S3File(object):
     """
     Open S3 key as a file. Data is only loaded and cached on demand.
 
@@ -1055,8 +1055,6 @@ class S3File(io.BufferedIOBase):
 
     def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
                  version_id=None, fill_cache=True, s3_additional_kwargs=None):
-        super(S3File, self).__init__()
-
         self.mode = mode
         if mode not in {'rb', 'wb', 'ab'}:
             raise NotImplementedError("File mode must be {'rb', 'wb', 'ab'}, "
@@ -1073,6 +1071,7 @@ class S3File(io.BufferedIOBase):
         self.loc = 0
         self.start = None
         self.end = None
+        self.closed = False
         self.trim = True
         self.mpu = None
         self.version_id = version_id
@@ -1407,7 +1406,7 @@ class S3File(io.BufferedIOBase):
             self.parts = []
             self.buffer.seek(0)
             self.buffer.truncate(0)
-        super(S3File, self).close()
+        self.closed = True
 
     def readable(self):
         """Return whether the S3File was opened for reading"""
