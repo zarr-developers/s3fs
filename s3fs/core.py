@@ -316,10 +316,10 @@ class S3FileSystem(object):
             raise ValueError("version_id cannot be specified if the filesystem "
                              "is not version aware")
 
-        fdesc = S3File(self, path, mode, block_size=block_size, acl=acl,
+        mode2 = mode if 'b' in mode else (mode.replace('t', '') + 'b')
+        fdesc = S3File(self, path, mode2, block_size=block_size, acl=acl,
                        version_id=version_id, fill_cache=fill_cache,
                        s3_additional_kwargs=kw)
-
         if 'b' in mode:
             return fdesc
         return io.TextIOWrapper(fdesc, encoding=encoding)
@@ -1015,7 +1015,7 @@ class S3FileSystem(object):
         return b
 
 
-class S3File(io.BufferedIOBase):
+class S3File(object):
     """
     Open S3 key as a file. Data is only loaded and cached on demand.
 
@@ -1026,7 +1026,7 @@ class S3File(io.BufferedIOBase):
     path : string
         S3 bucket/key to access
     mode : str
-        One of 'r', 'w', 'a', 'rb', 'wb', or 'ab'. These have the same meaning
+        One of 'rb', 'wb', 'ab'. These have the same meaning
         as they do for the built-in `open` function.
     block_size : int
         read-ahead size for finding delimiters

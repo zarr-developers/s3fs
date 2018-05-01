@@ -615,6 +615,7 @@ def test_write_small_secure(s3):
     assert s3.cat(secure_bucket_name+'/test') == b'hello'
     head = s3.s3.head_object(Bucket=secure_bucket_name, Key='test')
 
+
 def test_write_large_secure(s3):
     mock = moto.mock_s3()
     mock.start()
