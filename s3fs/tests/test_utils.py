@@ -1,14 +1,5 @@
-from s3fs.utils import read_block, seek_delimiter, tmpfile
+from s3fs.utils import read_block, seek_delimiter
 import io
-import os
-
-
-def test_tempfile():
-    with tmpfile() as fn:
-        with open(fn, 'w'):
-            pass
-        assert os.path.exists(fn)
-    assert not os.path.exists(fn)
 
 
 def test_read_block():

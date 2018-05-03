@@ -7,7 +7,7 @@ import time
 import pytest
 from itertools import chain
 from s3fs.core import S3FileSystem
-from s3fs.utils import seek_delimiter, ignoring, tmpfile, SSEParams
+from s3fs.utils import seek_delimiter, ignoring, SSEParams
 import moto
 
 from botocore.exceptions import NoCredentialsError
@@ -472,14 +472,15 @@ def test_move(s3):
     assert not s3.exists(fn)
 
 
-def test_get_put(s3):
-    with tmpfile() as fn:
-        s3.get(test_bucket_name+'/test/accounts.1.json', fn)
-        data = files['test/accounts.1.json']
-        assert open(fn, 'rb').read() == data
-        s3.put(fn, test_bucket_name+'/temp')
-        assert s3.du(test_bucket_name+'/temp')[test_bucket_name+'/temp'] == len(data)
-        assert s3.cat(test_bucket_name+'/temp') == data
+def test_get_put(s3, tmpdir):
+    test_file = str(tmpdir.join('test.json'))
+
+    s3.get(test_bucket_name+'/test/accounts.1.json', test_file)
+    data = files['test/accounts.1.json']
+    assert open(test_file, 'rb').read() == data
+    s3.put(test_file, test_bucket_name+'/temp')
+    assert s3.du(test_bucket_name+'/temp')[test_bucket_name+'/temp'] == len(data)
+    assert s3.cat(test_bucket_name+'/temp') == data
 
 
 def test_errors(s3):
