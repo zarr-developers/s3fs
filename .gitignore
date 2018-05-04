@@ -1,5 +1,7 @@
 *.pyc
 .cache/
+.pytest_cache/
+.python-version
 .idea/
 __pycache__
 dist/
