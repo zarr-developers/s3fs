@@ -123,9 +123,9 @@ def title_case(string):
 
     Parameters
     ----------
-    string : underscore seperated string
+    string : underscore separated string
     """
-    return ''.join([x.capitalize() for x in string.split('_')])
+    return ''.join(x.capitalize() for x in string.split('_'))
 
 
 class ParamKwargsHelper(object):
