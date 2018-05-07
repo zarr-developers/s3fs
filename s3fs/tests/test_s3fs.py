@@ -250,9 +250,9 @@ def test_ls_touch(s3):
     s3.touch(a)
     s3.touch(b)
     L = s3.ls(test_bucket_name+'/tmp/test', True)
-    assert set(d['Key'] for d in L) == set([a, b])
+    assert {d['Key'] for d in L} == {a, b}
     L = s3.ls(test_bucket_name+'/tmp/test', False)
-    assert set(L) == set([a, b])
+    assert set(L) == {a, b}
 
 
 def test_rm(s3):
@@ -410,8 +410,8 @@ def test_read_keys_from_bucket(s3):
         file_contents = s3.cat('/'.join([test_bucket_name, k]))
         assert file_contents == data
 
-    assert (s3.cat('/'.join([test_bucket_name, k])) ==
-            s3.cat('s3://' + '/'.join([test_bucket_name, k])))
+        assert (s3.cat('/'.join([test_bucket_name, k])) ==
+                s3.cat('s3://' + '/'.join([test_bucket_name, k])))
 
 
 def test_url(s3):
@@ -737,6 +737,7 @@ def test_readline_blocksize(s3):
 
         result = f.readline()
         expected = b'ab'
+        assert result == expected
 
 
 def test_next(s3):
