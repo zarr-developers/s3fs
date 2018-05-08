@@ -1,11 +1,7 @@
 
 import array
 from contextlib import contextmanager
-import os
-import tempfile
-import shutil
 import sys
-import re
 
 PY2 = sys.version_info[0] == 2
 PY3 = sys.version_info[0] == 3
