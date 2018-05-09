@@ -115,7 +115,7 @@ class S3FileSystem(object):
         ``S3File.open``.
     version_aware : bool (False)
         Whether to support bucket versioning.  If enable this will require the
-        user to have the neccesary IAM permissions for dealing with versioned
+        user to have the necessary IAM permissions for dealing with versioned
         objects.
     config_kwargs : dict of parameters passed to ``botocore.client.Config``
     kwargs : other parameters for boto3 session
