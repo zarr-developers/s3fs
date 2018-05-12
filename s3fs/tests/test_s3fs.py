@@ -1062,3 +1062,28 @@ def test_readinto(s3):
         assert fd.readinto(contents) == 13
 
     assert contents == b'Hello, World!'
+
+
+def test_change_defaults_only_subsequent(monkeypatch):
+    """Test for Issue #135
+
+    Ensure that changing the default block size doesn't affect existing file
+    systems that were created using that default. It should only affect file
+    systems created after the change.
+    """
+    fs_default = S3FileSystem()
+    assert fs_default.default_block_size == 5 * (1024 ** 2)
+
+    fs_overridden = S3FileSystem(default_block_size=64 * (1024 ** 2))
+    assert fs_overridden.default_block_size == 64 * (1024 ** 2)
+
+    # Suppose I want all subsequent file systems to have a block size of 1 GiB
+    # instead of 5 MiB:
+    monkeypatch.setattr(S3FileSystem, 'default_block_size', 1024 ** 3)
+
+    fs_big = S3FileSystem()
+    assert fs_big.default_block_size == 1024 ** 3
+
+    # Test the other file systems created to see if their block sizes changed
+    assert fs_overridden.default_block_size == 64 * (1024 ** 2)
+    assert fs_default.default_block_size == 5 * (1024 ** 2)
