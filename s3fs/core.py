@@ -150,10 +150,9 @@ class S3FileSystem(object):
 
         if client_kwargs is None:
             client_kwargs = {}
-        if default_block_size is not None:
-            self.default_block_size = default_block_size
         if config_kwargs is None:
             config_kwargs = {}
+        self.default_block_size = default_block_size or self.default_block_size
         self.default_fill_cache = default_fill_cache
         self.version_aware = version_aware
         self.client_kwargs = client_kwargs
