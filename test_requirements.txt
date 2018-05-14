@@ -1,0 +1,4 @@
+futures     ; python_version<"3.2"
+mock
+moto>=1.0
+pytest>=2.7.3

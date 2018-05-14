@@ -7,7 +7,7 @@ import time
 import pytest
 from itertools import chain
 from s3fs.core import S3FileSystem
-from s3fs.utils import seek_delimiter, ignoring, tmpfile, SSEParams
+from s3fs.utils import seek_delimiter, ignoring, SSEParams
 import moto
 
 from botocore.exceptions import NoCredentialsError
@@ -250,9 +250,9 @@ def test_ls_touch(s3):
     s3.touch(a)
     s3.touch(b)
     L = s3.ls(test_bucket_name+'/tmp/test', True)
-    assert set(d['Key'] for d in L) == set([a, b])
+    assert {d['Key'] for d in L} == {a, b}
     L = s3.ls(test_bucket_name+'/tmp/test', False)
-    assert set(L) == set([a, b])
+    assert set(L) == {a, b}
 
 
 def test_rm(s3):
@@ -410,8 +410,8 @@ def test_read_keys_from_bucket(s3):
         file_contents = s3.cat('/'.join([test_bucket_name, k]))
         assert file_contents == data
 
-    assert (s3.cat('/'.join([test_bucket_name, k])) ==
-            s3.cat('s3://' + '/'.join([test_bucket_name, k])))
+        assert (s3.cat('/'.join([test_bucket_name, k])) ==
+                s3.cat('s3://' + '/'.join([test_bucket_name, k])))
 
 
 def test_url(s3):
@@ -472,14 +472,15 @@ def test_move(s3):
     assert not s3.exists(fn)
 
 
-def test_get_put(s3):
-    with tmpfile() as fn:
-        s3.get(test_bucket_name+'/test/accounts.1.json', fn)
-        data = files['test/accounts.1.json']
-        assert open(fn, 'rb').read() == data
-        s3.put(fn, test_bucket_name+'/temp')
-        assert s3.du(test_bucket_name+'/temp')[test_bucket_name+'/temp'] == len(data)
-        assert s3.cat(test_bucket_name+'/temp') == data
+def test_get_put(s3, tmpdir):
+    test_file = str(tmpdir.join('test.json'))
+
+    s3.get(test_bucket_name+'/test/accounts.1.json', test_file)
+    data = files['test/accounts.1.json']
+    assert open(test_file, 'rb').read() == data
+    s3.put(test_file, test_bucket_name+'/temp')
+    assert s3.du(test_bucket_name+'/temp')[test_bucket_name+'/temp'] == len(data)
+    assert s3.cat(test_bucket_name+'/temp') == data
 
 
 def test_errors(s3):
@@ -736,6 +737,7 @@ def test_readline_blocksize(s3):
 
         result = f.readline()
         expected = b'ab'
+        assert result == expected
 
 
 def test_next(s3):

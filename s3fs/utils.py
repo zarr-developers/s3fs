@@ -1,11 +1,7 @@
 
 import array
 from contextlib import contextmanager
-import os
-import tempfile
-import shutil
 import sys
-import re
 
 PY2 = sys.version_info[0] == 2
 PY3 = sys.version_info[0] == 3
@@ -17,24 +13,6 @@ def ignoring(*exceptions):
         yield
     except exceptions:
         pass
-
-
-@contextmanager
-def tmpfile(extension='', dir=None):
-    extension = '.' + extension.lstrip('.')
-    handle, filename = tempfile.mkstemp(extension, dir=dir)
-    os.close(handle)
-    os.remove(filename)
-
-    try:
-        yield filename
-    finally:
-        if os.path.exists(filename):
-            if os.path.isdir(filename):
-                shutil.rmtree(filename)
-            else:
-                with ignoring(OSError):
-                    os.remove(filename)
 
 
 def seek_delimiter(file, delimiter, blocksize):
@@ -112,7 +90,6 @@ def read_block(f, offset, length, delimiter=None):
         f.seek(start + length)
         seek_delimiter(f, delimiter, 2**16)
         end = f.tell()
-        eof = not f.read(1)
 
         offset = start
         length = end - start
@@ -142,9 +119,9 @@ def title_case(string):
 
     Parameters
     ----------
-    string : underscore seperated string
+    string : underscore separated string
     """
-    return ''.join([x.capitalize() for x in string.split('_')])
+    return ''.join(x.capitalize() for x in string.split('_'))
 
 
 class ParamKwargsHelper(object):
