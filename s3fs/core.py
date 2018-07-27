@@ -772,7 +772,15 @@ class S3FileSystem(object):
                     f2.write(data)
 
     def mkdir(self, path, acl="", **kwargs):
-        """ Make new bucket or empty key """
+        """ Make new bucket or empty key
+
+        Parameters
+        ----------
+        acl: str
+            ACL to set when creating
+        region_name : str
+            region in which the bucket should be created
+        """
         acl = acl or self.s3_additional_kwargs.get('ACL', '')
         self.touch(path, acl=acl, **kwargs)
 
@@ -961,7 +969,14 @@ class S3FileSystem(object):
             if acl and acl not in buck_acls:
                 raise ValueError('ACL not in %s', buck_acls)
             try:
-                self.s3.create_bucket(Bucket=bucket, ACL=acl)
+                params = {"Bucket": bucket, 'ACL': acl}
+                region_name = (kwargs.get("region_name", None) or
+                               self.client_kwargs.get("region_name", None))
+                if region_name:
+                    params['CreateBucketConfiguration'] = {
+                        'LocationConstraint': region_name
+                    }
+                self.s3.create_bucket(**params)
                 self.invalidate_cache('')
                 self.invalidate_cache(bucket)
             except (ClientError, ParamValidationError):

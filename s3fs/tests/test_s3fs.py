@@ -294,6 +294,31 @@ def test_rmdir(s3):
     assert bucket not in s3.ls('/')
 
 
+def test_mkdir(s3):
+    bucket = 'test1_bucket'
+    s3.mkdir(bucket)
+    assert bucket in s3.ls('/')
+
+
+def test_mkdir_region_name(s3):
+    bucket = 'test1_bucket'
+    s3.mkdir(bucket, region_name="eu-central-1")
+    assert bucket in s3.ls('/')
+
+
+def test_mkdir_client_region_name():
+    bucket = 'test1_bucket'
+    try:
+        m = moto.mock_s3()
+        m.start()
+        s3 = S3FileSystem(anon=False, client_kwargs={"region_name":
+                                                     "eu-central-1"})
+        s3.mkdir(bucket)
+        assert bucket in s3.ls('/')
+    finally:
+        m.stop()
+
+
 def test_bulk_delete(s3):
     with pytest.raises((OSError, IOError)):
         s3.bulk_delete(['nonexistent/file'])
