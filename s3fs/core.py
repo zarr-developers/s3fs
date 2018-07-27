@@ -962,9 +962,11 @@ class S3FileSystem(object):
                 raise ValueError('ACL not in %s', buck_acls)
             try:
                 params = {"Bucket": bucket, 'ACL': acl}
-                if "region_name" in self.client_kwargs:
+                region_name = (kwargs.get("region_name", None) or
+                               self.client_kwargs.get("region_name", None))
+                if region_name:
                     params['CreateBucketConfiguration'] = {
-                        'LocationConstraint': self.client_kwargs["region_name"]
+                        'LocationConstraint': region_name
                     }
                 self.s3.create_bucket(**params)
                 self.invalidate_cache('')
