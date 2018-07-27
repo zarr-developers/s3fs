@@ -772,7 +772,15 @@ class S3FileSystem(object):
                     f2.write(data)
 
     def mkdir(self, path, acl="", **kwargs):
-        """ Make new bucket or empty key """
+        """ Make new bucket or empty key
+
+        Parameters
+        ----------
+        acl: str
+            ACL to set when creating
+        region_name : str
+            region in which the bucket should be created
+        """
         acl = acl or self.s3_additional_kwargs.get('ACL', '')
         self.touch(path, acl=acl, **kwargs)
 
