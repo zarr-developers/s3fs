@@ -119,6 +119,9 @@ class S3FileSystem(object):
         objects.
     config_kwargs : dict of parameters passed to ``botocore.client.Config``
     kwargs : other parameters for boto3 session
+    session : botocore Session object to be used for all connections.
+         This session will be used inplace of creating a new session inside S3FileSystem.
+
 
     Examples
     --------
@@ -140,9 +143,10 @@ class S3FileSystem(object):
                  use_ssl=True, client_kwargs=None, requester_pays=False,
                  default_block_size=None, default_fill_cache=True,
                  version_aware=False, config_kwargs=None,
-                 s3_additional_kwargs=None, **kwargs):
+                 s3_additional_kwargs=None, session=None, **kwargs):
         self.anon = anon
         self.session = None
+        self.passed_in_session = session
         self.key = key
         self.secret = secret
         self.token = token
@@ -219,13 +223,19 @@ class S3FileSystem(object):
                 conf = Config(connect_timeout=self.connect_timeout,
                               read_timeout=self.read_timeout,
                               signature_version=UNSIGNED, **self.config_kwargs)
-                self.session = boto3.Session(**self.kwargs)
+                if self.passed_in_session:
+                    self.session = self.passed_in_session
+                else:
+                    self.session = boto3.Session(**self.kwargs)
             else:
                 conf = Config(connect_timeout=self.connect_timeout,
                               read_timeout=self.read_timeout,
                               **self.config_kwargs)
-                self.session = boto3.Session(self.key, self.secret, self.token,
-                                             **self.kwargs)
+                if self.passed_in_session:
+                    self.session = self.passed_in_session
+                else:
+                    self.session = boto3.Session(self.key, self.secret, self.token,
+                                                 **self.kwargs)
             s3 = self.session.client('s3', config=conf, use_ssl=ssl,
                                      **self.client_kwargs)
             self._conn[tok] = (s3, self.session)
