@@ -147,6 +147,8 @@ class S3FileSystem(object):
         self.anon = anon
         self.session = None
         self.passed_in_session = session
+        if self.passed_in_session:
+            self.session = self.passed_in_session
         self.key = key
         self.secret = secret
         self.token = token
@@ -209,7 +211,7 @@ class S3FileSystem(object):
         anon, key, secret, kwargs, ckwargs, token, ssl = (
               self.anon, self.key, self.secret, self.kwargs,
               self.client_kwargs, self.token, self.use_ssl)
-
+        
         # Include the current PID in the connection key so that different
         # SSL connections are made for each process.
         tok = tokenize(anon, key, secret, kwargs, ckwargs, token,
@@ -218,30 +220,30 @@ class S3FileSystem(object):
             self._conn.pop(tok, None)
         if tok not in self._conn:
             logger.debug("Open S3 connection.  Anonymous: %s", self.anon)
+
             if self.anon:
                 from botocore import UNSIGNED
                 conf = Config(connect_timeout=self.connect_timeout,
                               read_timeout=self.read_timeout,
                               signature_version=UNSIGNED, **self.config_kwargs)
-                if self.passed_in_session:
-                    self.session = self.passed_in_session
-                else:
+                if not self.passed_in_session:
                     self.session = boto3.Session(**self.kwargs)
             else:
                 conf = Config(connect_timeout=self.connect_timeout,
                               read_timeout=self.read_timeout,
                               **self.config_kwargs)
-                if self.passed_in_session:
-                    self.session = self.passed_in_session
-                else:
+                if not self.passed_in_session:
                     self.session = boto3.Session(self.key, self.secret, self.token,
                                                  **self.kwargs)
+
             s3 = self.session.client('s3', config=conf, use_ssl=ssl,
                                      **self.client_kwargs)
             self._conn[tok] = (s3, self.session)
         else:
             s3, session = self._conn[tok]
-            self.session = session
+            if not self.passed_in_session:
+                self.session = session
+
         return s3
 
     def get_delegated_s3pars(self, exp=3600):
@@ -270,6 +272,8 @@ class S3FileSystem(object):
                 'token': cred['SessionToken'], 'anon': False}
 
     def __getstate__(self):
+        if self.passed_in_session:
+            raise NotImplementedError
         d = self.__dict__.copy()
         del d['s3']
         del d['session']

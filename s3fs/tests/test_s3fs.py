@@ -9,6 +9,7 @@ from itertools import chain
 from s3fs.core import S3FileSystem
 from s3fs.utils import seek_delimiter, ignoring, SSEParams
 import moto
+import boto3
 
 from botocore.exceptions import NoCredentialsError
 
@@ -1114,3 +1115,38 @@ def test_change_defaults_only_subsequent(monkeypatch):
     # Test the other file systems created to see if their block sizes changed
     assert fs_overridden.default_block_size == 64 * (1024 ** 2)
     assert fs_default.default_block_size == 5 * (1024 ** 2)
+
+
+
+def test_passed_in_session_set_correctly(s3):
+    session = boto3.session.Session()
+    s3 = S3FileSystem(session=session)
+    assert s3.passed_in_session is session
+    client = s3.connect()
+    assert s3.session is session
+
+
+def test_without_passed_in_session_set_unique(s3):
+    session = boto3.session.Session()
+    s3 = S3FileSystem()
+    assert s3.passed_in_session is None
+    client = s3.connect()
+    assert s3.session is not session
+
+
+def test_pickle_without_passed_in_session(s3):
+    s3 = S3FileSystem()
+    try:
+        s3.__getstate__()
+    except NotImplementedError:
+        pytest.fail("Unexpected NotImplementedError")
+
+
+def test_pickle_with_passed_in_session(s3):
+    session = boto3.session.Session()
+    s3 = S3FileSystem(session=session)
+    with pytest.raises(NotImplementedError):
+        s3.__getstate__()
+
+
+
