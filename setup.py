@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 
 from setuptools import setup
+import versioneer
 
 setup(name='s3fs',
-      version='0.1.5',
+      version=versioneer.get_version(),
+      cmdclass=versioneer.get_cmdclass(),
       classifiers=[
             'Development Status :: 4 - Beta',
             'Intended Audience :: Developers',
