@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import errno
 import io
 import logging
 import os
@@ -33,6 +34,16 @@ except NameError:
         pass
 
 
+# py2 has no ConnectionError only OSError with different error number for each
+# error so we need to catch OSError and compare errno to the following
+# error numbers - same as catching ConnectionError on py3
+# ref: https://docs.python.org/3/library/exceptions.html#ConnectionError
+_CONNECTION_ERRORS = frozenset({
+    errno.ECONNRESET,  # ConnectionResetError
+    errno.EPIPE, errno.ESHUTDOWN,  # BrokenPipeError
+    errno.ECONNABORTED,  # ConnectionAbortedError
+    errno.ECONNREFUSED,  # ConnectionRefusedError
+})
 _VALID_FILE_MODES = {'r', 'w', 'a', 'rb', 'wb', 'ab'}
 
 
@@ -1496,6 +1507,14 @@ def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,
             return resp['Body'].read()
         except S3_RETRYABLE_ERRORS as e:
             logger.debug('Exception %e on S3 download, retrying', e,
+                         exc_info=True)
+            continue
+        except OSError as e:
+            # only retry connection_errors - similar to catching
+            # ConnectionError on py3
+            if e.errno not in _CONNECTION_ERRORS:
+                raise
+            logger.debug('ConnectionError %e on S3 download, retrying', e,
                          exc_info=True)
             continue
         except ClientError as e:
