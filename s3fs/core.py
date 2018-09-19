@@ -1427,7 +1427,7 @@ class S3File(object):
             if self.parts:
                 self.flush(force=True)
                 part_info = {'Parts': self.parts}
-                self._call_s3(
+                write_result = self._call_s3(
                     self.s3.s3.complete_multipart_upload,
                     Bucket=self.bucket,
                     Key=self.key,
@@ -1435,12 +1435,14 @@ class S3File(object):
                     MultipartUpload=part_info)
             else:
                 try:
-                    self._call_s3(
+                    write_result = self._call_s3(
                         self.s3.s3.put_object,
                         Bucket=self.bucket, Key=self.key,
                         Body=self.buffer.getvalue(), ACL=self.acl)
                 except (ClientError, ParamValidationError) as e:
                     raise IOError('Write failed: %s' % self.path, e)
+            if self.s3.version_aware:
+                self.version_id = write_result.get('VersionId')
             self.s3.invalidate_cache(self.path)
             self.parts = []
             self.buffer.seek(0)
