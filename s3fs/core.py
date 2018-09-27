@@ -34,6 +34,9 @@ except NameError:
         pass
 
 
+from six import raise_from
+
+
 # py2 has no ConnectionError only OSError with different error number for each
 # error so we need to catch OSError and compare errno to the following
 # error numbers - same as catching ConnectionError on py3
@@ -85,6 +88,11 @@ key_acls = {'private', 'public-read', 'public-read-write',
             'bucket-owner-full-control'}
 buck_acls = {'private', 'public-read', 'public-read-write',
              'authenticated-read'}
+
+
+def is_permission_error(e):
+    # type: (ClientError) -> bool
+    return e.response['Error'].get('Code', 'Unknown') == 'AccessDenied'
 
 
 class S3FileSystem(object):
@@ -222,7 +230,7 @@ class S3FileSystem(object):
         anon, key, secret, kwargs, ckwargs, token, ssl = (
               self.anon, self.key, self.secret, self.kwargs,
               self.client_kwargs, self.token, self.use_ssl)
-        
+
         # Include the current PID in the connection key so that different
         # SSL connections are made for each process.
         tok = tokenize(anon, key, secret, kwargs, ckwargs, token,
@@ -370,9 +378,12 @@ class S3FileSystem(object):
                 files = [f for f in files if len(f['Key']) > len(prefix)]
                 for f in files:
                     f['Key'] = '/'.join([bucket, f['Key']])
-            except ClientError:
+            except ClientError as e:
                 # path not accessible
+                if is_permission_error(e):
+                    raise
                 files = []
+
             self.dirs[path] = files
         return self.dirs[path]
 
@@ -484,9 +495,9 @@ class S3FileSystem(object):
                 'VersionId': out.get('VersionId')
             }
             return out
-        except (ClientError, ParamValidationError):
+        except (ClientError, ParamValidationError) as e:
             logger.debug("Failed to head path %s", path, exc_info=True)
-            raise FileNotFoundError(path)
+            raise_from(FileNotFoundError(path), e)
 
     def object_version_info(self, path, **kwargs):
         if not self.version_aware:
@@ -870,8 +881,8 @@ class S3FileSystem(object):
                 kwargs,
                 Bucket=buc2, Key=key2, CopySource='/'.join([buc1, key1])
                 )
-        except (ClientError, ParamValidationError):
-            raise IOError('Copy failed', (path1, path2))
+        except (ClientError, ParamValidationError) as e:
+            raise_from(IOError('Copy failed', (path1, path2)), e)
 
     def copy_managed(self, path1, path2, **kwargs):
         buc1, key1 = split_path(path1)
@@ -890,8 +901,8 @@ class S3FileSystem(object):
                     kwargs
                 )
             )
-        except (ClientError, ParamValidationError):
-            raise IOError('Copy failed', (path1, path2))
+        except (ClientError, ParamValidationError) as e:
+            raise_from(IOError('Copy failed', (path1, path2)), e)
 
     def copy(self, path1, path2, **kwargs):
         self.copy_managed(path1, path2, **kwargs)
@@ -926,8 +937,8 @@ class S3FileSystem(object):
                 Bucket=bucket, Delete=delete_keys)
             for path in pathlist:
                 self.invalidate_cache(path)
-        except ClientError:
-            raise IOError('Bulk delete failed')
+        except ClientError as e:
+            raise_from(IOError('Bulk delete failed'), e)
 
     def rm(self, path, recursive=False, **kwargs):
         """
@@ -953,15 +964,15 @@ class S3FileSystem(object):
             try:
                 self._call_s3(
                     self.s3.delete_object, kwargs, Bucket=bucket, Key=key)
-            except ClientError:
-                raise IOError('Delete key failed', (bucket, key))
+            except ClientError as e:
+                raise_from(IOError('Delete key failed', (bucket, key)), e)
             self.invalidate_cache(path)
         else:
             if not self.s3.list_objects(Bucket=bucket).get('Contents'):
                 try:
                     self.s3.delete_bucket(Bucket=bucket)
-                except ClientError:
-                    raise IOError('Delete bucket failed', bucket)
+                except ClientError as e:
+                    raise_from(IOError('Delete bucket failed', bucket), e)
                 self.invalidate_cache(bucket)
                 self.invalidate_cache('')
             else:
@@ -1004,8 +1015,8 @@ class S3FileSystem(object):
                 self.s3.create_bucket(**params)
                 self.invalidate_cache('')
                 self.invalidate_cache(bucket)
-            except (ClientError, ParamValidationError):
-                raise IOError('Bucket create failed', path)
+            except (ClientError, ParamValidationError) as e:
+                raise_from(IOError('Bucket create failed', path), e)
 
     def read_block(self, fn, offset, length, delimiter=None, **kwargs):
         """ Read a block of bytes from an S3 file
@@ -1138,7 +1149,7 @@ class S3File(object):
                             self.s3_additional_kwargs,
                             Bucket=bucket, Key=key, ACL=acl)
                     except (ClientError, ParamValidationError) as e:
-                        raise IOError('Open for write failed', path, e)
+                        raise_from(IOError('Open for write failed', path), e)
                     self.loc = self.size
                     out = self.s3._call_s3(
                         self.s3.s3.upload_part_copy,
@@ -1155,8 +1166,8 @@ class S3File(object):
                 self.size = info['Size']
                 if self.s3.version_aware:
                     self.version_id = info.get('VersionId')
-            except (ClientError, ParamValidationError):
-                raise IOError("File not accessible", path)
+            except (ClientError, ParamValidationError) as e:
+                raise_from(IOError("File not accessible", path), e)
 
     def _call_s3(self, method, *kwarglist, **kwargs):
         return self.s3._call_s3(method, self.s3_additional_kwargs, *kwarglist,
@@ -1390,7 +1401,7 @@ class S3File(object):
                     self.s3.s3.create_multipart_upload,
                     Bucket=self.bucket, Key=self.key, ACL=self.acl)
             except (ClientError, ParamValidationError) as e:
-                raise IOError('Initiating write failed: %s' % self.path, e)
+                raise_from(IOError('Initiating write failed: %s' % self.path), e)
 
             while True:
                 try:
@@ -1440,7 +1451,7 @@ class S3File(object):
                         Bucket=self.bucket, Key=self.key,
                         Body=self.buffer.getvalue(), ACL=self.acl)
                 except (ClientError, ParamValidationError) as e:
-                    raise IOError('Write failed: %s' % self.path, e)
+                    raise_from(IOError('Write failed: %s' % self.path), e)
             if self.s3.version_aware:
                 self.version_id = write_result.get('VersionId')
             self.s3.invalidate_cache(self.path)
