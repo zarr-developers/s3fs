@@ -8,7 +8,6 @@ import socket
 from hashlib import md5
 
 import boto3
-import boto3.compat
 from botocore.client import Config
 from botocore.exceptions import ClientError, ParamValidationError
 
