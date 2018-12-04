@@ -375,7 +375,6 @@ class S3FileSystem(object):
                 if dirs:
                     files.extend([{'Key': l['Prefix'][:-1], 'Size': 0,
                                   'StorageClass': "DIRECTORY"} for l in dirs])
-                files = [f for f in files if len(f['Key']) > len(prefix)]
                 for f in files:
                     f['Key'] = '/'.join([bucket, f['Key']])
             except ClientError as e:
@@ -957,9 +956,7 @@ class S3FileSystem(object):
             raise FileNotFoundError(path)
         if recursive:
             self.invalidate_cache(path)
-            self.bulk_delete(self.walk(path), **kwargs)
-            if not self.exists(path):
-                return
+            self.bulk_delete(self.walk(path, directories=True), **kwargs)
         bucket, key = split_path(path)
         if key:
             try:
