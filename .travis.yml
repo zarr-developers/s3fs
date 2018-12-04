@@ -22,7 +22,7 @@ install:
   - conda install boto3 botocore moto six pytest mock -c conda-forge -y
 
 script:
-  - py.test -x --doctest-modules --pyargs s3fs
+  - py.test -vv s3fs
 
 notifications:
   email: false
