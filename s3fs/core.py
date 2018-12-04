@@ -818,6 +818,7 @@ class S3FileSystem(object):
             region in which the bucket should be created
         """
         acl = acl or self.s3_additional_kwargs.get('ACL', '')
+        path = path.rstrip('/') + '/'
         self.touch(path, acl=acl, **kwargs)
 
     def rmdir(self, path, **kwargs):
