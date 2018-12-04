@@ -19,8 +19,7 @@ install:
   # Install dependencies
   - conda create -n test -c conda-forge python=$TRAVIS_PYTHON_VERSION pip
   - source activate test
-  - pip install -r requirements.txt
-  - pip install -r test_requirements.txt
+  - conda install boto3 botocore moto six pytest mock -c conda-forge -y
 
 script:
   - py.test -x --doctest-modules --pyargs s3fs
