@@ -8,7 +8,6 @@ import socket
 from hashlib import md5
 
 import boto3
-import boto3.compat
 from botocore.client import Config
 from botocore.exceptions import ClientError, ParamValidationError
 
@@ -375,7 +374,6 @@ class S3FileSystem(object):
                 if dirs:
                     files.extend([{'Key': l['Prefix'][:-1], 'Size': 0,
                                   'StorageClass': "DIRECTORY"} for l in dirs])
-                files = [f for f in files if len(f['Key']) > len(prefix)]
                 for f in files:
                     f['Key'] = '/'.join([bucket, f['Key']])
             except ClientError as e:
@@ -818,6 +816,7 @@ class S3FileSystem(object):
             region in which the bucket should be created
         """
         acl = acl or self.s3_additional_kwargs.get('ACL', '')
+        path = path.rstrip('/') + '/'
         self.touch(path, acl=acl, **kwargs)
 
     def rmdir(self, path, **kwargs):
@@ -956,9 +955,7 @@ class S3FileSystem(object):
             raise FileNotFoundError(path)
         if recursive:
             self.invalidate_cache(path)
-            self.bulk_delete(self.walk(path), **kwargs)
-            if not self.exists(path):
-                return
+            self.bulk_delete(self.walk(path, directories=True), **kwargs)
         bucket, key = split_path(path)
         if key:
             try:

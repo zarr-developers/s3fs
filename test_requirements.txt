@@ -1,4 +1,5 @@
-boto3 >= 1.7, < 1.8
+boto3==1.9.38
+botocore>=1.12.13
 futures     ; python_version<"3.2"
 mock
 moto>=1.0
