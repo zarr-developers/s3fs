@@ -163,10 +163,10 @@ def test_info(s3):
     s3.touch(b)
     assert s3.info(a) == s3.ls(a, detail=True)[0]
     parent = a.rsplit('/', 1)[0]
-    s3.dirs.pop(a)  # remove full path from the cache
+    s3.dircache.pop(a)  # remove full path from the cache
     s3.ls(parent)  # fill the cache with parent dir
-    assert s3.info(a) == s3.dirs[parent][0]  # correct value
-    assert id(s3.info(a)) == id(s3.dirs[parent][0])  # is object from cache
+    assert s3.info(a) == s3.dircache[parent][0]  # correct value
+    assert id(s3.info(a)) == id(s3.dircache[parent][0])  # is object from cache
 
 
 test_xattr_sample_metadata = {'test_xattr': '1'}
