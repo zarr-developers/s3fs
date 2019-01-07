@@ -85,7 +85,11 @@ def split_path(path):
 
 
 def parent(path):
-    return path.rstrip('/').rsplit('/', 1)[0]
+    path = path.rstrip('/')
+    if '/' in path:
+        return path.rsplit('/', 1)[0]
+    else:
+        return ""
 
 
 key_acls = {'private', 'public-read', 'public-read-write',
@@ -363,6 +367,40 @@ class S3FileSystem(AbstractFileSystem):
 
             self.dircache[path] = files
         return self.dircache[path]
+
+    def mkdir(self, path, acl="", **kwargs):
+        path = path.rstrip('/')
+        if parent(path):
+            # "directory" is empty key with name ending in /
+            self.touch(path + '/')
+        else:
+            if acl and acl not in buck_acls:
+                raise ValueError('ACL not in %s', buck_acls)
+            try:
+                params = {"Bucket": path, 'ACL': acl}
+                region_name = (kwargs.get("region_name", None) or
+                               self.client_kwargs.get("region_name", None))
+                if region_name:
+                    params['CreateBucketConfiguration'] = {
+                        'LocationConstraint': region_name
+                    }
+                self.s3.create_bucket(**params)
+                self.invalidate_cache('')
+                self.invalidate_cache(path)
+            except (ClientError, ParamValidationError) as e:
+                raise_from(IOError('Bucket create failed', path), e)
+
+    def rmdir(self, path):
+        path = path.rstrip('/')
+        if parent(path):
+            self.rm(path + '/')
+        else:
+            try:
+                self.s3.delete_bucket(Bucket=path)
+            except ClientError as e:
+                raise_from(IOError('Delete bucket failed', path), e)
+            self.invalidate_cache(path)
+            self.invalidate_cache('')
 
     def _lsbuckets(self, refresh=False):
         if '' not in self.dircache or refresh:
