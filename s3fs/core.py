@@ -343,7 +343,10 @@ class S3FileSystem(AbstractFileSystem):
                 dircache = []
                 for i in it:
                     dircache.extend(i.get('CommonPrefixes', []))
-                    files.extend(i.get('Contents', []))
+                    for c in i.get('Contents', []):
+                        c['type'] = 'file'
+                        c['size'] = c['Size']
+                        files.append(c)
                 if dircache:
                     files.extend([{'Key': l['Prefix'][:-1], 'Size': 0,
                                   'StorageClass': "DIRECTORY",
@@ -363,10 +366,7 @@ class S3FileSystem(AbstractFileSystem):
 
     def mkdir(self, path, acl="", **kwargs):
         path = path.rstrip('/')
-        if self._parent(path):
-            # "directory" is empty key with name ending in /
-            self.touch(path + '/')
-        else:
+        if not self._parent(path):
             if acl and acl not in buck_acls:
                 raise ValueError('ACL not in %s', buck_acls)
             try:
@@ -385,9 +385,7 @@ class S3FileSystem(AbstractFileSystem):
 
     def rmdir(self, path):
         path = path.rstrip('/')
-        if self._parent(path):
-            self.rm(path + '/')
-        else:
+        if not self._parent(path):
             try:
                 self.s3.delete_bucket(Bucket=path)
             except ClientError as e:
@@ -471,10 +469,10 @@ class S3FileSystem(AbstractFileSystem):
         path = path.rstrip('/')
         files = self._ls(path, refresh=refresh)
         if not files:
-            if split_path(path)[1]:
+            try:
                 files = [self.info(path, **kwargs)]
-            elif path:
-                raise FileNotFoundError(path)
+            except FileNotFoundError:
+                return []
         if detail:
             return files
         else:
@@ -838,11 +836,8 @@ class S3FileSystem(AbstractFileSystem):
             Whether to remove also all entries below, i.e., which are returned
             by `walk()`.
         """
-        if not self.exists(path):
-            raise FileNotFoundError(path)
         if recursive:
-            self.invalidate_cache(path)
-            self.bulk_delete(self.walk(path, directories=True), **kwargs)
+            self.bulk_delete(self.find(path, maxdepth=None), **kwargs)
         bucket, key = split_path(path)
         if key:
             try:
@@ -862,6 +857,11 @@ class S3FileSystem(AbstractFileSystem):
             else:
                 raise IOError('Not empty', path)
 
+    def invalidate_cache(self, path=None):
+        if path is None:
+            self.dircache.clear()
+        else:
+            self.dircache.pop(path, None)
 
 class S3File(AbstractBufferedFile):
     """
