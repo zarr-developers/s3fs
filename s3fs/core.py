@@ -84,14 +84,6 @@ def split_path(path):
         return path.split('/', 1)
 
 
-def parent(path):
-    path = path.rstrip('/')
-    if '/' in path:
-        return path.rsplit('/', 1)[0]
-    else:
-        return ""
-
-
 key_acls = {'private', 'public-read', 'public-read-write',
             'authenticated-read', 'aws-exec-read', 'bucket-owner-read',
             'bucket-owner-full-control'}
@@ -163,6 +155,7 @@ class S3FileSystem(AbstractFileSystem):
     """
     _conn = {}
     _singleton = [None]
+    root_marker = ""
     connect_timeout = 5
     read_timeout = 15
     default_block_size = 5 * 2**20
@@ -370,7 +363,7 @@ class S3FileSystem(AbstractFileSystem):
 
     def mkdir(self, path, acl="", **kwargs):
         path = path.rstrip('/')
-        if parent(path):
+        if self._parent(path):
             # "directory" is empty key with name ending in /
             self.touch(path + '/')
         else:
@@ -392,7 +385,7 @@ class S3FileSystem(AbstractFileSystem):
 
     def rmdir(self, path):
         path = path.rstrip('/')
-        if parent(path):
+        if self._parent(path):
             self.rm(path + '/')
         else:
             try:
@@ -506,8 +499,8 @@ class S3FileSystem(AbstractFileSystem):
                 files = self.dircache[path]
                 if len(files) == 1:
                     return files[0]
-            elif parent(path) in self.dircache:
-                for f in self.dircache[parent(path)]:
+            elif self._parent(path) in self.dircache:
+                for f in self.dircache[self._parent(path)]:
                     if f['name'] == path:
                         return f
 
