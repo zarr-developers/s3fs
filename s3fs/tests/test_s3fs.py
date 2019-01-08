@@ -49,19 +49,17 @@ d = test_bucket_name+'/tmp/test/d'
 @pytest.yield_fixture
 def s3():
     # writable local S3 system
-    try:
-        m = moto.mock_s3()
-        m.start()
+    with moto.mock_s3():
         import boto3
         client = boto3.client('s3')
         client.create_bucket(Bucket=test_bucket_name, ACL='public-read')
 
-        bucket = client.create_bucket(Bucket=versioned_bucket_name, ACL='public-read')
+        client.create_bucket(Bucket=versioned_bucket_name, ACL='public-read')
         bucket_versioning = boto3.resource('s3').BucketVersioning(versioned_bucket_name)
         bucket_versioning.enable()
 
         # initialize secure bucket
-        bucket = client.create_bucket(Bucket=secure_bucket_name, ACL='public-read')
+        client.create_bucket(Bucket=secure_bucket_name, ACL='public-read')
         policy = json.dumps({
             "Version": "2012-10-17",
             "Id": "PutObjPolicy",
@@ -71,7 +69,8 @@ def s3():
                     "Effect": "Deny",
                     "Principal": "*",
                     "Action": "s3:PutObject",
-                    "Resource": "arn:aws:s3:::{bucket_name}/*".format(bucket_name=secure_bucket_name),
+                    "Resource": "arn:aws:s3:::{bucket_name}/*".format(
+                        bucket_name=secure_bucket_name),
                     "Condition": {
                         "StringNotEquals": {
                             "s3:x-amz-server-side-encryption": "aws:kms"
@@ -104,8 +103,6 @@ def s3():
                 client.delete_object(Bucket=secure_bucket_name, Key=k)
             except:
                 pass
-    finally:
-        m.stop()
 
 
 def test_simple(s3):
