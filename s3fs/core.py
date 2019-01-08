@@ -154,6 +154,7 @@ class S3FileSystem(AbstractFileSystem):
     connect_timeout = 5
     read_timeout = 15
     default_block_size = 5 * 2**20
+    protocol = 's3'
 
     def __init__(self, anon=False, key=None, secret=None, token=None,
                  use_ssl=True, client_kwargs=None, requester_pays=False,
@@ -445,10 +446,16 @@ class S3FileSystem(AbstractFileSystem):
             additional arguments passed on
         """
         path = self._strip_protocol(path).rstrip('/')
+        bucket, key = split_path(path)
         files = self._ls(path, refresh=refresh)
-        if not files:
+        if path and not files:
             try:
-                files = [self.info(path, **kwargs)]
+                if key:
+                    # a key with the same name as path exists
+                    files = [self.info(path, **kwargs)]
+                else:
+                    # buckets do give an info(), but it shouldn't be listed
+                    return []
             except FileNotFoundError:
                 return []
         if detail:
@@ -480,9 +487,14 @@ class S3FileSystem(AbstractFileSystem):
                 for f in self.dircache[self._parent(path)]:
                     if f['name'] == path:
                         return f
+        bucket, key = split_path(path)
+        if not key:
+            if bucket in self._lsbuckets(refresh):
+                return True
+            self._lsdir(bucket)
+            return {'name': bucket, 'size': 0, 'type': 'directory'}
 
         try:
-            bucket, key = split_path(path)
             if version_id is not None:
                 if not self.version_aware:
                     raise ValueError("version_id cannot be specified if the "
@@ -815,13 +827,15 @@ class S3FileSystem(AbstractFileSystem):
             Whether to remove also all entries below, i.e., which are returned
             by `walk()`.
         """
+        bucket, key = split_path(path)
         if recursive:
             files = self.find(path, maxdepth=None)
-            if not files:
+            if key and not files:
                 raise FileNotFoundError(path)
             self.bulk_delete(files, **kwargs)
+            if not key:
+                self.rmdir(bucket)
             return
-        bucket, key = split_path(path)
         if key:
             if not self.exists(path):
                 raise FileNotFoundError(path)
@@ -847,6 +861,12 @@ class S3FileSystem(AbstractFileSystem):
             self.dircache.clear()
         else:
             self.dircache.pop(path, None)
+
+    def walk(self, path, maxdepth=None):
+        if path in ['', '*', 's3://']:
+            raise ValueError('Cannot crawl all of S3')
+        return super().walk(path, maxdepth=maxdepth)
+
 
 class S3File(AbstractBufferedFile):
     """
@@ -891,11 +911,27 @@ class S3File(AbstractBufferedFile):
                  version_id=None, fill_cache=True, s3_additional_kwargs=None,
                  autocommit=True):
         super().__init__(s3, path, mode, block_size, autocommit=autocommit)
+        if not split_path(path)[1]:
+            raise IOError('Attempt to open non key-like path: %s' % path)
         self.version_id = version_id
         self.acl = acl
         self.mpu = None
+        self.parts = None
         self.fill_cache = fill_cache
         self.s3_additional_kwargs = s3_additional_kwargs or {}
+        if self.writable():
+            if block_size < 5 * 2 ** 20:
+                raise ValueError('Block size must be >=5MB')
+
+        if 'a' in mode and s3.exists(path):
+            loc = s3.info(path)['size']
+            if loc < 5 * 2 ** 20:
+                # existing file too small for multi-upload: download
+                self.write(self.fs.cat(self.path))
+                self.append_block = False
+            else:
+                self.append_block = True
+            self.loc = loc
 
     def _call_s3(self, method, *kwarglist, **kwargs):
         return self.fs._call_s3(method, self.s3_additional_kwargs, *kwarglist,
@@ -909,20 +945,16 @@ class S3File(AbstractBufferedFile):
         self.size = 0
         if self.blocksize < 5 * 2 ** 20:
             raise ValueError('Block size must be >=5MB')
+        try:
+            self.mpu = self._call_s3(
+                self.fs.s3.create_multipart_upload,
+                Bucket=bucket, Key=key, ACL=self.acl)
+        except (ClientError, ParamValidationError) as e:
+            raise_from(IOError('Initiating write failed: %s' % self.path), e)
         if 'a' in self.mode and self.fs.exists(self.path):
-            self.size = self.fs.info(self.path)['size']
-            if self.size < 5 * 2 ** 20:
-                # existing file too small for multi-upload: download
-                self.write(self.fs.cat(self.path))
-            else:
-                try:
-                    self.mpu = self.fs._call_s3(
-                        self.fs.s3.create_multipart_upload,
-                        self.s3_additional_kwargs,
-                        Bucket=bucket, Key=key, ACL=self.acl)
-                except (ClientError, ParamValidationError) as e:
-                    raise_from(IOError('Open for write failed', self.path), e)
-                self.loc = self.size
+            if self.append_block:
+                # use existing data in key when appending,
+                # and block is big enough
                 out = self.fs._call_s3(
                     self.fs.s3.upload_part_copy,
                     self.s3_additional_kwargs,
@@ -932,12 +964,6 @@ class S3File(AbstractBufferedFile):
                     CopySource=self.path)
                 self.parts.append({'PartNumber': 1,
                                    'ETag': out['CopyPartResult']['ETag']})
-        try:
-            self.mpu = self.mpu or self._call_s3(
-                self.fs.s3.create_multipart_upload,
-                Bucket=bucket, Key=key, ACL=self.acl)
-        except (ClientError, ParamValidationError) as e:
-            raise_from(IOError('Initiating write failed: %s' % self.path), e)
 
     def metadata(self, refresh=False, **kwargs):
         """ Return metadata of file.
@@ -1019,6 +1045,18 @@ class S3File(AbstractBufferedFile):
             MultipartUpload=part_info)
         if self.fs.version_aware:
             self.version_id = write_result.get('VersionId')
+
+        # complex cache invalidation, since file's appearance can cause several
+        # directories
+        parts = self.path.split('/')
+        path = parts[0]
+        for p in parts[1:]:
+            if path in self.fs.dircache and not [
+                    True for f in self.fs.dircache[path]
+                    if f['name'] == path + '/' + p]:
+                print('invalidate', path)
+                self.fs.invalidate_cache(path)
+            path = path + '/' + p
 
 
 def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,

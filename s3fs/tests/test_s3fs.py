@@ -354,12 +354,12 @@ def test_bucket_exists(s3):
 
 
 def test_du(s3):
-    d = s3.du(test_bucket_name)
+    d = s3.du(test_bucket_name, total=False)
     assert all(isinstance(v, int) and v >= 0 for v in d.values())
     assert test_bucket_name+'/nested/file1' in d
 
-    assert s3.du(test_bucket_name + '/test/', total=True) ==\
-           sum(map(len, files.values()))
+    assert s3.du(test_bucket_name + '/test/', total=True) == sum(
+          map(len, files.values()))
     assert s3.du(test_bucket_name) == s3.du('s3://'+test_bucket_name)
 
 
@@ -386,25 +386,27 @@ def test_s3_ls_detail(s3):
 
 def test_s3_glob(s3):
     fn = test_bucket_name+'/nested/file1'
-    assert fn not in s3.glob(test_bucket_name+'/')
-    assert fn not in s3.glob(test_bucket_name+'/*')
-    assert fn not in s3.glob(test_bucket_name+'/nested')
-    assert fn in s3.glob(test_bucket_name+'/nested/*')
-    assert fn in s3.glob(test_bucket_name+'/nested/file*')
-    assert fn in s3.glob(test_bucket_name+'/*/*')
-    assert all(any(p.startswith(f + '/') or p == f
-                   for p in s3.find(test_bucket_name, directories=True))
-                       for f in s3.glob(test_bucket_name+'/nested/*'))
-    assert [test_bucket_name + '/nested/nested2'] == s3.glob(test_bucket_name + '/nested/nested2')
-    assert [ 'test/nested/nested2/file1',
-             'test/nested/nested2/file2'] == s3.glob(test_bucket_name + '/nested/nested2/*')
+    assert fn not in list(s3.glob(test_bucket_name+'/'))
+    assert fn not in list(s3.glob(test_bucket_name+'/*'))
+    assert fn not in list(s3.glob(test_bucket_name+'/nested'))
+    assert fn in list(s3.glob(test_bucket_name+'/nested/*'))
+    assert fn in list(s3.glob(test_bucket_name+'/nested/file*'))
+    assert fn in list(s3.glob(test_bucket_name+'/*/*'))
+    #assert all(any(p.startswith(f + '/') or p == f
+    #               for p in list(s3.glob(test_bucket_name)))
+    #                   for f in list(s3.glob(test_bucket_name+'/nested/*')))
+    assert [test_bucket_name + '/nested/nested2'] == list(
+        s3.glob(test_bucket_name + '/nested/nested2'))
+    assert ['test/nested/nested2/file1', 'test/nested/nested2/file2'] == list(
+        s3.glob(test_bucket_name + '/nested/nested2/*'))
 
     with pytest.raises(ValueError):
         s3.glob('*')
 
     # Make sure glob() deals with the dot character (.) correctly.
-    assert test_bucket_name+'/file.dat' in s3.glob(test_bucket_name+'/file.*')
-    assert test_bucket_name+'/filexdat' not in s3.glob(test_bucket_name+'/file.*')
+    assert test_bucket_name+'/file.dat' in list(s3.glob(test_bucket_name+'/file.*'))
+    assert test_bucket_name+'/filexdat' not in list(s3.glob(test_bucket_name+'/file.*'))
+
 
 def test_get_list_of_summary_objects(s3):
     L = s3.ls(test_bucket_name + '/test')
@@ -491,7 +493,8 @@ def test_get_put(s3, tmpdir):
     data = files['test/accounts.1.json']
     assert open(test_file, 'rb').read() == data
     s3.put(test_file, test_bucket_name+'/temp')
-    assert s3.du(test_bucket_name+'/temp')[test_bucket_name+'/temp'] == len(data)
+    assert s3.du(test_bucket_name+'/temp', total=False)[
+               test_bucket_name+'/temp'] == len(data)
     assert s3.cat(test_bucket_name+'/temp') == data
 
 
@@ -588,8 +591,6 @@ def test_new_bucket(s3):
         f.write(b'hello')
     with pytest.raises((IOError, OSError)):
         s3.rmdir('new')
-    with pytest.raises((IOError, OSError)):
-        s3.rmdir('new/temp')
     s3.rm('new/temp')
     s3.rmdir('new')
     assert 'new' not in s3.ls('')
@@ -726,6 +727,8 @@ def test_append(s3):
     assert s3.cat(a) == b'a' * 10*2**20
 
     with s3.open(a, 'ab') as f:
+        assert f.parts is None
+        f._initiate_upload()
         assert f.parts
         assert f.tell() == 10*2**20
         f.write(b'extra')  # append, small write, big file
@@ -750,6 +753,9 @@ def test_bigger_than_block_read(s3):
 
 
 def test_current(s3):
+    s3._cache.clear()
+    s3 = S3FileSystem()
+    assert s3.current() is s3
     assert S3FileSystem.current() is s3
 
 
@@ -766,7 +772,7 @@ def test_array(s3):
 
 
 def _get_s3_id(s3):
-        return id(s3.connect())
+    return id(s3.s3)
 
 
 def test_no_connection_sharing_among_processes(s3):
@@ -830,7 +836,6 @@ def test_multipart_upload_blocksize(s3):
     # Ensure that the multipart upload consists of only 3 parts
     assert len(s3f.parts) == expected_parts
     s3f.close()
-    assert len(s3f.parts) == 0
 
 
 def test_not_fill_cache(s3):
