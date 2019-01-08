@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 import errno
-import io
 import logging
-import os
-import re
 import socket
 from hashlib import md5
 
@@ -11,10 +8,9 @@ from fsspec import AbstractFileSystem
 from fsspec.spec import AbstractBufferedFile
 import boto3
 from botocore.client import Config
-from botocore.exceptions import ClientError, ParamValidationError
+from botocore.exceptions import ClientError, ParamValidationError, BotoCoreError
 
 from s3fs.utils import ParamKwargsHelper
-from .utils import read_block, raises, ensure_writable
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +74,7 @@ def split_path(path):
     """
     if path.startswith('s3://'):
         path = path[5:]
+    path = path.rstrip('/').lstrip('/')
     if '/' not in path:
         return path, ""
     else:
@@ -153,8 +150,6 @@ class S3FileSystem(AbstractFileSystem):
     ...     print(f.read())  # doctest: +SKIP
     b'Hello, world!'
     """
-    _conn = {}
-    _singleton = [None]
     root_marker = ""
     connect_timeout = 5
     read_timeout = 15
@@ -185,7 +180,6 @@ class S3FileSystem(AbstractFileSystem):
         self.version_aware = version_aware
         self.client_kwargs = client_kwargs
         self.config_kwargs = config_kwargs
-        self.dircache = {}
         self.req_kw = {'RequestPayer': 'requester'} if requester_pays else {}
         self.s3_additional_kwargs = s3_additional_kwargs or {}
         self.use_ssl = use_ssl
@@ -209,52 +203,39 @@ class S3FileSystem(AbstractFileSystem):
         # filter all kwargs
         return self._filter_kwargs(method, additional_kwargs)
 
-    def connect(self, refresh=False):
+    def connect(self, refresh=True):
         """
         Establish S3 connection object.
 
         Parameters
         ----------
         refresh : bool (True)
-            Whether to use cached filelists, if already read
+            Whether to remake session/client, if they exist
         """
-        anon, key, secret, kwargs, ckwargs, token, ssl = (
-              self.anon, self.key, self.secret, self.kwargs,
+        if refresh is False and self.s3 is not None:
+            return self.s3
+        key, secret, kwargs, ckwargs, token, ssl = (
+              self.key, self.secret, self.kwargs,
               self.client_kwargs, self.token, self.use_ssl)
 
-        # Include the current PID in the connection key so that different
-        # SSL connections are made for each process.
-        tok = tokenize(anon, key, secret, kwargs, ckwargs, token,
-                       ssl, os.getpid())
-        if refresh:
-            self._conn.pop(tok, None)
-        if tok not in self._conn:
-            logger.debug("Open S3 connection.  Anonymous: %s", self.anon)
-
-            if self.anon:
-                from botocore import UNSIGNED
-                conf = Config(connect_timeout=self.connect_timeout,
-                              read_timeout=self.read_timeout,
-                              signature_version=UNSIGNED, **self.config_kwargs)
-                if not self.passed_in_session:
-                    self.session = boto3.Session(**self.kwargs)
-            else:
-                conf = Config(connect_timeout=self.connect_timeout,
-                              read_timeout=self.read_timeout,
-                              **self.config_kwargs)
-                if not self.passed_in_session:
-                    self.session = boto3.Session(self.key, self.secret, self.token,
-                                                 **self.kwargs)
-
-            s3 = self.session.client('s3', config=conf, use_ssl=ssl,
-                                     **self.client_kwargs)
-            self._conn[tok] = (s3, self.session)
-        else:
-            s3, session = self._conn[tok]
+        if self.anon:
+            from botocore import UNSIGNED
+            conf = Config(connect_timeout=self.connect_timeout,
+                          read_timeout=self.read_timeout,
+                          signature_version=UNSIGNED, **self.config_kwargs)
             if not self.passed_in_session:
-                self.session = session
+                self.session = boto3.Session(**self.kwargs)
+        else:
+            conf = Config(connect_timeout=self.connect_timeout,
+                          read_timeout=self.read_timeout,
+                          **self.config_kwargs)
+            if not self.passed_in_session:
+                self.session = boto3.Session(self.key, self.secret, self.token,
+                                             **self.kwargs)
 
-        return s3
+        self.s3 = self.session.client('s3', config=conf, use_ssl=ssl,
+                                      **self.client_kwargs)
+        return self.s3
 
     def get_delegated_s3pars(self, exp=3600):
         """Get temporary credentials from STS, appropriate for sending across a
@@ -329,9 +310,6 @@ class S3FileSystem(AbstractFileSystem):
                       s3_additional_kwargs=kw)
 
     def _lsdir(self, path, refresh=False):
-        if path.startswith('s3://'):
-            path = path[len('s3://'):]
-        path = path.rstrip('/')
         bucket, prefix = split_path(path)
         prefix = prefix + '/' if prefix else ""
         if path not in self.dircache or refresh:
@@ -359,13 +337,15 @@ class S3FileSystem(AbstractFileSystem):
                 # path not accessible
                 if is_permission_error(e):
                     raise
-                files = []
+                if not prefix:
+                    # list bucket failed - bucket doesn't exist
+                    raise FileNotFoundError(bucket)
 
             self.dircache[path] = files
         return self.dircache[path]
 
     def mkdir(self, path, acl="", **kwargs):
-        path = path.rstrip('/')
+        path = self._strip_protocol(path).rstrip('/')
         if not self._parent(path):
             if acl and acl not in buck_acls:
                 raise ValueError('ACL not in %s', buck_acls)
@@ -384,7 +364,7 @@ class S3FileSystem(AbstractFileSystem):
                 raise_from(IOError('Bucket create failed', path), e)
 
     def rmdir(self, path):
-        path = path.rstrip('/')
+        path = self._strip_protocol(path).rstrip('/')
         if not self._parent(path):
             try:
                 self.s3.delete_bucket(Bucket=path)
@@ -464,9 +444,7 @@ class S3FileSystem(AbstractFileSystem):
         kwargs : dict
             additional arguments passed on
         """
-        if path.startswith('s3://'):
-            path = path[len('s3://'):]
-        path = path.rstrip('/')
+        path = self._strip_protocol(path).rstrip('/')
         files = self._ls(path, refresh=refresh)
         if not files:
             try:
@@ -492,6 +470,7 @@ class S3FileSystem(AbstractFileSystem):
             If true, don't look in the info cache
         """
 
+        path = self._strip_protocol(path).rstrip('/')
         if not refresh:
             if path in self.dircache:
                 files = self.dircache[path]
@@ -814,13 +793,13 @@ class S3FileSystem(AbstractFileSystem):
             return
         delete_keys = {'Objects': [{'Key': split_path(path)[1]} for path
                                    in pathlist]}
+        for path in pathlist:
+            self.invalidate_cache(self._parent(path))
         try:
             self._call_s3(
                 self.s3.delete_objects,
                 kwargs,
                 Bucket=bucket, Delete=delete_keys)
-            for path in pathlist:
-                self.invalidate_cache(path)
         except ClientError as e:
             raise_from(IOError('Bulk delete failed'), e)
 
@@ -837,20 +816,26 @@ class S3FileSystem(AbstractFileSystem):
             by `walk()`.
         """
         if recursive:
-            self.bulk_delete(self.find(path, maxdepth=None), **kwargs)
+            files = self.find(path, maxdepth=None)
+            if not files:
+                raise FileNotFoundError(path)
+            self.bulk_delete(files, **kwargs)
+            return
         bucket, key = split_path(path)
         if key:
+            if not self.exists(path):
+                raise FileNotFoundError(path)
             try:
                 self._call_s3(
                     self.s3.delete_object, kwargs, Bucket=bucket, Key=key)
             except ClientError as e:
                 raise_from(IOError('Delete key failed', (bucket, key)), e)
-            self.invalidate_cache(path)
+            self.invalidate_cache(self._parent(path))
         else:
-            if not self.s3.list_objects(Bucket=bucket).get('Contents'):
+            if self.exists(bucket):
                 try:
                     self.s3.delete_bucket(Bucket=bucket)
-                except ClientError as e:
+                except BotoCoreError as e:
                     raise_from(IOError('Delete bucket failed', bucket), e)
                 self.invalidate_cache(bucket)
                 self.invalidate_cache('')

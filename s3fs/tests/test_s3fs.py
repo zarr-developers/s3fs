@@ -89,7 +89,9 @@ def s3():
         for flist in [files, csv_files, text_files, glob_files]:
             for f, data in flist.items():
                 client.put_object(Bucket=test_bucket_name, Key=f, Body=data)
-        yield S3FileSystem(anon=False)
+        s3 = S3FileSystem(anon=False)
+        s3.invalidate_cache()
+        yield s3
         for flist in [files, csv_files, text_files, glob_files]:
             for f, data in flist.items():
                 try:
@@ -141,7 +143,7 @@ def test_tokenize():
 
 def test_idempotent_connect(s3):
     con1 = s3.connect()
-    con2 = s3.connect()
+    con2 = s3.connect(refresh=False)
     con3 = s3.connect(refresh=True)
     assert con1 is con2
     assert con1 is not con3
@@ -273,19 +275,6 @@ def test_rm(s3):
 
 
 def test_rmdir(s3):
-    nested = a + "/nested"
-    s3.touch(a)
-    s3.touch(nested)
-    s3.touch(b)
-
-    with pytest.raises(IOError):  # doesn't delete non empty directory
-        s3.rmdir(a)
-
-    s3.rmdir(nested)
-    s3.rmdir(a)
-    assert a not in s3.ls(test_bucket_name)
-    assert nested not in s3.ls(test_bucket_name)
-
     bucket = 'test1_bucket'
     s3.mkdir(bucket)
     s3.rmdir(bucket)
@@ -322,7 +311,7 @@ def test_bulk_delete(s3):
         s3.bulk_delete(['nonexistent/file'])
     with pytest.raises(ValueError):
         s3.bulk_delete(['bucket1/file', 'bucket2/file'])
-    filelist = s3.walk(test_bucket_name+'/nested')
+    filelist = s3.find(test_bucket_name+'/nested')
     s3.bulk_delete(filelist)
     assert not s3.exists(test_bucket_name+'/nested/nested2/file1')
 
@@ -348,7 +337,7 @@ def test_s3_file_access(s3):
 def test_s3_file_info(s3):
     fn = test_bucket_name+'/nested/file1'
     data = b'hello\n'
-    assert fn in s3.walk(test_bucket_name)
+    assert fn in s3.find(test_bucket_name)
     assert s3.exists(fn)
     assert not s3.exists(fn+'another')
     assert s3.info(fn)['Size'] == len(data)
@@ -365,7 +354,7 @@ def test_bucket_exists(s3):
 
 
 def test_du(s3):
-    d = s3.du(test_bucket_name, deep=True)
+    d = s3.du(test_bucket_name)
     assert all(isinstance(v, int) and v >= 0 for v in d.values())
     assert test_bucket_name+'/nested/file1' in d
 
@@ -385,9 +374,9 @@ def test_s3_ls(s3):
 def test_s3_big_ls(s3):
     for x in range(1200):
         s3.touch(test_bucket_name+'/thousand/%i.part'%x)
-    assert len(s3.walk(test_bucket_name)) > 1200
+    assert len(s3.find(test_bucket_name)) > 1200
     s3.rm(test_bucket_name+'/thousand/', recursive=True)
-    assert len(s3.walk(test_bucket_name+'/thousand/')) == 0
+    assert len(s3.find(test_bucket_name+'/thousand/')) == 0
 
 
 def test_s3_ls_detail(s3):
@@ -404,7 +393,7 @@ def test_s3_glob(s3):
     assert fn in s3.glob(test_bucket_name+'/nested/file*')
     assert fn in s3.glob(test_bucket_name+'/*/*')
     assert all(any(p.startswith(f + '/') or p == f
-                   for p in s3.walk(test_bucket_name, directories=True))
+                   for p in s3.find(test_bucket_name, directories=True))
                        for f in s3.glob(test_bucket_name+'/nested/*'))
     assert [test_bucket_name + '/nested/nested2'] == s3.glob(test_bucket_name + '/nested/nested2')
     assert [ 'test/nested/nested2/file1',
@@ -539,10 +528,10 @@ def test_errors(s3):
         s3.mkdir('/')
 
     with pytest.raises(ValueError):
-        s3.walk('')
+        s3.find('')
 
     with pytest.raises(ValueError):
-        s3.walk('s3://')
+        s3.find('s3://')
 
 
 def test_read_small(s3):
