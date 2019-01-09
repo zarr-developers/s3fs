@@ -922,6 +922,13 @@ class S3File(AbstractBufferedFile):
         if self.writable():
             if block_size < 5 * 2 ** 20:
                 raise ValueError('Block size must be >=5MB')
+        else:
+            if version_id and self.fs.version_aware:
+                self.version_id = version_id
+                self.details = self.fs.info(self.path, version_id=version_id)
+                self.size = self.details['size']
+            elif self.fs.version_aware:
+                self.version_id = self.details.get('VersionId')
 
         if 'a' in mode and s3.exists(path):
             loc = s3.info(path)['size']
@@ -938,7 +945,7 @@ class S3File(AbstractBufferedFile):
                                 **kwargs)
 
     def _initiate_upload(self):
-        bucket, key = self.path.split('/', 1)
+        bucket, key = split_path(self.path)
         if self.acl and self.acl not in key_acls:
             raise ValueError('ACL not in %s', key_acls)
         self.parts = []

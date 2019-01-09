@@ -977,30 +977,35 @@ def test_readinto(s3):
     assert contents == b'Hello, World!'
 
 
-def test_change_defaults_only_subsequent(monkeypatch):
+def test_change_defaults_only_subsequent():
     """Test for Issue #135
 
     Ensure that changing the default block size doesn't affect existing file
     systems that were created using that default. It should only affect file
     systems created after the change.
     """
-    fs_default = S3FileSystem()
-    assert fs_default.default_block_size == 5 * (1024 ** 2)
+    try:
+        S3FileSystem.cachable = False  # don't reuse instances with same pars
 
-    fs_overridden = S3FileSystem(default_block_size=64 * (1024 ** 2))
-    assert fs_overridden.default_block_size == 64 * (1024 ** 2)
+        fs_default = S3FileSystem()
+        assert fs_default.default_block_size == 5 * (1024 ** 2)
 
-    # Suppose I want all subsequent file systems to have a block size of 1 GiB
-    # instead of 5 MiB:
-    monkeypatch.setattr(S3FileSystem, 'default_block_size', 1024 ** 3)
+        fs_overridden = S3FileSystem(default_block_size=64 * (1024 ** 2))
+        assert fs_overridden.default_block_size == 64 * (1024 ** 2)
 
-    fs_big = S3FileSystem()
-    assert fs_big.default_block_size == 1024 ** 3
+        # Suppose I want all subsequent file systems to have a block size of 1 GiB
+        # instead of 5 MiB:
+        S3FileSystem.default_block_size = 1024 ** 3
 
-    # Test the other file systems created to see if their block sizes changed
-    assert fs_overridden.default_block_size == 64 * (1024 ** 2)
-    assert fs_default.default_block_size == 5 * (1024 ** 2)
+        fs_big = S3FileSystem()
+        assert fs_big.default_block_size == 1024 ** 3
 
+        # Test the other file systems created to see if their block sizes changed
+        assert fs_overridden.default_block_size == 64 * (1024 ** 2)
+        assert fs_default.default_block_size == 5 * (1024 ** 2)
+    finally:
+        S3FileSystem.default_block_size = 5 * (1024 ** 2)
+        S3FileSystem.cachable = True
 
 
 def test_passed_in_session_set_correctly(s3):
