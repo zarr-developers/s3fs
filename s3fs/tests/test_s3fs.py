@@ -256,6 +256,38 @@ def test_ls_touch(s3):
     assert set(L) == {a, b}
 
 
+def test_isfile(s3):
+    assert s3.isfile(test_bucket_name+'/test/accounts.1.json')
+    assert s3.isfile(test_bucket_name+'/test/accounts.2.json')
+    assert not s3.isfile(test_bucket_name + '/test/accounts.3.json')
+    assert not s3.isfile(test_bucket_name + '/test')
+    assert not s3.isfile(test_bucket_name)
+
+    assert not s3.isfile(a)
+    s3.touch(a)
+    assert s3.isfile(a)
+
+    assert not s3.isfile(b)
+    s3.mkdir(b)
+    assert not s3.isfile(b)
+
+
+def test_isdir(s3):
+    assert not s3.isdir(test_bucket_name+'/test/accounts.1.json')
+    assert not s3.isdir(test_bucket_name+'/test/accounts.2.json')
+    assert not s3.isdir(test_bucket_name + '/test/accounts.3.json')
+    assert s3.isdir(test_bucket_name + '/test')
+    assert s3.isdir(test_bucket_name)
+
+    assert not s3.isdir(a)
+    s3.touch(a)
+    assert not s3.isdir(a)
+
+    assert not s3.isdir(b)
+    s3.mkdir(b)
+    assert s3.isdir(b)
+
+
 def test_rm(s3):
     assert not s3.exists(a)
     s3.touch(a)
