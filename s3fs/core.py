@@ -365,7 +365,7 @@ class S3FileSystem(object):
             try:
                 pag = self.s3.get_paginator('list_objects_v2')
                 config = {}
-                if max_items:
+                if max_items is not None:
                     config.update(MaxItems=max_items, PageSize=2 * max_items)
                 it = pag.paginate(Bucket=bucket, Prefix=prefix, Delimiter='/',
                                   PaginationConfig=config, **self.req_kw)
@@ -384,7 +384,8 @@ class S3FileSystem(object):
                 if is_permission_error(e):
                     raise
                 files = []
-
+            if max_items is not None:
+                return files
             self.dirs[path] = files
         return self.dirs[path]
 
