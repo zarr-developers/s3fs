@@ -483,7 +483,8 @@ class S3FileSystem(object):
         refresh : bool
             If true, don't look in the info cache
         """
-        return not raises(FileNotFoundError, lambda: self.info(path, refresh=refresh))
+        return not raises(FileNotFoundError,
+                          lambda: self.info(path.rstrip('/'), refresh=refresh))
 
     def info(self, path, version_id=None, refresh=False, **kwargs):
         """ Detail on the specific file pointed to by path.

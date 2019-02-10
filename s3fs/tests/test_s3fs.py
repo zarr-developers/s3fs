@@ -268,8 +268,16 @@ def test_isfile(s3):
     assert s3.isfile(a)
 
     assert not s3.isfile(b)
+    assert not s3.isfile(b + '/')
     s3.mkdir(b)
     assert not s3.isfile(b)
+    assert not s3.isfile(b + '/')
+
+    assert not s3.isfile(c)
+    assert not s3.isfile(c + '/')
+    s3.mkdir(c + '/')
+    assert not s3.isfile(c)
+    assert not s3.isfile(c + '/')
 
 
 def test_isdir(s3):
@@ -284,8 +292,16 @@ def test_isdir(s3):
     assert not s3.isdir(a)
 
     assert not s3.isdir(b)
+    assert not s3.isdir(b + '/')
     s3.mkdir(b)
     assert s3.isdir(b)
+    assert s3.isdir(b + '/')
+
+    assert not s3.isdir(c)
+    assert not s3.isdir(c + '/')
+    s3.mkdir(c + '/')
+    assert s3.isdir(c)
+    assert s3.isdir(c + '/')
 
 
 def test_rm(s3):
