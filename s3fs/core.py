@@ -506,28 +506,26 @@ class S3FileSystem(object):
         refresh : bool
             If true, don't look in the info cache
         """
-        parent = path.rsplit('/', 1)[0]
-
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
+        path = path.rstrip('/')
         if not refresh:
-            if path in self.dirs:
-                files = self.dirs[path]
-                if len(files) == 1:
-                    return files[0]
-            elif parent in self.dirs:
+            parent = path.rsplit('/', 1)[0]
+            if parent != path and parent in self.dirs:
                 for f in self.dirs[parent]:
                     if f['Key'] == path:
                         return f
 
+        if version_id is not None:
+            if not self.version_aware:
+                raise ValueError("version_id cannot be specified if the "
+                                 "filesystem is not version aware")
+            kwargs['VersionId'] = version_id
         try:
             bucket, key = split_path(path)
-            if version_id is not None:
-                if not self.version_aware:
-                    raise ValueError("version_id cannot be specified if the "
-                                     "filesystem is not version aware")
-                kwargs['VersionId'] = version_id
             out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
                                 Key=key, **self.req_kw)
-            out = {
+            return {
                 'ETag': out['ETag'],
                 'Key': '/'.join([bucket, key]),
                 'LastModified': out['LastModified'],
@@ -535,7 +533,6 @@ class S3FileSystem(object):
                 'StorageClass': "STANDARD",
                 'VersionId': out.get('VersionId')
             }
-            return out
         except (ClientError, ParamValidationError) as e:
             logger.debug("Failed to head path %s", path, exc_info=True)
             raise_from(FileNotFoundError(path), e)
