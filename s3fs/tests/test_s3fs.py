@@ -168,6 +168,14 @@ def test_info(s3):
     assert s3.info(a) == s3.dirs[parent][0]  # correct value
     assert id(s3.info(a)) == id(s3.dirs[parent][0])  # is object from cache
 
+    new_parent = test_bucket_name + '/foo'
+    s3.mkdir(new_parent)
+    with pytest.raises(FileNotFoundError):
+        s3.info(new_parent)
+    s3.ls(new_parent)
+    with pytest.raises(FileNotFoundError):
+        s3.info(new_parent)
+
 
 test_xattr_sample_metadata = {'test_xattr': '1'}
 
