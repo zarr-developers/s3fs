@@ -469,7 +469,14 @@ class S3FileSystem(object):
         if path.startswith('s3://'):
             path = path[len('s3://'):]
         path = path.rstrip('/')
-        return not path or bool(self._lsdir(path, refresh=refresh, max_items=1))
+        if not path:
+            return True
+        if not refresh:
+            parent = path.rsplit('/', 1)[0]
+            if parent in self.dirs:
+                return any(f['Key'] == path and f['StorageClass'] == 'DIRECTORY'
+                           for f in self.dirs[parent])
+        return bool(self._lsdir(path, refresh=refresh, max_items=1))
 
     def isfile(self, path, refresh=False):
         """ Check if path points to a file.
