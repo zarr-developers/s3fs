@@ -27,7 +27,7 @@ except ImportError:
     )
 
 try:
-    FileNotFoundError
+    FileNotFoundError = FileNotFoundError
 except NameError:
     class FileNotFoundError(IOError):
         pass
