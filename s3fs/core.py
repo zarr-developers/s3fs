@@ -469,48 +469,6 @@ class S3FileSystem(AbstractFileSystem):
         else:
             return [f['name'] for f in files]
 
-    def isdir(self, path, refresh=False):
-        """ Check if path points to a directory.
-
-        Check is cached unless `refresh=True`.
-
-        Parameters
-        ----------
-        path : string/bytes
-            location to check
-        refresh : bool
-            If true, don't look in the info cache
-        """
-        if path.startswith('s3://'):
-            path = path[len('s3://'):]
-        path = path.rstrip('/')
-        if not path:
-            return True
-        if not refresh:
-            parent = path.rsplit('/', 1)[0]
-            if parent in self.dirs:
-                return any(f['Key'] == path and f['StorageClass'] == 'DIRECTORY'
-                           for f in self.dirs[parent])
-        return bool(self._lsdir(path, refresh=refresh, max_items=1))
-
-    def isfile(self, path, refresh=False):
-        """ Check if path points to a file.
-
-        Check is cached unless `refresh=True`.
-
-        Parameters
-        ----------
-        path : string/bytes
-            location to check
-        refresh : bool
-            If true, don't look in the info cache
-        """
-        try:
-            self.info(path.rstrip('/'), refresh=refresh)
-            return True
-        except FileNotFoundError:
-            return False
-
     def info(self, path, version_id=None, refresh=False, **kwargs):
         """ Detail on the specific file pointed to by path.
 
