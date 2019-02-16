@@ -255,6 +255,69 @@ def test_ls_touch(s3):
     assert set(L) == {a, b}
 
 
+def test_isfile(s3):
+    assert not s3.isfile('')
+    assert not s3.isfile('/')
+    assert not s3.isfile(test_bucket_name)
+    assert not s3.isfile(test_bucket_name + '/test')
+
+    assert not s3.isfile(test_bucket_name + '/test/foo')
+    assert s3.isfile(test_bucket_name+'/test/accounts.1.json')
+    assert s3.isfile(test_bucket_name+'/test/accounts.2.json')
+
+    assert not s3.isfile(a)
+    s3.touch(a)
+    assert s3.isfile(a)
+
+    assert not s3.isfile(b)
+    assert not s3.isfile(b + '/')
+    s3.mkdir(b)
+    assert not s3.isfile(b)
+    assert not s3.isfile(b + '/')
+
+    assert not s3.isfile(c)
+    assert not s3.isfile(c + '/')
+    s3.mkdir(c + '/')
+    assert not s3.isfile(c)
+    assert not s3.isfile(c + '/')
+
+
+def test_isdir(s3):
+    assert s3.isdir('')
+    assert s3.isdir('/')
+    assert s3.isdir(test_bucket_name)
+    assert s3.isdir(test_bucket_name + '/test')
+
+    assert not s3.isdir(test_bucket_name + '/test/foo')
+    assert not s3.isdir(test_bucket_name + '/test/accounts.1.json')
+    assert not s3.isdir(test_bucket_name + '/test/accounts.2.json')
+
+    assert not s3.isdir(a)
+    s3.touch(a)
+    assert not s3.isdir(a)
+
+    assert not s3.isdir(b)
+    assert not s3.isdir(b + '/')
+    s3.mkdir(b)
+    assert s3.isdir(b)
+    assert s3.isdir(b + '/')
+
+    assert not s3.isdir(c)
+    assert not s3.isdir(c + '/')
+    s3.mkdir(c + '/')
+    assert s3.isdir(c)
+    assert s3.isdir(c + '/')
+
+    # test cache
+    assert not s3.dirs
+    s3.ls(test_bucket_name + '/nested')
+    assert test_bucket_name + '/nested' in s3.dirs
+    assert not s3.isdir(test_bucket_name + '/nested/file1')
+    assert not s3.isdir(test_bucket_name + '/nested/file2')
+    assert s3.isdir(test_bucket_name + '/nested/nested2')
+    assert s3.isdir(test_bucket_name + '/nested/nested2/')
+
+
 def test_rm(s3):
     assert not s3.exists(a)
     s3.touch(a)

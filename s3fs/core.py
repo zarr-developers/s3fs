@@ -310,14 +310,20 @@ class S3FileSystem(AbstractFileSystem):
                       version_id=version_id, fill_cache=fill_cache,
                       s3_additional_kwargs=kw)
 
-    def _lsdir(self, path, refresh=False):
+    def _lsdir(self, path, refresh=False, max_items=None):
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
+        path = path.rstrip('/')
         bucket, prefix = split_path(path)
         prefix = prefix + '/' if prefix else ""
         if path not in self.dircache or refresh:
             try:
                 pag = self.s3.get_paginator('list_objects_v2')
+                config = {}
+                if max_items is not None:
+                    config.update(MaxItems=max_items, PageSize=2 * max_items)
                 it = pag.paginate(Bucket=bucket, Prefix=prefix, Delimiter='/',
-                                  **self.req_kw)
+                                  PaginationConfig=config, **self.req_kw)
                 files = []
                 dircache = []
                 for i in it:
@@ -462,6 +468,48 @@ class S3FileSystem(AbstractFileSystem):
             return files
         else:
             return [f['name'] for f in files]
+
+    def isdir(self, path, refresh=False):
+        """ Check if path points to a directory.
+
+        Check is cached unless `refresh=True`.
+
+        Parameters
+        ----------
+        path : string/bytes
+            location to check
+        refresh : bool
+            If true, don't look in the info cache
+        """
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
+        path = path.rstrip('/')
+        if not path:
+            return True
+        if not refresh:
+            parent = path.rsplit('/', 1)[0]
+            if parent in self.dirs:
+                return any(f['Key'] == path and f['StorageClass'] == 'DIRECTORY'
+                           for f in self.dirs[parent])
+        return bool(self._lsdir(path, refresh=refresh, max_items=1))
+
+    def isfile(self, path, refresh=False):
+        """ Check if path points to a file.
+
+        Check is cached unless `refresh=True`.
+
+        Parameters
+        ----------
+        path : string/bytes
+            location to check
+        refresh : bool
+            If true, don't look in the info cache
+        """
+        try:
+            self.info(path.rstrip('/'), refresh=refresh)
+            return True
+        except FileNotFoundError:
+            return False
 
     def info(self, path, version_id=None, refresh=False, **kwargs):
         """ Detail on the specific file pointed to by path.
