@@ -1001,7 +1001,6 @@ class S3File(AbstractBufferedFile):
             if path in self.fs.dircache and not [
                     True for f in self.fs.dircache[path]
                     if f['name'] == path + '/' + p]:
-                print('invalidate', path)
                 self.fs.invalidate_cache(path)
             path = path + '/' + p
 
