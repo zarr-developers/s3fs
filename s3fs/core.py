@@ -452,77 +452,11 @@ class S3FileSystem(AbstractFileSystem):
             additional arguments passed on
         """
         path = self._strip_protocol(path).rstrip('/')
-        bucket, key = split_path(path)
         files = self._ls(path, refresh=refresh)
-        if path and not files:
-            try:
-                if key:
-                    # a key with the same name as path exists
-                    files = [self.info(path, **kwargs)]
-                else:
-                    # buckets do give an info(), but it shouldn't be listed
-                    return []
-            except FileNotFoundError:
-                return []
         if detail:
             return files
         else:
-            return [f['name'] for f in files]
-
-    def info(self, path, version_id=None, refresh=False, **kwargs):
-        """ Detail on the specific file pointed to by path.
-
-        Gets details only for a specific key, directories/buckets cannot be
-        used with info.
-
-        Parameters
-        ----------
-        version_id : str, optional
-            version of the key to perform the head_object on
-        refresh : bool
-            If true, don't look in the info cache
-        """
-
-        path = self._strip_protocol(path).rstrip('/')
-        if not refresh:
-            if path in self.dircache:
-                files = self.dircache[path]
-                if len(files) == 1:
-                    return files[0]
-            elif self._parent(path) in self.dircache:
-                for f in self.dircache[self._parent(path)]:
-                    if f['name'] == path:
-                        return f
-        bucket, key = split_path(path)
-        if not key:
-            if bucket in self._lsbuckets(refresh):
-                return True
-            self._lsdir(bucket)
-            return {'name': bucket, 'size': 0, 'type': 'directory'}
-
-        try:
-            if version_id is not None:
-                if not self.version_aware:
-                    raise ValueError("version_id cannot be specified if the "
-                                     "filesystem is not version aware")
-                kwargs['VersionId'] = version_id
-            out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
-                                Key=key, **self.req_kw)
-            out = {
-                'ETag': out['ETag'],
-                'Key': '/'.join([bucket, key]),
-                'LastModified': out['LastModified'],
-                'Size': out['ContentLength'],
-                'StorageClass': "STANDARD",
-                'VersionId': out.get('VersionId'),
-                'size': out['ContentLength'],
-                'name': '/'.join([bucket, key]),
-                'type': 'file'
-            }
-            return out
-        except (ClientError, ParamValidationError) as e:
-            logger.debug("Failed to head path %s", path, exc_info=True)
-            raise_from(FileNotFoundError(path), e)
+            return list(sorted(set([f['name'] for f in files])))
 
     def object_version_info(self, path, **kwargs):
         if not self.version_aware:
@@ -916,7 +850,6 @@ class S3File(AbstractBufferedFile):
     def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
                  version_id=None, fill_cache=True, s3_additional_kwargs=None,
                  autocommit=True):
-        super().__init__(s3, path, mode, block_size, autocommit=autocommit)
         if not split_path(path)[1]:
             raise IOError('Attempt to open non key-like path: %s' % path)
         self.version_id = version_id
@@ -925,6 +858,7 @@ class S3File(AbstractBufferedFile):
         self.parts = None
         self.fill_cache = fill_cache
         self.s3_additional_kwargs = s3_additional_kwargs or {}
+        super().__init__(s3, path, mode, block_size, autocommit=autocommit)
         if self.writable():
             if block_size < 5 * 2 ** 20:
                 raise ValueError('Block size must be >=5MB')
