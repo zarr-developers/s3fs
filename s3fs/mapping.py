@@ -1,4 +1,3 @@
-
 from collections import MutableMapping
 import os
 
@@ -34,16 +33,16 @@ class S3Map(MutableMapping):
         self.s3 = s3 or S3FileSystem.current()
         self.root = root
         if check:
-            self.s3.touch(root+'/a')
-            self.s3.rm(root+'/a')
+            self.s3.touch(root + '/a')
+            self.s3.rm(root + '/a')
         else:
             bucket = split_path(root)[0]
             if create:
                 self.s3.mkdir(bucket)
             elif not self.s3.exists(bucket):
                 raise ValueError("Bucket %s does not exist."
-                        " Create bucket with the ``create=True`` keyword" %
-                        bucket)
+                                 " Create bucket with the ``create=True`` keyword" %
+                                 bucket)
 
     def clear(self):
         """Remove all keys below root - empties out mapping
