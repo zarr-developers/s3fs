@@ -734,11 +734,18 @@ class S3FileSystem(object):
             self._call_s3(self.s3.put_bucket_acl,
                           kwargs, Bucket=bucket, ACL=acl)
 
-    def glob(self, path):
+    def glob(self, path, refresh=False):
         """
         Find files by glob-matching.
 
         Note that the bucket part of the path must not contain a "*"
+
+        Parameters
+        ----------
+        path : string/bytes
+            location at which to list files with glob characters
+        refresh : bool (=False)
+            if False, look in local cache for files
         """
         path0 = path
         if path.startswith('s3://'):
@@ -753,7 +760,7 @@ class S3FileSystem(object):
         # must be a / between the bucket name and the *.
         star_pos = path.find('*')
         root = path if star_pos == -1 else path[:path[:star_pos].rindex('/') + 1]
-        allfiles = self.walk(root, directories=True)
+        allfiles = self.walk(root, refresh=refresh, directories=True)
 
         # Translate the glob pattern into regex (similar to `fnmatch`).
         regex_text = '('
