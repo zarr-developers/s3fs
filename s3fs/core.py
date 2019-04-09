@@ -28,7 +28,7 @@ except ImportError:
     )
 
 try:
-    FileNotFoundError
+    FileNotFoundError = FileNotFoundError
 except NameError:
     class FileNotFoundError(IOError):
         pass
@@ -503,28 +503,26 @@ class S3FileSystem(object):
         refresh : bool
             If true, don't look in the info cache
         """
-        parent = path.rsplit('/', 1)[0]
-
+        if path.startswith('s3://'):
+            path = path[len('s3://'):]
+        path = path.rstrip('/')
         if not refresh:
-            if path in self.dirs:
-                files = self.dirs[path]
-                if len(files) == 1:
-                    return files[0]
-            elif parent in self.dirs:
+            parent = path.rsplit('/', 1)[0]
+            if parent != path and parent in self.dirs:
                 for f in self.dirs[parent]:
                     if f['Key'] == path:
                         return f
 
+        if version_id is not None:
+            if not self.version_aware:
+                raise ValueError("version_id cannot be specified if the "
+                                 "filesystem is not version aware")
+            kwargs['VersionId'] = version_id
         try:
             bucket, key = split_path(path)
-            if version_id is not None:
-                if not self.version_aware:
-                    raise ValueError("version_id cannot be specified if the "
-                                     "filesystem is not version aware")
-                kwargs['VersionId'] = version_id
             out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
                                 Key=key, **self.req_kw)
-            out = {
+            return {
                 'ETag': out['ETag'],
                 'Key': '/'.join([bucket, key]),
                 'LastModified': out['LastModified'],
@@ -532,7 +530,6 @@ class S3FileSystem(object):
                 'StorageClass': "STANDARD",
                 'VersionId': out.get('VersionId')
             }
-            return out
         except (ClientError, ParamValidationError) as e:
             logger.debug("Failed to head path %s", path, exc_info=True)
             raise_from(FileNotFoundError(path), e)
@@ -731,11 +728,18 @@ class S3FileSystem(object):
             self._call_s3(self.s3.put_bucket_acl,
                           kwargs, Bucket=bucket, ACL=acl)
 
-    def glob(self, path):
+    def glob(self, path, refresh=False):
         """
         Find files by glob-matching.
 
         Note that the bucket part of the path must not contain a "*"
+
+        Parameters
+        ----------
+        path : string/bytes
+            location at which to list files with glob characters
+        refresh : bool (=False)
+            if False, look in local cache for files
         """
         path0 = path
         if path.startswith('s3://'):
@@ -749,9 +753,8 @@ class S3FileSystem(object):
         # star (*) in the path: since the * is NOT in the bucket name, there
         # must be a / between the bucket name and the *.
         star_pos = path.find('*')
-        root = path if star_pos == - \
-            1 else path[:path[:star_pos].rindex('/') + 1]
-        allfiles = self.walk(root, directories=True)
+        root = path if star_pos == -1 else path[:path[:star_pos].rindex('/') + 1]
+        allfiles = self.walk(root, refresh=refresh, directories=True)
 
         # Translate the glob pattern into regex (similar to `fnmatch`).
         regex_text = '('

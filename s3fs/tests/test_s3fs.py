@@ -6,7 +6,7 @@ import re
 import time
 import pytest
 from itertools import chain
-from s3fs.core import S3FileSystem
+from s3fs.core import S3FileSystem, FileNotFoundError
 from s3fs.utils import seek_delimiter, ignoring, SSEParams
 import moto
 import boto3
@@ -172,6 +172,14 @@ def test_info(s3):
     s3.ls(parent)  # fill the cache with parent dir
     assert s3.info(a) == s3.dirs[parent][0]  # correct value
     assert id(s3.info(a)) == id(s3.dirs[parent][0])  # is object from cache
+
+    new_parent = test_bucket_name + '/foo'
+    s3.mkdir(new_parent)
+    with pytest.raises(FileNotFoundError):
+        s3.info(new_parent)
+    s3.ls(new_parent)
+    with pytest.raises(FileNotFoundError):
+        s3.info(new_parent)
 
 
 test_xattr_sample_metadata = {'test_xattr': '1'}
