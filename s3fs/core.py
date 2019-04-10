@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from six import raise_from
 import errno
 import io
 import logging
@@ -31,10 +32,6 @@ try:
 except NameError:
     class FileNotFoundError(IOError):
         pass
-
-
-from six import raise_from
-
 
 # py2 has no ConnectionError only OSError with different error number for each
 # error so we need to catch OSError and compare errno to the following
@@ -155,7 +152,7 @@ class S3FileSystem(object):
     _singleton = [None]
     connect_timeout = 5
     read_timeout = 15
-    default_block_size = 5 * 2**20
+    default_block_size = 5 * 2 ** 20
 
     def __init__(self, anon=False, key=None, secret=None, token=None,
                  use_ssl=True, client_kwargs=None, requester_pays=False,
@@ -227,8 +224,8 @@ class S3FileSystem(object):
             Whether to use cached filelists, if already read
         """
         anon, key, secret, kwargs, ckwargs, token, ssl = (
-              self.anon, self.key, self.secret, self.kwargs,
-              self.client_kwargs, self.token, self.use_ssl)
+            self.anon, self.key, self.secret, self.kwargs,
+            self.client_kwargs, self.token, self.use_ssl)
 
         # Include the current PID in the connection key so that different
         # SSL connections are made for each process.
@@ -376,7 +373,7 @@ class S3FileSystem(object):
                     files.extend(i.get('Contents', []))
                 if dirs:
                     files.extend([{'Key': l['Prefix'][:-1], 'Size': 0,
-                                  'StorageClass': "DIRECTORY"} for l in dirs])
+                                   'StorageClass': "DIRECTORY"} for l in dirs])
                 for f in files:
                     f['Key'] = '/'.join([bucket, f['Key']])
             except ClientError as e:
@@ -686,7 +683,7 @@ class S3FileSystem(object):
             Key=key,
             Metadata=metadata,
             MetadataDirective='REPLACE',
-            )
+        )
 
         # refresh metadata
         self._metadata_cache[path] = metadata
@@ -774,8 +771,8 @@ class S3FileSystem(object):
 
         seen = set()
         return [p for f in allfiles
-                      for m in [regex_pattern.match(f)] if m
-                          for p in [m.group(0)] if not (p in seen or seen.add(p))]
+                for m in [regex_pattern.match(f)] if m
+                for p in [m.group(0)] if not (p in seen or seen.add(p))]
 
     def du(self, path, total=False, deep=False, **kwargs):
         """ Bytes in keys at path """
@@ -902,7 +899,7 @@ class S3FileSystem(object):
             kwargs,
             Bucket=bucket,
             Key=key
-            )
+        )
         out = [self._call_s3(
             self.s3.upload_part_copy,
             kwargs,
@@ -926,7 +923,7 @@ class S3FileSystem(object):
                 self.s3.copy_object,
                 kwargs,
                 Bucket=buc2, Key=key2, CopySource='/'.join([buc1, key1])
-                )
+            )
         except (ClientError, ParamValidationError) as e:
             raise_from(IOError('Copy failed', (path1, path2)), e)
 
@@ -972,7 +969,7 @@ class S3FileSystem(object):
         bucket = buckets.pop()
         if len(pathlist) > 1000:
             for i in range((len(pathlist) // 1000) + 1):
-                self.bulk_delete(pathlist[i*1000:(i+1)*1000])
+                self.bulk_delete(pathlist[i * 1000:(i + 1) * 1000])
             return
         delete_keys = {'Objects': [{'Key': split_path(path)[1]} for path
                                    in pathlist]}
@@ -1183,7 +1180,7 @@ class S3File(object):
             self.forced = False
             if 'a' in mode and s3.exists(path):
                 self.size = s3.info(path)['Size']
-                if self.size < 5*2**20:
+                if self.size < 5 * 2 ** 20:
                     # existing file too small for multi-upload: download
                     self.write(s3.cat(path))
                 else:
@@ -1445,7 +1442,8 @@ class S3File(object):
                     self.s3.s3.create_multipart_upload,
                     Bucket=self.bucket, Key=self.key, ACL=self.acl)
             except (ClientError, ParamValidationError) as e:
-                raise_from(IOError('Initiating write failed: %s' % self.path), e)
+                raise_from(IOError('Initiating write failed: %s' %
+                                   self.path), e)
 
             while True:
                 try:
