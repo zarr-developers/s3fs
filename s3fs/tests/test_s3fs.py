@@ -1172,12 +1172,12 @@ def test_readinto(s3):
     with s3.open('bucket/file.txt', 'wb') as fd:
         fd.write(b'Hello, World!')
 
-    contents = bytearray()
+    contents = bytearray(15)
 
     with s3.open('bucket/file.txt', 'rb') as fd:
         assert fd.readinto(contents) == 13
 
-    assert contents == b'Hello, World!'
+    assert contents.startswith(b'Hello, World!')
 
 
 def test_change_defaults_only_subsequent(monkeypatch):
