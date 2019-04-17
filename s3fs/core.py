@@ -1537,7 +1537,7 @@ class S3File(object):
         raise io.UnsupportedOperation()
 
     def readinto(self, b):
-        data = self.read()
+        data = self.read(len(b))
         b[:len(data)] = data
         return len(data)
 
