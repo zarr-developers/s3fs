@@ -533,7 +533,7 @@ def test_url(s3):
     url = s3.url(fn, expires=100)
     assert 'http' in url
     assert '/nested/file1' in url
-    exp = int(re.match(".*?Expires=(\d+)", url).groups()[0])
+    exp = int(re.match(r".*?Expires=(\d+)", url).groups()[0])
     delta = abs(exp - time.time() - 100)
     assert delta < 5
     with s3.open(fn) as f:
