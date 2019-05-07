@@ -1135,14 +1135,15 @@ def test_versions(s3):
     with s3.open(versioned_file, 'wb') as fo:
         fo.write(b'2')
     versions = s3.object_version_info(versioned_file)
-    assert len(versions) == 2
+    version_ids = [version['VersionId'] for version in versions]
+    assert len(version_ids) == 2
 
     with s3.open(versioned_file) as fo:
-        assert fo.version_id == '1'
+        assert fo.version_id == version_ids[1]
         assert fo.read() == b'2'
 
-    with s3.open(versioned_file, version_id='0') as fo:
-        assert fo.version_id == '0'
+    with s3.open(versioned_file, version_id=version_ids[0]) as fo:
+        assert fo.version_id == version_ids[0]
         assert fo.read() == b'1'
 
 
