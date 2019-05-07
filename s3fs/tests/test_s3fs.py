@@ -4,6 +4,7 @@ from concurrent.futures import ProcessPoolExecutor
 import io
 import re
 import time
+import unittest
 import pytest
 from itertools import chain
 from s3fs.core import S3FileSystem, FileNotFoundError
@@ -717,6 +718,48 @@ def test_write_small(s3):
     assert s3.cat(test_bucket_name + '/test') == b'hello'
     s3.open(test_bucket_name + '/test', 'wb').close()
     assert s3.info(test_bucket_name + '/test')['Size'] == 0
+
+
+def test_write_large(s3):
+    "flush() chunks buffer when processing large singular payload"
+    mb = 2 ** 20
+    payload_size = int(2.5 * 5 * mb)
+    payload = b'0' * payload_size
+
+    with s3.open(test_bucket_name + '/test', 'wb') as fd, \
+         unittest.mock.patch.object(s3, '_call_s3', side_effect=s3._call_s3) as mock:
+        fd.write(payload)
+
+    upload_parts = mock.mock_calls[1:]
+    upload_sizes = [len(upload_part[2]['Body']) for upload_part in upload_parts]
+    assert upload_sizes == [5 * mb, int(7.5 * mb)]
+
+    assert s3.cat(test_bucket_name + '/test') == payload
+
+    assert s3.info(test_bucket_name + '/test')['Size'] == payload_size
+
+
+def test_write_limit(s3):
+    "flush() respects part_max when processing large singular payload"
+    mb = 2 ** 20
+    block_size = 15 * mb
+    part_max = 28 * mb
+    payload_size = 44 * mb
+    payload = b'0' * payload_size
+
+    with s3.open(test_bucket_name + '/test', 'wb') as fd, \
+         unittest.mock.patch('s3fs.core.S3File.part_max', new=part_max), \
+         unittest.mock.patch.object(s3, '_call_s3', side_effect=s3._call_s3) as mock:
+        fd.blocksize = block_size
+        fd.write(payload)
+
+    upload_parts = mock.mock_calls[1:]
+    upload_sizes = [len(upload_part[2]['Body']) for upload_part in upload_parts]
+    assert upload_sizes == [block_size, int(14.5 * mb), int(14.5 * mb)]
+
+    assert s3.cat(test_bucket_name + '/test') == payload
+
+    assert s3.info(test_bucket_name + '/test')['Size'] == payload_size
 
 
 def test_write_small_secure(s3):
