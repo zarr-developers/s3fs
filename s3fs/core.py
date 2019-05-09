@@ -220,8 +220,10 @@ class S3FileSystem(object):
 
         Parameters
         ----------
-        refresh : bool (True)
-            Whether to use cached filelists, if already read
+        refresh : bool
+            Whether to create new session/client, even if a previous one with
+            the same parameters already exists. If False (default), an
+            existing one will be used if possible
         """
         anon, key, secret, kwargs, ckwargs, token, ssl = (
             self.anon, self.key, self.secret, self.kwargs,
