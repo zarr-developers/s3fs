@@ -11,6 +11,12 @@ from s3fs.utils import seek_delimiter, ignoring, SSEParams
 import moto
 import boto3
 
+try:
+    from unittest import mock
+except ImportError:
+    # python 2.7
+    import mock
+
 from botocore.exceptions import NoCredentialsError
 
 test_bucket_name = 'test'
@@ -532,7 +538,7 @@ def test_url(s3):
     url = s3.url(fn, expires=100)
     assert 'http' in url
     assert '/nested/file1' in url
-    exp = int(re.match(".*?Expires=(\d+)", url).groups()[0])
+    exp = int(re.match(r".*?Expires=(\d+)", url).groups()[0])
     delta = abs(exp - time.time() - 100)
     assert delta < 5
     with s3.open(fn) as f:
@@ -719,6 +725,48 @@ def test_write_small(s3):
     assert s3.info(test_bucket_name + '/test')['Size'] == 0
 
 
+def test_write_large(s3):
+    "flush() chunks buffer when processing large singular payload"
+    mb = 2 ** 20
+    payload_size = int(2.5 * 5 * mb)
+    payload = b'0' * payload_size
+
+    with s3.open(test_bucket_name + '/test', 'wb') as fd, \
+         mock.patch.object(s3, '_call_s3', side_effect=s3._call_s3) as s3_mock:
+        fd.write(payload)
+
+    upload_parts = s3_mock.mock_calls[1:]
+    upload_sizes = [len(upload_part[2]['Body']) for upload_part in upload_parts]
+    assert upload_sizes == [5 * mb, int(7.5 * mb)]
+
+    assert s3.cat(test_bucket_name + '/test') == payload
+
+    assert s3.info(test_bucket_name + '/test')['Size'] == payload_size
+
+
+def test_write_limit(s3):
+    "flush() respects part_max when processing large singular payload"
+    mb = 2 ** 20
+    block_size = 15 * mb
+    part_max = 28 * mb
+    payload_size = 44 * mb
+    payload = b'0' * payload_size
+
+    with s3.open(test_bucket_name + '/test', 'wb') as fd, \
+         mock.patch('s3fs.core.S3File.part_max', new=part_max), \
+         mock.patch.object(s3, '_call_s3', side_effect=s3._call_s3) as s3_mock:
+        fd.blocksize = block_size
+        fd.write(payload)
+
+    upload_parts = s3_mock.mock_calls[1:]
+    upload_sizes = [len(upload_part[2]['Body']) for upload_part in upload_parts]
+    assert upload_sizes == [block_size, int(14.5 * mb), int(14.5 * mb)]
+
+    assert s3.cat(test_bucket_name + '/test') == payload
+
+    assert s3.info(test_bucket_name + '/test')['Size'] == payload_size
+
+
 def test_write_small_secure(s3):
     # Unfortunately moto does not yet support enforcing SSE policies.  It also
     # does not return the correct objects that can be used to test the results
@@ -732,8 +780,8 @@ def test_write_small_secure(s3):
 
 
 def test_write_large_secure(s3):
-    mock = moto.mock_s3()
-    mock.start()
+    s3_mock = moto.mock_s3()
+    s3_mock.start()
 
     # build our own s3fs with the relevant additional kwarg
     s3 = S3FileSystem(s3_additional_kwargs={'ServerSideEncryption': 'AES256'})
@@ -1092,14 +1140,15 @@ def test_versions(s3):
     with s3.open(versioned_file, 'wb') as fo:
         fo.write(b'2')
     versions = s3.object_version_info(versioned_file)
-    assert len(versions) == 2
+    version_ids = [version['VersionId'] for version in versions]
+    assert len(version_ids) == 2
 
     with s3.open(versioned_file) as fo:
-        assert fo.version_id == '1'
+        assert fo.version_id == version_ids[1]
         assert fo.read() == b'2'
 
-    with s3.open(versioned_file, version_id='0') as fo:
-        assert fo.version_id == '0'
+    with s3.open(versioned_file, version_id=version_ids[0]) as fo:
+        assert fo.version_id == version_ids[0]
         assert fo.read() == b'1'
 
 

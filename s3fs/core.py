@@ -743,7 +743,6 @@ class S3FileSystem(object):
         refresh : bool (=False)
             if False, look in local cache for files
         """
-        path0 = path
         if path.startswith('s3://'):
             path = path[len('s3://'):]
         path = path.rstrip('/')
@@ -1144,9 +1143,12 @@ class S3File(object):
     See Also
     --------
     S3FileSystem.open: used to create ``S3File`` objects
-    """
 
-    def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
+    """
+    part_min = 5 * 2 ** 20
+    part_max = 5 * 2 ** 30
+
+    def __init__(self, s3, path, mode='rb', block_size=part_min, acl="",
                  version_id=None, fill_cache=True, s3_additional_kwargs=None):
         self.mode = mode
         if mode not in {'rb', 'wb', 'ab'}:
@@ -1435,38 +1437,63 @@ class S3File(object):
             if force:
                 self.forced = True
 
-            self.buffer.seek(0)
-            part = len(self.parts) + 1
-            i = 0
-
             try:
                 self.mpu = self.mpu or self._call_s3(
                     self.s3.s3.create_multipart_upload,
                     Bucket=self.bucket, Key=self.key, ACL=self.acl)
-            except (ClientError, ParamValidationError) as e:
-                raise_from(IOError('Initiating write failed: %s' %
-                                   self.path), e)
+            except (ClientError, ParamValidationError) as exc:
+                raise_from(IOError('Initiating write failed: %s' % self.path), exc)
 
-            while True:
-                try:
-                    out = self._call_s3(
-                        self.s3.s3.upload_part,
-                        Bucket=self.bucket,
-                        PartNumber=part, UploadId=self.mpu['UploadId'],
-                        Body=self.buffer.read(), Key=self.key)
-                    break
-                except S3_RETRYABLE_ERRORS:
-                    if i < retries:
-                        logger.debug('Exception %e on S3 write, retrying',
-                                     exc_info=True)
-                        i += 1
-                        continue
+            self.buffer.seek(0)
+
+            # chunk buffer to ensure blocksize respected by multiparts;
+            # look ahead to ensure we don't attempt to write too small or too large a part
+            (data0, data1) = (None, self.buffer.read(self.blocksize))
+            while data1:
+                (data0, data1) = (data1, self.buffer.read(self.blocksize))
+
+                data1_size = len(data1)
+                if 0 < data1_size < self.blocksize:
+                    # last part would be smaller than specified
+                    remainder = data0 + data1
+                    remainder_size = self.blocksize + data1_size
+
+                    if remainder_size <= self.part_max:
+                        # we can combine the last two parts without issue
+                        (data0, data1) = (remainder, None)
                     else:
-                        raise IOError('Write failed after %i retries' % retries,
-                                      self)
-                except Exception as e:
-                    raise IOError('Write failed', self, e)
-            self.parts.append({'PartNumber': part, 'ETag': out['ETag']})
+                        # combination of last two blocks is too large for a single part
+                        #
+                        # this implies blocksize (and data0) must be more than half, and less
+                        # than or equal to, part_max;
+                        # however, data1 could be trivially small (less than part_min).
+                        #
+                        # spread out the data between the last two parts in order to best
+                        # approximate blocksize and avoid part_min:
+                        partition = remainder_size // 2
+                        (data0, data1) = (remainder[:partition], remainder[partition:])
+
+                part = len(self.parts) + 1
+
+                for attempt in range(retries + 1):
+                    try:
+                        out = self._call_s3(
+                            self.s3.s3.upload_part,
+                            Bucket=self.bucket,
+                            PartNumber=part, UploadId=self.mpu['UploadId'],
+                            Body=data0, Key=self.key)
+                    except S3_RETRYABLE_ERRORS:
+                        if attempt < retries:
+                            logger.debug('Exception %e on S3 write, retrying', exc_info=True)
+                    except Exception as exc:
+                        raise IOError('Write failed', self, exc)
+                    else:
+                        break
+                else:
+                    raise IOError('Write failed after %i retries' % retries, self)
+
+                self.parts.append({'PartNumber': part, 'ETag': out['ETag']})
+
             self.buffer = io.BytesIO()
 
     def close(self):
