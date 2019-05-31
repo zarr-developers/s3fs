@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from six import raise_from
 import errno
 import logging
 import socket
@@ -25,14 +26,10 @@ except ImportError:
     )
 
 try:
-    FileNotFoundError
+    FileNotFoundError = FileNotFoundError
 except NameError:
     class FileNotFoundError(IOError):
         pass
-
-
-from six import raise_from
-
 
 # py2 has no ConnectionError only OSError with different error number for each
 # error so we need to catch OSError and compare errno to the following
@@ -210,14 +207,17 @@ class S3FileSystem(AbstractFileSystem):
 
         Parameters
         ----------
-        refresh : bool (True)
-            Whether to remake session/client, if they exist
+        refresh : bool
+            Whether to create new session/client, even if a previous one with
+            the same parameters already exists. If False (default), an
+            existing one will be used if possible
         """
-        if refresh is False and self.s3 is not None:
+        if refresh is False:
+            # back compat: we store whole FS instance now
             return self.s3
-        key, secret, kwargs, ckwargs, token, ssl = (
-              self.key, self.secret, self.kwargs,
-              self.client_kwargs, self.token, self.use_ssl)
+        anon, key, secret, kwargs, ckwargs, token, ssl = (
+            self.anon, self.key, self.secret, self.kwargs,
+            self.client_kwargs, self.token, self.use_ssl)
 
         if self.anon:
             from botocore import UNSIGNED
@@ -607,7 +607,7 @@ class S3FileSystem(AbstractFileSystem):
             Key=key,
             Metadata=metadata,
             MetadataDirective='REPLACE',
-            )
+        )
 
         # refresh metadata
         self._metadata_cache[path] = metadata
@@ -671,7 +671,7 @@ class S3FileSystem(AbstractFileSystem):
             kwargs,
             Bucket=bucket,
             Key=key
-            )
+        )
         out = [self._call_s3(
             self.s3.upload_part_copy,
             kwargs,
@@ -695,7 +695,7 @@ class S3FileSystem(AbstractFileSystem):
                 self.s3.copy_object,
                 kwargs,
                 Bucket=buc2, Key=key2, CopySource='/'.join([buc1, key1])
-                )
+            )
         except (ClientError, ParamValidationError) as e:
             raise_from(IOError('Copy failed', (path1, path2)), e)
 
@@ -741,7 +741,7 @@ class S3FileSystem(AbstractFileSystem):
         bucket = buckets.pop()
         if len(pathlist) > 1000:
             for i in range((len(pathlist) // 1000) + 1):
-                self.bulk_delete(pathlist[i*1000:(i+1)*1000])
+                self.bulk_delete(pathlist[i * 1000:(i + 1) * 1000])
             return
         delete_keys = {'Objects': [{'Key': split_path(path)[1]} for path
                                    in pathlist]}
@@ -844,8 +844,11 @@ class S3File(AbstractBufferedFile):
     See Also
     --------
     S3FileSystem.open: used to create ``S3File`` objects
+
     """
     retries = 5
+    part_min = 5 * 2 ** 20
+    part_max = 5 * 2 ** 30
 
     def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
                  version_id=None, fill_cache=True, s3_additional_kwargs=None,

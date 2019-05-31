@@ -2,7 +2,7 @@ import pytest
 from s3fs.tests.test_s3fs import s3, test_bucket_name
 from s3fs import S3Map, S3FileSystem
 
-root = test_bucket_name+'/mapping'
+root = test_bucket_name + '/mapping'
 
 
 def test_simple(s3):
@@ -40,7 +40,7 @@ def test_with_data(s3):
     assert d['x'] == b'123'
     assert bool(d)
 
-    assert s3.find(root) == [test_bucket_name+'/mapping/x']
+    assert s3.find(root) == [test_bucket_name + '/mapping/x']
     d['x'] = b'000'
     assert d['x'] == b'000'
 

@@ -23,7 +23,7 @@ install:
   - pip install -r test_requirements.txt
 
 script:
-  - BOTO_PATH=/dev/null AWS_ACCESS_KEY_ID=dummy_key AWS_SECRET_ACCESS_KEY=dummy_secret py.test -vv s3fs
+  - py.test -vv s3fs
 
 notifications:
   email: false
