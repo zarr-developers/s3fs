@@ -173,7 +173,7 @@ def test_info(s3):
     s3.touch(b)
     assert s3.info(a) == s3.ls(a, detail=True)[0]
     parent = a.rsplit('/', 1)[0]
-    s3.dircache.pop(a)  # remove full path from the cache
+    s3.invalidate_cache()  # remove full path from the cache
     s3.ls(parent)  # fill the cache with parent dir
     assert s3.info(a) == s3.dircache[parent][0]  # correct value
     assert id(s3.info(a)) == id(s3.dircache[parent][0])  # is object from cache
@@ -323,20 +323,15 @@ def test_isdir(s3):
 
     assert not s3.isdir(b)
     assert not s3.isdir(b + '/')
-    s3.mkdir(b)
-    assert s3.isdir(b)
-    assert s3.isdir(b + '/')
 
     assert not s3.isdir(c)
     assert not s3.isdir(c + '/')
-    s3.mkdir(c + '/')
-    assert s3.isdir(c)
-    assert s3.isdir(c + '/')
 
     # test cache
-    assert not s3.dirs
+    s3.invalidate_cache()
+    assert not s3.dircache
     s3.ls(test_bucket_name + '/nested')
-    assert test_bucket_name + '/nested' in s3.dirs
+    assert test_bucket_name + '/nested' in s3.dircache
     assert not s3.isdir(test_bucket_name + '/nested/file1')
     assert not s3.isdir(test_bucket_name + '/nested/file2')
     assert s3.isdir(test_bucket_name + '/nested/nested2')

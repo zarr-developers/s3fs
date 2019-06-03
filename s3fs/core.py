@@ -436,6 +436,49 @@ class S3FileSystem(AbstractFileSystem):
         else:
             return self._lsdir(path, refresh)
 
+    def exists(self, path):
+        if path in ['', '/']:
+            # the root always exists, even if anon
+            return True
+        bucket, key = split_path(path)
+        if key:
+            return super().exists(path)
+        else:
+            try:
+                self.ls(path)
+                return True
+            except FileNotFoundError:
+                return False
+
+    def info(self, path, version_id=None):
+        if path in ['/', '']:
+            return {'name': path, 'size': 0, 'type': 'directory'}
+        kwargs = self.kwargs.copy()
+        if version_id is not None:
+            if not self.version_aware:
+                raise ValueError("version_id cannot be specified if the "
+                                 "filesystem is not version aware")
+            kwargs['VersionId'] = version_id
+        if self.version_aware:
+            try:
+                bucket, key = split_path(path)
+                out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
+                                    Key=key, **self.req_kw)
+                return {
+                    'ETag': out['ETag'],
+                    'Key': '/'.join([bucket, key]),
+                    'LastModified': out['LastModified'],
+                    'Size': out['ContentLength'],
+                    'size': out['ContentLength'],
+                    'path': '/'.join([bucket, key]),
+                    'StorageClass': "STANDARD",
+                    'VersionId': out.get('VersionId')
+                }
+            except (ClientError, ParamValidationError) as e:
+                logger.debug("Failed to head path %s", path, exc_info=True)
+                raise_from(FileNotFoundError(path), e)
+        return super().info(path)
+
     def ls(self, path, detail=False, refresh=False, **kwargs):
         """ List single "directory" with or without details
 
@@ -452,7 +495,10 @@ class S3FileSystem(AbstractFileSystem):
             additional arguments passed on
         """
         path = self._strip_protocol(path).rstrip('/')
-        files = self._ls(path, refresh=refresh)
+        out = self._ls(self._parent(path), refresh=refresh)
+        out = [o for o in out
+               if o['name'].rstrip('/') == path and o['type'] != 'directory']
+        files = self._ls(path, refresh=refresh) or out
         if detail:
             return files
         else:

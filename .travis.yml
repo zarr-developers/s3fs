@@ -5,6 +5,7 @@ language: python
 matrix:
   include:
     - python: 3.6
+    - python: 3.7
 
 install:
   # Install conda
@@ -19,7 +20,8 @@ install:
   - export BOTO_CONFIG=/dev/null
   - export AWS_ACCESS_KEY_ID=foobar_key
   - export AWS_SECRET_ACCESS_KEY=foobar_secret
-  - conda install boto3 botocore httpretty moto six pytest mock filesystem-spec -c conda-forge -y
+  - conda install boto3 botocore httpretty moto six pytest mock -c conda-forge -y
+  - pip install git+https://github.com/martindurant/filesystem_spec/ --no-deps
   - pip install -r test_requirements.txt
 
 script:
