@@ -957,29 +957,46 @@ class S3File(AbstractBufferedFile):
         return _fetch_range(self.fs.s3, bucket, key, self.version_id, start, end)
 
     def _upload_chunk(self, final=False):
-        bucket, key = self.path.split('/', 1)
-        part = len(self.parts) + 1
-        i = 0
-        while True:
-            try:
-                out = self._call_s3(
-                    self.fs.s3.upload_part,
-                    Bucket=bucket,
-                    PartNumber=part, UploadId=self.mpu['UploadId'],
-                    Body=self.buffer.getvalue(), Key=key)
-                break
-            except S3_RETRYABLE_ERRORS:
-                if i < self.retries:
-                    logger.debug('Exception %e on S3 write, retrying',
-                                 exc_info=True)
-                    i += 1
-                    continue
+        bucket, key = split_path(self.path)
+        self.buffer.seek(0)
+        (data0, data1) = (None, self.buffer.read(self.blocksize))
+        while data1:
+            (data0, data1) = (data1, self.buffer.read(self.blocksize))
+            data1_size = len(data1)
+
+            if 0 < data1_size < self.blocksize:
+                remainder = data0 + data1
+                remainder_size = self.blocksize + data1_size
+
+                if remainder_size <= self.part_max:
+                    (data0, data1) = (remainder, None)
                 else:
-                    raise IOError('Write failed after %i retries' % self.retries,
-                                  self)
-            except Exception as e:
-                raise IOError('Write failed', self, e)
-        self.parts.append({'PartNumber': part, 'ETag': out['ETag']})
+                    partition = remainder_size // 2
+                    (data0, data1) = (remainder[:partition], remainder[partition:])
+
+            part = len(self.parts) + 1
+
+            for attempt in range(self.retries + 1):
+                try:
+                    out = self._call_s3(
+                        self.fs.s3.upload_part,
+                        Bucket=bucket,
+                        PartNumber=part, UploadId=self.mpu['UploadId'],
+                        Body=data0, Key=key)
+                except S3_RETRYABLE_ERRORS:
+                    if attempt < self.retries:
+                        logger.debug('Exception %e on S3 write, retrying',
+                                     exc_info=True)
+                except Exception as exc:
+                    raise IOError('Write failed', self, exc)
+                else:
+                    break
+            else:
+                raise IOError(
+                    'Write failed after %i retries' % self.retries, self)
+
+            self.parts.append({'PartNumber': part, 'ETag': out['ETag']})
+
         if self.autocommit and final:
             self.commit()
 
