@@ -264,7 +264,7 @@ class S3FileSystem(AbstractFileSystem):
                 'token': cred['SessionToken'], 'anon': False}
 
     def _open(self, path, mode='rb', block_size=None, acl='', version_id=None,
-              fill_cache=None, **kwargs):
+              fill_cache=None, cache_type='bytes', **kwargs):
         """ Open a file for reading or writing
 
         Parameters
@@ -290,6 +290,8 @@ class S3FileSystem(AbstractFileSystem):
         encoding : str
             The encoding to use if opening the file in text mode. The platform's
             default text encoding is used if not given.
+        cache_type : str
+            "bytes", "mmap" or "none"
         kwargs: dict-like
             Additional parameters used for s3 methods.  Typically used for
             ServerSideEncryption.
@@ -308,7 +310,7 @@ class S3FileSystem(AbstractFileSystem):
 
         return S3File(self, path, mode, block_size=block_size, acl=acl,
                       version_id=version_id, fill_cache=fill_cache,
-                      s3_additional_kwargs=kw)
+                      s3_additional_kwargs=kw, cache_type=cache_type)
 
     def _lsdir(self, path, refresh=False, max_items=None):
         if path.startswith('s3://'):
@@ -898,7 +900,7 @@ class S3File(AbstractBufferedFile):
 
     def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
                  version_id=None, fill_cache=True, s3_additional_kwargs=None,
-                 autocommit=True):
+                 autocommit=True, cache_type='bytes'):
         if not split_path(path)[1]:
             raise IOError('Attempt to open non key-like path: %s' % path)
         self.version_id = version_id
@@ -907,7 +909,8 @@ class S3File(AbstractBufferedFile):
         self.parts = None
         self.fill_cache = fill_cache
         self.s3_additional_kwargs = s3_additional_kwargs or {}
-        super().__init__(s3, path, mode, block_size, autocommit=autocommit)
+        super().__init__(s3, path, mode, block_size, autocommit=autocommit,
+                         cache_type=cache_type)
         if self.writable():
             if block_size < 5 * 2 ** 20:
                 raise ValueError('Block size must be >=5MB')
