@@ -1,19 +1,17 @@
 # -*- coding: utf-8 -*-
 from six import raise_from
 import errno
-import io
 import logging
-import os
-import re
 import socket
 from hashlib import md5
 
+from fsspec import AbstractFileSystem
+from fsspec.spec import AbstractBufferedFile
 import boto3
 from botocore.client import Config
-from botocore.exceptions import ClientError, ParamValidationError
+from botocore.exceptions import ClientError, ParamValidationError, BotoCoreError
 
 from s3fs.utils import ParamKwargsHelper
-from .utils import read_block, raises, ensure_writable
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +71,7 @@ def split_path(path):
     """
     if path.startswith('s3://'):
         path = path[5:]
+    path = path.rstrip('/').lstrip('/')
     if '/' not in path:
         return path, ""
     else:
@@ -91,7 +90,7 @@ def is_permission_error(e):
     return e.response['Error'].get('Code', 'Unknown') == 'AccessDenied'
 
 
-class S3FileSystem(object):
+class S3FileSystem(AbstractFileSystem):
     """
     Access S3 as if it were a file system.
 
@@ -148,17 +147,18 @@ class S3FileSystem(object):
     ...     print(f.read())  # doctest: +SKIP
     b'Hello, world!'
     """
-    _conn = {}
-    _singleton = [None]
+    root_marker = ""
     connect_timeout = 5
     read_timeout = 15
-    default_block_size = 5 * 2 ** 20
+    default_block_size = 5 * 2**20
+    protocol = 's3'
 
     def __init__(self, anon=False, key=None, secret=None, token=None,
                  use_ssl=True, client_kwargs=None, requester_pays=False,
                  default_block_size=None, default_fill_cache=True,
                  version_aware=False, config_kwargs=None,
                  s3_additional_kwargs=None, session=None, **kwargs):
+        super().__init__()
         self.anon = anon
         self.session = None
         self.passed_in_session = session
@@ -178,13 +178,11 @@ class S3FileSystem(object):
         self.version_aware = version_aware
         self.client_kwargs = client_kwargs
         self.config_kwargs = config_kwargs
-        self.dirs = {}
         self.req_kw = {'RequestPayer': 'requester'} if requester_pays else {}
         self.s3_additional_kwargs = s3_additional_kwargs or {}
         self.use_ssl = use_ssl
         self.s3 = self.connect()
         self._kwargs_helper = ParamKwargsHelper(self.s3)
-        self._singleton[0] = self
 
     def _filter_kwargs(self, s3_method, kwargs):
         return self._kwargs_helper.filter_dict(s3_method.__name__, kwargs)
@@ -203,18 +201,7 @@ class S3FileSystem(object):
         # filter all kwargs
         return self._filter_kwargs(method, additional_kwargs)
 
-    @classmethod
-    def current(cls):
-        """ Return the most recently created S3FileSystem
-
-        If no S3FileSystem has been created, then create one
-        """
-        if not cls._singleton[0]:
-            return cls()
-        else:
-            return cls._singleton[0]
-
-    def connect(self, refresh=False):
+    def connect(self, refresh=True):
         """
         Establish S3 connection object.
 
@@ -225,43 +212,31 @@ class S3FileSystem(object):
             the same parameters already exists. If False (default), an
             existing one will be used if possible
         """
+        if refresh is False:
+            # back compat: we store whole FS instance now
+            return self.s3
         anon, key, secret, kwargs, ckwargs, token, ssl = (
             self.anon, self.key, self.secret, self.kwargs,
             self.client_kwargs, self.token, self.use_ssl)
 
-        # Include the current PID in the connection key so that different
-        # SSL connections are made for each process.
-        tok = tokenize(anon, key, secret, kwargs, ckwargs, token,
-                       ssl, os.getpid())
-        if refresh:
-            self._conn.pop(tok, None)
-        if tok not in self._conn:
-            logger.debug("Open S3 connection.  Anonymous: %s", self.anon)
-
-            if self.anon:
-                from botocore import UNSIGNED
-                conf = Config(connect_timeout=self.connect_timeout,
-                              read_timeout=self.read_timeout,
-                              signature_version=UNSIGNED, **self.config_kwargs)
-                if not self.passed_in_session:
-                    self.session = boto3.Session(**self.kwargs)
-            else:
-                conf = Config(connect_timeout=self.connect_timeout,
-                              read_timeout=self.read_timeout,
-                              **self.config_kwargs)
-                if not self.passed_in_session:
-                    self.session = boto3.Session(self.key, self.secret, self.token,
-                                                 **self.kwargs)
-
-            s3 = self.session.client('s3', config=conf, use_ssl=ssl,
-                                     **self.client_kwargs)
-            self._conn[tok] = (s3, self.session)
-        else:
-            s3, session = self._conn[tok]
+        if self.anon:
+            from botocore import UNSIGNED
+            conf = Config(connect_timeout=self.connect_timeout,
+                          read_timeout=self.read_timeout,
+                          signature_version=UNSIGNED, **self.config_kwargs)
             if not self.passed_in_session:
-                self.session = session
+                self.session = boto3.Session(**self.kwargs)
+        else:
+            conf = Config(connect_timeout=self.connect_timeout,
+                          read_timeout=self.read_timeout,
+                          **self.config_kwargs)
+            if not self.passed_in_session:
+                self.session = boto3.Session(self.key, self.secret, self.token,
+                                             **self.kwargs)
 
-        return s3
+        self.s3 = self.session.client('s3', config=conf, use_ssl=ssl,
+                                      **self.client_kwargs)
+        return self.s3
 
     def get_delegated_s3pars(self, exp=3600):
         """Get temporary credentials from STS, appropriate for sending across a
@@ -288,23 +263,8 @@ class S3FileSystem(object):
         return {'key': cred['AccessKeyId'], 'secret': cred['SecretAccessKey'],
                 'token': cred['SessionToken'], 'anon': False}
 
-    def __getstate__(self):
-        if self.passed_in_session:
-            raise NotImplementedError
-        d = self.__dict__.copy()
-        del d['s3']
-        del d['session']
-        del d['_kwargs_helper']
-        logger.debug("Serialize with state: %s", d)
-        return d
-
-    def __setstate__(self, state):
-        self.__dict__.update(state)
-        self.s3 = self.connect()
-        self._kwargs_helper = ParamKwargsHelper(self.s3)
-
-    def open(self, path, mode='rb', block_size=None, acl='', version_id=None,
-             fill_cache=None, encoding=None, **kwargs):
+    def _open(self, path, mode='rb', block_size=None, acl='', version_id=None,
+              fill_cache=None, cache_type='bytes', **kwargs):
         """ Open a file for reading or writing
 
         Parameters
@@ -330,6 +290,8 @@ class S3FileSystem(object):
         encoding : str
             The encoding to use if opening the file in text mode. The platform's
             default text encoding is used if not given.
+        cache_type : str
+            "bytes", "mmap" or "none"
         kwargs: dict-like
             Additional parameters used for s3 methods.  Typically used for
             ServerSideEncryption.
@@ -346,13 +308,9 @@ class S3FileSystem(object):
             raise ValueError("version_id cannot be specified if the filesystem "
                              "is not version aware")
 
-        mode2 = mode if 'b' in mode else (mode.replace('t', '') + 'b')
-        fdesc = S3File(self, path, mode2, block_size=block_size, acl=acl,
-                       version_id=version_id, fill_cache=fill_cache,
-                       s3_additional_kwargs=kw)
-        if 'b' in mode:
-            return fdesc
-        return io.TextIOWrapper(fdesc, encoding=encoding)
+        return S3File(self, path, mode, block_size=block_size, acl=acl,
+                      version_id=version_id, fill_cache=fill_cache,
+                      s3_additional_kwargs=kw, cache_type=cache_type)
 
     def _lsdir(self, path, refresh=False, max_items=None):
         if path.startswith('s3://'):
@@ -360,7 +318,7 @@ class S3FileSystem(object):
         path = path.rstrip('/')
         bucket, prefix = split_path(path)
         prefix = prefix + '/' if prefix else ""
-        if path not in self.dirs or refresh:
+        if path not in self.dircache or refresh:
             try:
                 pag = self.s3.get_paginator('list_objects_v2')
                 config = {}
@@ -369,27 +327,63 @@ class S3FileSystem(object):
                 it = pag.paginate(Bucket=bucket, Prefix=prefix, Delimiter='/',
                                   PaginationConfig=config, **self.req_kw)
                 files = []
-                dirs = []
+                dircache = []
                 for i in it:
-                    dirs.extend(i.get('CommonPrefixes', []))
-                    files.extend(i.get('Contents', []))
-                if dirs:
+                    dircache.extend(i.get('CommonPrefixes', []))
+                    for c in i.get('Contents', []):
+                        c['type'] = 'file'
+                        c['size'] = c['Size']
+                        files.append(c)
+                if dircache:
                     files.extend([{'Key': l['Prefix'][:-1], 'Size': 0,
-                                   'StorageClass': "DIRECTORY"} for l in dirs])
+                                  'StorageClass': "DIRECTORY",
+                                   'type': 'directory', 'size': 0}
+                                  for l in dircache])
                 for f in files:
                     f['Key'] = '/'.join([bucket, f['Key']])
+                    f['name'] = f['Key']
             except ClientError as e:
                 # path not accessible
                 if is_permission_error(e):
                     raise
-                files = []
-            if max_items is not None:
-                return files
-            self.dirs[path] = files
-        return self.dirs[path]
+                if not prefix:
+                    # list bucket failed - bucket doesn't exist
+                    raise FileNotFoundError(bucket)
+
+            self.dircache[path] = files
+        return self.dircache[path]
+
+    def mkdir(self, path, acl="", **kwargs):
+        path = self._strip_protocol(path).rstrip('/')
+        if not self._parent(path):
+            if acl and acl not in buck_acls:
+                raise ValueError('ACL not in %s', buck_acls)
+            try:
+                params = {"Bucket": path, 'ACL': acl}
+                region_name = (kwargs.get("region_name", None) or
+                               self.client_kwargs.get("region_name", None))
+                if region_name:
+                    params['CreateBucketConfiguration'] = {
+                        'LocationConstraint': region_name
+                    }
+                self.s3.create_bucket(**params)
+                self.invalidate_cache('')
+                self.invalidate_cache(path)
+            except (ClientError, ParamValidationError) as e:
+                raise_from(IOError('Bucket create failed', path), e)
+
+    def rmdir(self, path):
+        path = self._strip_protocol(path).rstrip('/')
+        if not self._parent(path):
+            try:
+                self.s3.delete_bucket(Bucket=path)
+            except ClientError as e:
+                raise_from(IOError('Delete bucket failed', path), e)
+            self.invalidate_cache(path)
+            self.invalidate_cache('')
 
     def _lsbuckets(self, refresh=False):
-        if '' not in self.dirs or refresh:
+        if '' not in self.dircache or refresh:
             if self.anon:
                 # cannot list buckets if not logged in
                 return []
@@ -398,9 +392,29 @@ class S3FileSystem(object):
                 f['Key'] = f['Name']
                 f['Size'] = 0
                 f['StorageClass'] = 'BUCKET'
+                f['size'] = 0
+                f['type'] = 'directory'
+                f['name'] = f['Name']
                 del f['Name']
-            self.dirs[''] = files
-        return self.dirs['']
+            self.dircache[''] = files
+        return self.dircache['']
+
+    def __getstate__(self):
+        if self.passed_in_session:
+            raise NotImplementedError
+        d = self.__dict__.copy()
+        del d['s3']
+        del d['session']
+        del d['_kwargs_helper']
+        del d['dircache']
+        logger.debug("Serialize with state: %s", d)
+        return d
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.s3 = self.connect()
+        self.dircache = {}
+        self._kwargs_helper = ParamKwargsHelper(self.s3)
 
     def _ls(self, path, refresh=False):
         """ List files in given bucket, or list of buckets.
@@ -424,6 +438,49 @@ class S3FileSystem(object):
         else:
             return self._lsdir(path, refresh)
 
+    def exists(self, path):
+        if path in ['', '/']:
+            # the root always exists, even if anon
+            return True
+        bucket, key = split_path(path)
+        if key:
+            return super().exists(path)
+        else:
+            try:
+                self.ls(path)
+                return True
+            except FileNotFoundError:
+                return False
+
+    def info(self, path, version_id=None):
+        if path in ['/', '']:
+            return {'name': path, 'size': 0, 'type': 'directory'}
+        kwargs = self.kwargs.copy()
+        if version_id is not None:
+            if not self.version_aware:
+                raise ValueError("version_id cannot be specified if the "
+                                 "filesystem is not version aware")
+            kwargs['VersionId'] = version_id
+        if self.version_aware:
+            try:
+                bucket, key = split_path(path)
+                out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
+                                    Key=key, **self.req_kw)
+                return {
+                    'ETag': out['ETag'],
+                    'Key': '/'.join([bucket, key]),
+                    'LastModified': out['LastModified'],
+                    'Size': out['ContentLength'],
+                    'size': out['ContentLength'],
+                    'path': '/'.join([bucket, key]),
+                    'StorageClass': "STANDARD",
+                    'VersionId': out.get('VersionId')
+                }
+            except (ClientError, ParamValidationError) as e:
+                logger.debug("Failed to head path %s", path, exc_info=True)
+                raise_from(FileNotFoundError(path), e)
+        return super().info(path)
+
     def ls(self, path, detail=False, refresh=False, **kwargs):
         """ List single "directory" with or without details
 
@@ -439,102 +496,15 @@ class S3FileSystem(object):
         kwargs : dict
             additional arguments passed on
         """
-        if path.startswith('s3://'):
-            path = path[len('s3://'):]
-        path = path.rstrip('/')
-        files = self._ls(path, refresh=refresh)
-        if not files:
-            if split_path(path)[1]:
-                files = [self.info(path, **kwargs)]
-            elif path:
-                raise FileNotFoundError(path)
+        path = self._strip_protocol(path).rstrip('/')
+        out = self._ls(self._parent(path), refresh=refresh)
+        out = [o for o in out
+               if o['name'].rstrip('/') == path and o['type'] != 'directory']
+        files = self._ls(path, refresh=refresh) or out
         if detail:
             return files
         else:
-            return [f['Key'] for f in files]
-
-    def isdir(self, path, refresh=False):
-        """ Check if path points to a directory.
-
-        Check is cached unless `refresh=True`.
-
-        Parameters
-        ----------
-        path : string/bytes
-            location to check
-        refresh : bool
-            If true, don't look in the info cache
-        """
-        if path.startswith('s3://'):
-            path = path[len('s3://'):]
-        path = path.rstrip('/')
-        if not path:
-            return True
-        if not refresh:
-            parent = path.rsplit('/', 1)[0]
-            if parent in self.dirs:
-                return any(f['Key'] == path and f['StorageClass'] == 'DIRECTORY'
-                           for f in self.dirs[parent])
-        return bool(self._lsdir(path, refresh=refresh, max_items=1))
-
-    def isfile(self, path, refresh=False):
-        """ Check if path points to a file.
-
-        Check is cached unless `refresh=True`.
-
-        Parameters
-        ----------
-        path : string/bytes
-            location to check
-        refresh : bool
-            If true, don't look in the info cache
-        """
-        return not raises(FileNotFoundError,
-                          lambda: self.info(path.rstrip('/'), refresh=refresh))
-
-    def info(self, path, version_id=None, refresh=False, **kwargs):
-        """ Detail on the specific file pointed to by path.
-
-        Gets details only for a specific key, directories/buckets cannot be
-        used with info.
-
-        Parameters
-        ----------
-        version_id : str, optional
-            version of the key to perform the head_object on
-        refresh : bool
-            If true, don't look in the info cache
-        """
-        if path.startswith('s3://'):
-            path = path[len('s3://'):]
-        path = path.rstrip('/')
-        if not refresh:
-            parent = path.rsplit('/', 1)[0]
-            if parent != path and parent in self.dirs:
-                for f in self.dirs[parent]:
-                    if f['Key'] == path:
-                        return f
-
-        if version_id is not None:
-            if not self.version_aware:
-                raise ValueError("version_id cannot be specified if the "
-                                 "filesystem is not version aware")
-            kwargs['VersionId'] = version_id
-        try:
-            bucket, key = split_path(path)
-            out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
-                                Key=key, **self.req_kw)
-            return {
-                'ETag': out['ETag'],
-                'Key': '/'.join([bucket, key]),
-                'LastModified': out['LastModified'],
-                'Size': out['ContentLength'],
-                'StorageClass': "STANDARD",
-                'VersionId': out.get('VersionId')
-            }
-        except (ClientError, ParamValidationError) as e:
-            logger.debug("Failed to head path %s", path, exc_info=True)
-            raise_from(FileNotFoundError(path), e)
+            return list(sorted(set([f['name'] for f in files])))
 
     def object_version_info(self, path, **kwargs):
         if not self.version_aware:
@@ -690,22 +660,6 @@ class S3FileSystem(object):
         # refresh metadata
         self._metadata_cache[path] = metadata
 
-    def _walk(self, path, refresh=False, directories=False):
-        if path.startswith('s3://'):
-            path = path[len('s3://'):]
-        if path in ['', '/']:
-            raise ValueError('Cannot walk all of S3')
-        filenames = self._ls(path, refresh=refresh)[:]
-        for f in filenames[:]:
-            if f['StorageClass'] == 'DIRECTORY':
-                filenames.extend(self._walk(f['Key'], refresh))
-        return [f for f in filenames if f['StorageClass'] not in
-                (['BUCKET'] + ['DIRECTORY'] if not directories else [])]
-
-    def walk(self, path, refresh=False, directories=False):
-        """ Return all real keys below path """
-        return [f['Key'] for f in self._walk(path, refresh, directories)]
-
     def chmod(self, path, acl, **kwargs):
         """ Set Access Control on a bucket/key
 
@@ -730,90 +684,6 @@ class S3FileSystem(object):
             self._call_s3(self.s3.put_bucket_acl,
                           kwargs, Bucket=bucket, ACL=acl)
 
-    def glob(self, path, refresh=False):
-        """
-        Find files by glob-matching.
-
-        Note that the bucket part of the path must not contain a "*"
-
-        Parameters
-        ----------
-        path : string/bytes
-            location at which to list files with glob characters
-        refresh : bool (=False)
-            if False, look in local cache for files
-        """
-        if path.startswith('s3://'):
-            path = path[len('s3://'):]
-        path = path.rstrip('/')
-        bucket, key = split_path(path)
-        if "*" in bucket:
-            raise ValueError('Bucket cannot contain a "*"')
-
-        # A slash (/) is guaranteed to exist before the first occurrence of
-        # star (*) in the path: since the * is NOT in the bucket name, there
-        # must be a / between the bucket name and the *.
-        star_pos = path.find('*')
-        root = path if star_pos == -1 else path[:path[:star_pos].rindex('/') + 1]
-        allfiles = self.walk(root, refresh=refresh, directories=True)
-
-        # Translate the glob pattern into regex (similar to `fnmatch`).
-        regex_text = '('
-        for c in path:
-            if c == '*':
-                regex_text += '[^/]*'
-            elif c == '?':
-                regex_text += '.'
-            else:
-                regex_text += re.escape(c)
-        regex_text += ')'
-
-        regex_pattern = re.compile(regex_text)
-
-        seen = set()
-        return [p for f in allfiles
-                for m in [regex_pattern.match(f)] if m
-                for p in [m.group(0)] if not (p in seen or seen.add(p))]
-
-    def du(self, path, total=False, deep=False, **kwargs):
-        """ Bytes in keys at path """
-        if deep:
-            files = self.walk(path)
-            files = [self.info(f, **kwargs) for f in files]
-        else:
-            files = self.ls(path, detail=True)
-        if total:
-            return sum(f.get('Size', 0) for f in files)
-        else:
-            return {p['Key']: p['Size'] for p in files}
-
-    def exists(self, path):
-        """ Does such a file/directory exist? """
-        bucket, key = split_path(path)
-        if key or bucket not in self.ls(''):
-            return not raises(FileNotFoundError, lambda: self.ls(path))
-        else:
-            return True
-
-    def cat(self, path, **kwargs):
-        """ Returns contents of file """
-        with self.open(path, 'rb', **kwargs) as f:
-            return f.read()
-
-    def tail(self, path, size=1024, **kwargs):
-        """ Return last bytes of file """
-        length = self.info(path, **kwargs)['Size']
-        if size > length:
-            return self.cat(path, **kwargs)
-        with self.open(path, 'rb', **kwargs) as f:
-            f.seek(length - size)
-            return f.read(size)
-
-    def head(self, path, size=1024, **kwargs):
-        """ Return first bytes of file """
-        with self.open(path, 'rb', block_size=size, **kwargs) as f:
-            return f.read(size)
-
     def url(self, path, expires=3600, **kwargs):
         """ Generate presigned URL to access path by HTTP
 
@@ -829,57 +699,6 @@ class S3FileSystem(object):
             ClientMethod='get_object', Params=dict(Bucket=bucket, Key=key,
                                                    **kwargs),
             ExpiresIn=expires)
-
-    def get(self, path, filename, **kwargs):
-        """ Stream data from file at path to local filename """
-        with self.open(path, 'rb', **kwargs) as f:
-            with open(filename, 'wb') as f2:
-                while True:
-                    data = f.read(f.blocksize)
-                    if len(data) == 0:
-                        break
-                    f2.write(data)
-
-    def put(self, filename, path, **kwargs):
-        """ Stream data from local filename to file at path """
-        with open(filename, 'rb') as f:
-            with self.open(path, 'wb', **kwargs) as f2:
-                while True:
-                    data = f.read(f2.blocksize)
-                    if len(data) == 0:
-                        break
-                    f2.write(data)
-
-    def mkdir(self, path, acl="", **kwargs):
-        """ Make new bucket or empty key
-
-        Parameters
-        ----------
-        acl: str
-            ACL to set when creating
-        region_name : str
-            region in which the bucket should be created
-        """
-        acl = acl or self.s3_additional_kwargs.get('ACL', '')
-        path = path.rstrip('/') + '/'
-        self.touch(path, acl=acl, **kwargs)
-
-    def rmdir(self, path, **kwargs):
-        """ Remove empty key or bucket """
-        if path.startswith('s3://'):
-            path = path[len('s3://'):]
-        path = path.rstrip('/')
-        bucket, key = split_path(path)
-        if not self._ls(path) and ((key and self.info(path)['Size'] == 0)
-                                   or not key):
-            self.rm(path, **kwargs)
-        else:
-            raise IOError('Path is not directory-like', path)
-
-    def mv(self, path1, path2, **kwargs):
-        """ Move file between locations on S3 """
-        self.copy(path1, path2, **kwargs)
-        self.rm(path1)
 
     def merge(self, path, filelist, **kwargs):
         """ Create single S3 file from list of S3 files
@@ -974,13 +793,13 @@ class S3FileSystem(object):
             return
         delete_keys = {'Objects': [{'Key': split_path(path)[1]} for path
                                    in pathlist]}
+        for path in pathlist:
+            self.invalidate_cache(self._parent(path))
         try:
             self._call_s3(
                 self.s3.delete_objects,
                 kwargs,
                 Bucket=bucket, Delete=delete_keys)
-            for path in pathlist:
-                self.invalidate_cache(path)
         except ClientError as e:
             raise_from(IOError('Bulk delete failed'), e)
 
@@ -996,24 +815,29 @@ class S3FileSystem(object):
             Whether to remove also all entries below, i.e., which are returned
             by `walk()`.
         """
-        if not self.exists(path):
-            raise FileNotFoundError(path)
-        if recursive:
-            self.invalidate_cache(path)
-            self.bulk_delete(self.walk(path, directories=True), **kwargs)
         bucket, key = split_path(path)
+        if recursive:
+            files = self.find(path, maxdepth=None)
+            if key and not files:
+                raise FileNotFoundError(path)
+            self.bulk_delete(files, **kwargs)
+            if not key:
+                self.rmdir(bucket)
+            return
         if key:
+            if not self.exists(path):
+                raise FileNotFoundError(path)
             try:
                 self._call_s3(
                     self.s3.delete_object, kwargs, Bucket=bucket, Key=key)
             except ClientError as e:
                 raise_from(IOError('Delete key failed', (bucket, key)), e)
-            self.invalidate_cache(path)
+            self.invalidate_cache(self._parent(path))
         else:
-            if not self.s3.list_objects(Bucket=bucket).get('Contents'):
+            if self.exists(bucket):
                 try:
                     self.s3.delete_bucket(Bucket=bucket)
-                except ClientError as e:
+                except BotoCoreError as e:
                     raise_from(IOError('Delete bucket failed', bucket), e)
                 self.invalidate_cache(bucket)
                 self.invalidate_cache('')
@@ -1022,92 +846,17 @@ class S3FileSystem(object):
 
     def invalidate_cache(self, path=None):
         if path is None:
-            self.dirs.clear()
+            self.dircache.clear()
         else:
-            self.dirs.pop(path, None)
-            parent = path.rsplit('/', 1)[0]
-            self.dirs.pop(parent, None)
+            self.dircache.pop(path, None)
 
-    def touch(self, path, acl="", **kwargs):
-        """
-        Create empty key
-
-        If path is a bucket only, attempt to create bucket.
-        """
-        bucket, key = split_path(path)
-        acl = acl or self.s3_additional_kwargs.get('ACL', '')
-        if key:
-            if acl and acl not in key_acls:
-                raise ValueError('ACL not in %s', key_acls)
-            self._call_s3(
-                self.s3.put_object, kwargs,
-                Bucket=bucket, Key=key, ACL=acl)
-            self.invalidate_cache(path)
-        else:
-            if acl and acl not in buck_acls:
-                raise ValueError('ACL not in %s', buck_acls)
-            try:
-                params = {"Bucket": bucket, 'ACL': acl}
-                region_name = (kwargs.get("region_name", None) or
-                               self.client_kwargs.get("region_name", None))
-                if region_name:
-                    params['CreateBucketConfiguration'] = {
-                        'LocationConstraint': region_name
-                    }
-                self.s3.create_bucket(**params)
-                self.invalidate_cache('')
-                self.invalidate_cache(bucket)
-            except (ClientError, ParamValidationError) as e:
-                raise_from(IOError('Bucket create failed', path), e)
-
-    def read_block(self, fn, offset, length, delimiter=None, **kwargs):
-        """ Read a block of bytes from an S3 file
-
-        Starting at ``offset`` of the file, read ``length`` bytes.  If
-        ``delimiter`` is set then we ensure that the read starts and stops at
-        delimiter boundaries that follow the locations ``offset`` and ``offset
-        + length``.  If ``offset`` is zero then we start at zero.  The
-        bytestring returned WILL include the end delimiter string.
-
-        If offset+length is beyond the eof, reads to eof.
-
-        Parameters
-        ----------
-        fn: string
-            Path to filename on S3
-        offset: int
-            Byte offset to start read
-        length: int
-            Number of bytes to read
-        delimiter: bytes (optional)
-            Ensure reading starts and stops at delimiter bytestring
-
-        Examples
-        --------
-        >>> s3.read_block('data/file.csv', 0, 13)  # doctest: +SKIP
-        b'Alice, 100\\nBo'
-        >>> s3.read_block('data/file.csv', 0, 13, delimiter=b'\\n')  # doctest: +SKIP
-        b'Alice, 100\\nBob, 200\\n'
-
-        Use ``length=None`` to read to the end of the file.
-        >>> s3.read_block('data/file.csv', 0, None, delimiter=b'\\n')  # doctest: +SKIP
-        b'Alice, 100\\nBob, 200\\nCharlie, 300'
-
-        See Also
-        --------
-        distributed.utils.read_block
-        """
-        with self.open(fn, 'rb', **kwargs) as f:
-            size = f.info()['Size']
-            if length is None:
-                length = size
-            if offset + length > size:
-                length = size - offset
-            b = read_block(f, offset, length, delimiter)
-        return b
+    def walk(self, path, maxdepth=None):
+        if path in ['', '*', 's3://']:
+            raise ValueError('Cannot crawl all of S3')
+        return super().walk(path, maxdepth=maxdepth)
 
 
-class S3File(object):
+class S3File(AbstractBufferedFile):
     """
     Open S3 key as a file. Data is only loaded and cached on demand.
 
@@ -1145,87 +894,75 @@ class S3File(object):
     S3FileSystem.open: used to create ``S3File`` objects
 
     """
+    retries = 5
     part_min = 5 * 2 ** 20
     part_max = 5 * 2 ** 30
 
-    def __init__(self, s3, path, mode='rb', block_size=part_min, acl="",
-                 version_id=None, fill_cache=True, s3_additional_kwargs=None):
-        self.mode = mode
-        if mode not in {'rb', 'wb', 'ab'}:
-            raise NotImplementedError("File mode must be {'rb', 'wb', 'ab'}, "
-                                      "not %s" % mode)
-        if path.startswith('s3://'):
-            path = path[len('s3://'):]
-        self.path = path
-        bucket, key = split_path(path)
-        self.s3 = s3
-        self.bucket = bucket
-        self.key = key
-        self.blocksize = block_size
-        self.cache = b""
-        self.loc = 0
-        self.start = None
-        self.end = None
-        self.closed = False
-        self.trim = True
-        self.mpu = None
+    def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
+                 version_id=None, fill_cache=True, s3_additional_kwargs=None,
+                 autocommit=True, cache_type='bytes'):
+        if not split_path(path)[1]:
+            raise IOError('Attempt to open non key-like path: %s' % path)
         self.version_id = version_id
         self.acl = acl
+        self.mpu = None
+        self.parts = None
         self.fill_cache = fill_cache
         self.s3_additional_kwargs = s3_additional_kwargs or {}
+        super().__init__(s3, path, mode, block_size, autocommit=autocommit,
+                         cache_type=cache_type)
         if self.writable():
-            if acl and acl not in key_acls:
-                raise ValueError('ACL not in %s', key_acls)
-            self.buffer = io.BytesIO()
-            self.parts = []
-            self.size = 0
             if block_size < 5 * 2 ** 20:
                 raise ValueError('Block size must be >=5MB')
-            self.forced = False
-            if 'a' in mode and s3.exists(path):
-                self.size = s3.info(path)['Size']
-                if self.size < 5 * 2 ** 20:
-                    # existing file too small for multi-upload: download
-                    self.write(s3.cat(path))
-                else:
-                    try:
-                        self.mpu = self.s3._call_s3(
-                            self.s3.s3.create_multipart_upload,
-                            self.s3_additional_kwargs,
-                            Bucket=bucket, Key=key, ACL=acl)
-                    except (ClientError, ParamValidationError) as e:
-                        raise_from(IOError('Open for write failed', path), e)
-                    self.loc = self.size
-                    out = self.s3._call_s3(
-                        self.s3.s3.upload_part_copy,
-                        self.s3_additional_kwargs,
-                        Bucket=self.bucket,
-                        Key=self.key, PartNumber=1,
-                        UploadId=self.mpu['UploadId'],
-                        CopySource=path)
-                    self.parts.append({'PartNumber': 1,
-                                       'ETag': out['CopyPartResult']['ETag']})
         else:
-            try:
-                info = self.info()
-                self.size = info['Size']
-                if self.s3.version_aware:
-                    self.version_id = info.get('VersionId')
-            except (ClientError, ParamValidationError) as e:
-                raise_from(IOError("File not accessible", path), e)
+            if version_id and self.fs.version_aware:
+                self.version_id = version_id
+                self.details = self.fs.info(self.path, version_id=version_id)
+                self.size = self.details['size']
+            elif self.fs.version_aware:
+                self.version_id = self.details.get('VersionId')
+
+        if 'a' in mode and s3.exists(path):
+            loc = s3.info(path)['size']
+            if loc < 5 * 2 ** 20:
+                # existing file too small for multi-upload: download
+                self.write(self.fs.cat(self.path))
+                self.append_block = False
+            else:
+                self.append_block = True
+            self.loc = loc
 
     def _call_s3(self, method, *kwarglist, **kwargs):
-        return self.s3._call_s3(method, self.s3_additional_kwargs, *kwarglist,
+        return self.fs._call_s3(method, self.s3_additional_kwargs, *kwarglist,
                                 **kwargs)
 
-    def info(self, **kwargs):
-        """ File information about this path """
-        # When the bucket is version aware we need to explicitly get the
-        # correct filesize and for the particular version. In the case where
-        # self.version_id is None, this will be the most recent version.
-        refresh = self.s3.version_aware
-        return self.s3.info(self.path, version_id=self.version_id,
-                            refresh=refresh, **kwargs)
+    def _initiate_upload(self):
+        bucket, key = split_path(self.path)
+        if self.acl and self.acl not in key_acls:
+            raise ValueError('ACL not in %s', key_acls)
+        self.parts = []
+        self.size = 0
+        if self.blocksize < 5 * 2 ** 20:
+            raise ValueError('Block size must be >=5MB')
+        try:
+            self.mpu = self._call_s3(
+                self.fs.s3.create_multipart_upload,
+                Bucket=bucket, Key=key, ACL=self.acl)
+        except (ClientError, ParamValidationError) as e:
+            raise_from(IOError('Initiating write failed: %s' % self.path), e)
+        if 'a' in self.mode and self.fs.exists(self.path):
+            if self.append_block:
+                # use existing data in key when appending,
+                # and block is big enough
+                out = self.fs._call_s3(
+                    self.fs.s3.upload_part_copy,
+                    self.s3_additional_kwargs,
+                    Bucket=bucket,
+                    Key=key, PartNumber=1,
+                    UploadId=self.mpu['UploadId'],
+                    CopySource=self.path)
+                self.parts.append({'PartNumber': 1,
+                                   'ETag': out['CopyPartResult']['ETag']})
 
     def metadata(self, refresh=False, **kwargs):
         """ Return metadata of file.
@@ -1233,7 +970,7 @@ class S3File(object):
 
         Metadata is cached unless `refresh=True`.
         """
-        return self.s3.metadata(self.path, refresh, **kwargs)
+        return self.fs.metadata(self.path, refresh, **kwargs)
 
     def getxattr(self, xattr_name, **kwargs):
         """ Get an attribute from the metadata.
@@ -1244,7 +981,7 @@ class S3File(object):
         >>> mys3file.getxattr('attribute_1')  # doctest: +SKIP
         'value_1'
         """
-        return self.s3.getxattr(self.path, xattr_name, **kwargs)
+        return self.fs.getxattr(self.path, xattr_name, **kwargs)
 
     def setxattr(self, copy_kwargs=None, **kwargs):
         """ Set metadata.
@@ -1257,321 +994,84 @@ class S3File(object):
         if self.writable():
             raise NotImplementedError('cannot update metadata while file '
                                       'is open for writing')
-        return self.s3.setxattr(self.path, copy_kwargs=copy_kwargs, **kwargs)
+        return self.fs.setxattr(self.path, copy_kwargs=copy_kwargs, **kwargs)
 
     def url(self, **kwargs):
         """ HTTP URL to read this file (if it already exists)
         """
-        return self.s3.url(self.path, **kwargs)
+        return self.fs.url(self.path, **kwargs)
 
-    def tell(self):
-        """ Current file location """
-        return self.loc
+    def _fetch_range(self, start, end):
+        bucket, key = self.path.split('/', 1)
+        return _fetch_range(self.fs.s3, bucket, key, self.version_id, start, end)
 
-    def seek(self, loc, whence=0):
-        """ Set current file location
+    def _upload_chunk(self, final=False):
+        bucket, key = split_path(self.path)
+        self.buffer.seek(0)
+        (data0, data1) = (None, self.buffer.read(self.blocksize))
+        while data1:
+            (data0, data1) = (data1, self.buffer.read(self.blocksize))
+            data1_size = len(data1)
 
-        Parameters
-        ----------
-        loc : int
-            byte location
-        whence : {0, 1, 2}
-            from start of file, current location or end of file, resp.
-        """
-        if not self.readable():
-            raise ValueError('Seek only available in read mode')
-        if whence == 0:
-            nloc = loc
-        elif whence == 1:
-            nloc = self.loc + loc
-        elif whence == 2:
-            nloc = self.size + loc
-        else:
-            raise ValueError(
-                "invalid whence (%s, should be 0, 1 or 2)" % whence)
-        if nloc < 0:
-            raise ValueError('Seek before start of file')
-        self.loc = nloc
-        return self.loc
+            if 0 < data1_size < self.blocksize:
+                remainder = data0 + data1
+                remainder_size = self.blocksize + data1_size
 
-    def readline(self, length=-1):
-        """
-        Read and return a line from the stream.
-
-        If length is specified, at most size bytes will be read.
-        """
-        self._fetch(self.loc, self.loc + 1)
-        while True:
-            found = self.cache[self.loc - self.start:].find(b'\n') + 1
-            if 0 < length < found:
-                return self.read(length)
-            if found:
-                return self.read(found)
-            if self.end > self.size:
-                return self.read(length)
-            self._fetch(self.start, self.end + self.blocksize)
-
-    def __next__(self):
-        out = self.readline()
-        if not out:
-            raise StopIteration
-        return out
-
-    next = __next__
-
-    def __iter__(self):
-        return self
-
-    def readlines(self):
-        """ Return all lines in a file as a list """
-        return list(self)
-
-    def _fetch(self, start, end):
-        # if we have not enabled version_aware then we should use the
-        # latest version.
-        if self.s3.version_aware:
-            version_id = self.version_id
-        else:
-            version_id = None
-        if self.start is None and self.end is None:
-            # First read
-            self.start = start
-            self.end = end + self.blocksize
-            self.cache = _fetch_range(self.s3.s3, self.bucket, self.key,
-                                      version_id, start, self.end,
-                                      req_kw=self.s3.req_kw)
-        if start < self.start:
-            if not self.fill_cache and end + self.blocksize < self.start:
-                self.start, self.end = None, None
-                return self._fetch(start, end)
-            new = _fetch_range(self.s3.s3, self.bucket, self.key, version_id,
-                               start, self.start, req_kw=self.s3.req_kw)
-            self.start = start
-            self.cache = new + self.cache
-        if end > self.end:
-            if self.end > self.size:
-                return
-            if not self.fill_cache and start > self.end:
-                self.start, self.end = None, None
-                return self._fetch(start, end)
-            new = _fetch_range(self.s3.s3, self.bucket, self.key, version_id,
-                               self.end, end + self.blocksize,
-                               req_kw=self.s3.req_kw)
-            self.end = end + self.blocksize
-            self.cache = self.cache + new
-
-    def read(self, length=-1):
-        """
-        Return data from cache, or fetch pieces as necessary
-
-        Parameters
-        ----------
-        length : int (-1)
-            Number of bytes to read; if <0, all remaining bytes.
-        """
-        if not self.readable():
-            raise ValueError('File not in read mode')
-        if length < 0:
-            length = self.size
-        if self.closed:
-            raise ValueError('I/O operation on closed file.')
-        self._fetch(self.loc, self.loc + length)
-        out = self.cache[self.loc - self.start:
-                         self.loc - self.start + length]
-        self.loc += len(out)
-        if self.trim:
-            num = (self.loc - self.start) // self.blocksize - 1
-            if num > 0:
-                self.start += self.blocksize * num
-                self.cache = self.cache[self.blocksize * num:]
-        return out
-
-    def write(self, data):
-        """
-        Write data to buffer.
-
-        Buffer only sent to S3 on close() or if buffer is greater than or equal
-        to blocksize.
-
-        Parameters
-        ----------
-        data : bytes
-            Set of bytes to be written.
-        """
-        if not self.writable():
-            raise ValueError('File not in write mode')
-        if self.closed:
-            raise ValueError('I/O operation on closed file.')
-        out = self.buffer.write(ensure_writable(data))
-        self.loc += out
-        if self.buffer.tell() >= self.blocksize:
-            self.flush()
-        return out
-
-    def flush(self, force=False, retries=10):
-        """
-        Write buffered data to S3.
-
-        Uploads the current buffer, if it is larger than the block-size. If
-        the buffer is smaller than the block-size, this is a no-op.
-
-        Due to S3 multi-upload policy, you can only safely force flush to S3
-        when you are finished writing.
-
-        Parameters
-        ----------
-        force : bool
-            When closing, write the last block even if it is smaller than
-            blocks are allowed to be.
-        retries: int
-        """
-        if self.writable() and not self.closed:
-            if self.buffer.tell() < self.blocksize and not force:
-                # ignore if not enough data for a block and not closing
-                return
-            if self.buffer.tell() == 0:
-                # no data in the buffer to write
-                return
-            if force and self.forced:
-                raise ValueError("Force flush cannot be called more than once")
-            if force:
-                self.forced = True
-
-            try:
-                self.mpu = self.mpu or self._call_s3(
-                    self.s3.s3.create_multipart_upload,
-                    Bucket=self.bucket, Key=self.key, ACL=self.acl)
-            except (ClientError, ParamValidationError) as exc:
-                raise_from(IOError('Initiating write failed: %s' % self.path), exc)
-
-            self.buffer.seek(0)
-
-            # chunk buffer to ensure blocksize respected by multiparts;
-            # look ahead to ensure we don't attempt to write too small or too large a part
-            (data0, data1) = (None, self.buffer.read(self.blocksize))
-            while data1:
-                (data0, data1) = (data1, self.buffer.read(self.blocksize))
-
-                data1_size = len(data1)
-                if 0 < data1_size < self.blocksize:
-                    # last part would be smaller than specified
-                    remainder = data0 + data1
-                    remainder_size = self.blocksize + data1_size
-
-                    if remainder_size <= self.part_max:
-                        # we can combine the last two parts without issue
-                        (data0, data1) = (remainder, None)
-                    else:
-                        # combination of last two blocks is too large for a single part
-                        #
-                        # this implies blocksize (and data0) must be more than half, and less
-                        # than or equal to, part_max;
-                        # however, data1 could be trivially small (less than part_min).
-                        #
-                        # spread out the data between the last two parts in order to best
-                        # approximate blocksize and avoid part_min:
-                        partition = remainder_size // 2
-                        (data0, data1) = (remainder[:partition], remainder[partition:])
-
-                part = len(self.parts) + 1
-
-                for attempt in range(retries + 1):
-                    try:
-                        out = self._call_s3(
-                            self.s3.s3.upload_part,
-                            Bucket=self.bucket,
-                            PartNumber=part, UploadId=self.mpu['UploadId'],
-                            Body=data0, Key=self.key)
-                    except S3_RETRYABLE_ERRORS:
-                        if attempt < retries:
-                            logger.debug('Exception %e on S3 write, retrying', exc_info=True)
-                    except Exception as exc:
-                        raise IOError('Write failed', self, exc)
-                    else:
-                        break
+                if remainder_size <= self.part_max:
+                    (data0, data1) = (remainder, None)
                 else:
-                    raise IOError('Write failed after %i retries' % retries, self)
+                    partition = remainder_size // 2
+                    (data0, data1) = (remainder[:partition], remainder[partition:])
 
-                self.parts.append({'PartNumber': part, 'ETag': out['ETag']})
+            part = len(self.parts) + 1
 
-            self.buffer = io.BytesIO()
-
-    def close(self):
-        """ Close file
-
-        If in write mode, key is only finalized upon close, and key will then
-        be available to other processes.
-        """
-        if self.closed:
-            return
-        self.cache = None
-        if self.writable():
-            if self.parts:
-                self.flush(force=True)
-                part_info = {'Parts': self.parts}
-                write_result = self._call_s3(
-                    self.s3.s3.complete_multipart_upload,
-                    Bucket=self.bucket,
-                    Key=self.key,
-                    UploadId=self.mpu['UploadId'],
-                    MultipartUpload=part_info)
-            else:
+            for attempt in range(self.retries + 1):
                 try:
-                    write_result = self._call_s3(
-                        self.s3.s3.put_object,
-                        Bucket=self.bucket, Key=self.key,
-                        Body=self.buffer.getvalue(), ACL=self.acl)
-                except (ClientError, ParamValidationError) as e:
-                    raise_from(IOError('Write failed: %s' % self.path), e)
-            if self.s3.version_aware:
-                self.version_id = write_result.get('VersionId')
-            self.s3.invalidate_cache(self.path)
-            self.parts = []
-            self.buffer.seek(0)
-            self.buffer.truncate(0)
-        self.closed = True
+                    out = self._call_s3(
+                        self.fs.s3.upload_part,
+                        Bucket=bucket,
+                        PartNumber=part, UploadId=self.mpu['UploadId'],
+                        Body=data0, Key=key)
+                except S3_RETRYABLE_ERRORS:
+                    if attempt < self.retries:
+                        logger.debug('Exception %e on S3 write, retrying',
+                                     exc_info=True)
+                except Exception as exc:
+                    raise IOError('Write failed', self, exc)
+                else:
+                    break
+            else:
+                raise IOError(
+                    'Write failed after %i retries' % self.retries, self)
 
-    def readable(self):
-        """Return whether the S3File was opened for reading"""
-        return 'r' in self.mode
+            self.parts.append({'PartNumber': part, 'ETag': out['ETag']})
 
-    def seekable(self):
-        """Return whether the S3File is seekable (only in read mode)"""
-        return self.readable()
+        if self.autocommit and final:
+            self.commit()
 
-    def writable(self):
-        """Return whether the S3File was opened for writing"""
-        return 'w' in self.mode or 'a' in self.mode
+    def commit(self):
+        logger.debug("COMMIT")
+        bucket, key = self.path.split('/', 1)
+        part_info = {'Parts': self.parts}
+        write_result = self._call_s3(
+            self.fs.s3.complete_multipart_upload,
+            Bucket=bucket,
+            Key=key,
+            UploadId=self.mpu['UploadId'],
+            MultipartUpload=part_info)
+        if self.fs.version_aware:
+            self.version_id = write_result.get('VersionId')
 
-    def __del__(self):
-        self.close()
-
-    def __str__(self):
-        return "<S3File %s/%s>" % (self.bucket, self.key)
-
-    __repr__ = __str__
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        self.close()
-
-    # Implementations of BufferedIOBase stub methods
-
-    def read1(self, length=-1):
-        return self.read(length)
-
-    def detach(self):
-        raise io.UnsupportedOperation()
-
-    def readinto(self, b):
-        data = self.read(len(b))
-        b[:len(data)] = data
-        return len(data)
-
-    def readinto1(self, b):
-        return self.readinto(b)
+        # complex cache invalidation, since file's appearance can cause several
+        # directories
+        parts = self.path.split('/')
+        path = parts[0]
+        for p in parts[1:]:
+            if path in self.fs.dircache and not [
+                    True for f in self.fs.dircache[path]
+                    if f['name'] == path + '/' + p]:
+                self.fs.invalidate_cache(path)
+            path = path + '/' + p
 
 
 def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,

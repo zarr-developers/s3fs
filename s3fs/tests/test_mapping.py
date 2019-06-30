@@ -6,33 +6,33 @@ root = test_bucket_name + '/mapping'
 
 
 def test_simple(s3):
-    d = S3Map(root, s3)
+    d = s3.get_mapper(root)
     assert not d
 
     assert list(d) == list(d.keys()) == []
     assert list(d.values()) == []
     assert list(d.items()) == []
-    d = S3Map(root, s3, check=True)
+    s3.get_mapper(root)
 
 
 def test_default_s3filesystem(s3):
-    d = S3Map(root)
-    assert d.s3 is s3
+    d = s3.get_mapper(root)
+    assert d.fs is s3
 
 
 def test_errors(s3):
-    d = S3Map(root, s3)
+    d = s3.get_mapper(root)
     with pytest.raises(KeyError):
         d['nonexistent']
 
     try:
-        S3Map('does-not-exist')
+        s3.get_mapper('does-not-exist', check=True)
     except Exception as e:
         assert 'does-not-exist' in str(e)
 
 
 def test_with_data(s3):
-    d = S3Map(root, s3)
+    d = s3.get_mapper(root)
     d['x'] = b'123'
     assert list(d) == list(d.keys()) == ['x']
     assert list(d.values()) == [b'123']
@@ -40,7 +40,7 @@ def test_with_data(s3):
     assert d['x'] == b'123'
     assert bool(d)
 
-    assert s3.walk(root) == [test_bucket_name + '/mapping/x']
+    assert s3.find(root) == [test_bucket_name + '/mapping/x']
     d['x'] = b'000'
     assert d['x'] == b'000'
 
@@ -53,7 +53,7 @@ def test_with_data(s3):
 
 
 def test_complex_keys(s3):
-    d = S3Map(root, s3)
+    d = s3.get_mapper(root)
     d[1] = b'hello'
     assert d[1] == b'hello'
     del d[1]
@@ -70,7 +70,7 @@ def test_complex_keys(s3):
 
 
 def test_clear_empty(s3):
-    d = S3Map(root, s3)
+    d = s3.get_mapper(root)
     d.clear()
     assert list(d) == []
     d[1] = b'1'
@@ -80,7 +80,7 @@ def test_clear_empty(s3):
 
 
 def test_pickle(s3):
-    d = S3Map(root, s3)
+    d = s3.get_mapper(root)
     d['x'] = b'1'
 
     import pickle
@@ -91,15 +91,14 @@ def test_pickle(s3):
 
 def test_array(s3):
     from array import array
-    d = S3Map(root, s3)
+    d = s3.get_mapper(root)
     d['x'] = array('B', [65] * 1000)
 
     assert d['x'] == b'A' * 1000
 
 
 def test_bytearray(s3):
-    from array import array
-    d = S3Map(root, s3)
+    d = s3.get_mapper(root)
     d['x'] = bytearray(b'123')
 
     assert d['x'] == b'123'
@@ -107,13 +106,18 @@ def test_bytearray(s3):
 
 def test_new_bucket(s3):
     try:
-        d = S3Map('new-bucket', s3)
+        s3.get_mapper('new-bucket', check=True)
         assert False
     except ValueError as e:
-        assert 'create=True' in str(e)
+        assert 'create' in str(e)
 
-    d = S3Map('new-bucket', s3, create=True)
+    d = s3.get_mapper('new-bucket', create=True)
     assert not d
 
-    d = S3Map('new-bucket/new-directory', s3)
+    d = s3.get_mapper('new-bucket/new-directory')
     assert not d
+
+
+def test_old_api(s3):
+    import fsspec.mapping
+    assert isinstance(S3Map(root, s3), fsspec.mapping.FSMap)

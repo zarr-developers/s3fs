@@ -55,9 +55,7 @@ d = test_bucket_name + '/tmp/test/d'
 @pytest.yield_fixture
 def s3():
     # writable local S3 system
-    try:
-        m = moto.mock_s3()
-        m.start()
+    with moto.mock_s3():
         import boto3
         client = boto3.client('s3')
         client.create_bucket(Bucket=test_bucket_name, ACL='public-read')
@@ -80,7 +78,8 @@ def s3():
                     "Effect": "Deny",
                     "Principal": "*",
                     "Action": "s3:PutObject",
-                    "Resource": "arn:aws:s3:::{bucket_name}/*".format(bucket_name=secure_bucket_name),
+                    "Resource": "arn:aws:s3:::{bucket_name}/*".format(
+                        bucket_name=secure_bucket_name),
                     "Condition": {
                         "StringNotEquals": {
                             "s3:x-amz-server-side-encryption": "aws:kms"
@@ -99,7 +98,9 @@ def s3():
         for flist in [files, csv_files, text_files, glob_files]:
             for f, data in flist.items():
                 client.put_object(Bucket=test_bucket_name, Key=f, Body=data)
-        yield S3FileSystem(anon=False)
+        s3 = S3FileSystem(anon=False)
+        s3.invalidate_cache()
+        yield s3
         for flist in [files, csv_files, text_files, glob_files]:
             for f, data in flist.items():
                 try:
@@ -115,8 +116,6 @@ def s3():
                 client.delete_object(Bucket=secure_bucket_name, Key=k)
             except:
                 pass
-    finally:
-        m.stop()
 
 
 def test_simple(s3):
@@ -155,7 +154,7 @@ def test_tokenize():
 
 def test_idempotent_connect(s3):
     con1 = s3.connect()
-    con2 = s3.connect()
+    con2 = s3.connect(refresh=False)
     con3 = s3.connect(refresh=True)
     assert con1 is con2
     assert con1 is not con3
@@ -174,10 +173,10 @@ def test_info(s3):
     s3.touch(b)
     assert s3.info(a) == s3.ls(a, detail=True)[0]
     parent = a.rsplit('/', 1)[0]
-    s3.dirs.pop(a)  # remove full path from the cache
+    s3.invalidate_cache()  # remove full path from the cache
     s3.ls(parent)  # fill the cache with parent dir
-    assert s3.info(a) == s3.dirs[parent][0]  # correct value
-    assert id(s3.info(a)) == id(s3.dirs[parent][0])  # is object from cache
+    assert s3.info(a) == s3.dircache[parent][0]  # correct value
+    assert id(s3.info(a)) == id(s3.dircache[parent][0])  # is object from cache
 
     new_parent = test_bucket_name + '/foo'
     s3.mkdir(new_parent)
@@ -324,20 +323,15 @@ def test_isdir(s3):
 
     assert not s3.isdir(b)
     assert not s3.isdir(b + '/')
-    s3.mkdir(b)
-    assert s3.isdir(b)
-    assert s3.isdir(b + '/')
 
     assert not s3.isdir(c)
     assert not s3.isdir(c + '/')
-    s3.mkdir(c + '/')
-    assert s3.isdir(c)
-    assert s3.isdir(c + '/')
 
     # test cache
-    assert not s3.dirs
+    s3.invalidate_cache()
+    assert not s3.dircache
     s3.ls(test_bucket_name + '/nested')
-    assert test_bucket_name + '/nested' in s3.dirs
+    assert test_bucket_name + '/nested' in s3.dircache
     assert not s3.isdir(test_bucket_name + '/nested/file1')
     assert not s3.isdir(test_bucket_name + '/nested/file2')
     assert s3.isdir(test_bucket_name + '/nested/nested2')
@@ -364,19 +358,6 @@ def test_rm(s3):
 
 
 def test_rmdir(s3):
-    nested = a + "/nested"
-    s3.touch(a)
-    s3.touch(nested)
-    s3.touch(b)
-
-    with pytest.raises(IOError):  # doesn't delete non empty directory
-        s3.rmdir(a)
-
-    s3.rmdir(nested)
-    s3.rmdir(a)
-    assert a not in s3.ls(test_bucket_name)
-    assert nested not in s3.ls(test_bucket_name)
-
     bucket = 'test1_bucket'
     s3.mkdir(bucket)
     s3.rmdir(bucket)
@@ -413,7 +394,7 @@ def test_bulk_delete(s3):
         s3.bulk_delete(['nonexistent/file'])
     with pytest.raises(ValueError):
         s3.bulk_delete(['bucket1/file', 'bucket2/file'])
-    filelist = s3.walk(test_bucket_name + '/nested')
+    filelist = s3.find(test_bucket_name+'/nested')
     s3.bulk_delete(filelist)
     assert not s3.exists(test_bucket_name + '/nested/nested2/file1')
 
@@ -439,7 +420,7 @@ def test_s3_file_access(s3):
 def test_s3_file_info(s3):
     fn = test_bucket_name + '/nested/file1'
     data = b'hello\n'
-    assert fn in s3.walk(test_bucket_name)
+    assert fn in s3.find(test_bucket_name)
     assert s3.exists(fn)
     assert not s3.exists(fn + 'another')
     assert s3.info(fn)['Size'] == len(data)
@@ -456,7 +437,7 @@ def test_bucket_exists(s3):
 
 
 def test_du(s3):
-    d = s3.du(test_bucket_name, deep=True)
+    d = s3.du(test_bucket_name, total=False)
     assert all(isinstance(v, int) and v >= 0 for v in d.values())
     assert test_bucket_name + '/nested/file1' in d
 
@@ -477,9 +458,9 @@ def test_s3_ls(s3):
 def test_s3_big_ls(s3):
     for x in range(1200):
         s3.touch(test_bucket_name + '/thousand/%i.part' % x)
-    assert len(s3.walk(test_bucket_name)) > 1200
+    assert len(s3.find(test_bucket_name)) > 1200
     s3.rm(test_bucket_name + '/thousand/', recursive=True)
-    assert len(s3.walk(test_bucket_name + '/thousand/')) == 0
+    assert len(s3.find(test_bucket_name + '/thousand/')) == 0
 
 
 def test_s3_ls_detail(s3):
@@ -496,7 +477,7 @@ def test_s3_glob(s3):
     assert fn in s3.glob(test_bucket_name + '/nested/file*')
     assert fn in s3.glob(test_bucket_name + '/*/*')
     assert all(any(p.startswith(f + '/') or p == f
-                   for p in s3.walk(test_bucket_name, directories=True))
+                   for p in s3.find(test_bucket_name))
                for f in s3.glob(test_bucket_name + '/nested/*'))
     assert [test_bucket_name +
             '/nested/nested2'] == s3.glob(test_bucket_name + '/nested/nested2')
@@ -599,7 +580,7 @@ def test_get_put(s3, tmpdir):
     assert open(test_file, 'rb').read() == data
     s3.put(test_file, test_bucket_name + '/temp')
     assert s3.du(test_bucket_name +
-                 '/temp')[test_bucket_name + '/temp'] == len(data)
+                 '/temp', total=False)[test_bucket_name + '/temp'] == len(data)
     assert s3.cat(test_bucket_name + '/temp') == data
 
 
@@ -636,10 +617,10 @@ def test_errors(s3):
         s3.mkdir('/')
 
     with pytest.raises(ValueError):
-        s3.walk('')
+        s3.find('')
 
     with pytest.raises(ValueError):
-        s3.walk('s3://')
+        s3.find('s3://')
 
 
 def test_read_small(s3):
@@ -696,8 +677,6 @@ def test_new_bucket(s3):
         f.write(b'hello')
     with pytest.raises((IOError, OSError)):
         s3.rmdir('new')
-    with pytest.raises((IOError, OSError)):
-        s3.rmdir('new/temp')
     s3.rm('new/temp')
     s3.rmdir('new')
     assert 'new' not in s3.ls('')
@@ -838,43 +817,6 @@ def test_readline(s3):
             assert result == expected
 
 
-def test_readline_from_cache(s3):
-    data = b'a,b\n11,22\n3,4'
-    with s3.open(a, 'wb') as f:
-        f.write(data)
-
-    with s3.open(a, 'rb') as f:
-        result = f.readline()
-        assert result == b'a,b\n'
-        assert f.loc == 4
-        assert f.cache == data
-
-        result = f.readline()
-        assert result == b'11,22\n'
-        assert f.loc == 10
-        assert f.cache == data
-
-        result = f.readline()
-        assert result == b'3,4'
-        assert f.loc == 13
-        assert f.cache == data
-
-
-def test_readline_partial(s3):
-    data = b'aaaaa,bbbbb\n12345,6789\n'
-    with s3.open(a, 'wb') as f:
-        f.write(data)
-    with s3.open(a, 'rb') as f:
-        result = f.readline(5)
-        assert result == b'aaaaa'
-        result = f.readline(5)
-        assert result == b',bbbb'
-        result = f.readline(5)
-        assert result == b'b\n'
-        result = f.readline()
-        assert result == b'12345,6789\n'
-
-
 def test_readline_empty(s3):
     data = b''
     with s3.open(a, 'wb') as f:
@@ -921,8 +863,6 @@ def test_iterable(s3):
         assert f.readline() == b'123'
         f.seek(1)
         assert f.readline() == b'bc\n'
-        assert f.readline(1) == b'1'
-        assert f.readline() == b'23'
 
     with s3.open(a) as f:
         out = list(f)
@@ -982,6 +922,8 @@ def test_append(s3):
     assert s3.cat(a) == b'a' * 10 * 2 ** 20
 
     with s3.open(a, 'ab') as f:
+        assert f.parts is None
+        f._initiate_upload()
         assert f.parts
         assert f.tell() == 10 * 2 ** 20
         f.write(b'extra')  # append, small write, big file
@@ -1006,6 +948,9 @@ def test_bigger_than_block_read(s3):
 
 
 def test_current(s3):
+    s3._cache.clear()
+    s3 = S3FileSystem()
+    assert s3.current() is s3
     assert S3FileSystem.current() is s3
 
 
@@ -1022,7 +967,7 @@ def test_array(s3):
 
 
 def _get_s3_id(s3):
-    return id(s3.connect())
+    return id(s3.s3)
 
 
 def test_no_connection_sharing_among_processes(s3):
@@ -1086,25 +1031,6 @@ def test_multipart_upload_blocksize(s3):
     # Ensure that the multipart upload consists of only 3 parts
     assert len(s3f.parts) == expected_parts
     s3f.close()
-    assert len(s3f.parts) == 0
-
-
-def test_not_fill_cache(s3):
-    fname = list(files)[0]
-    data = files[fname]
-    with s3.open(test_bucket_name + '/' + fname, 'rb', block_size=5,
-                 fill_cache=False) as f:
-        f.read(6)
-        assert len(f.cache) == 11
-        assert data.startswith(f.cache)
-        f.seek(10)
-        f.read(2)
-        assert f.start < 10  # keeps some old data
-
-        f.seek(31)
-        out = f.read(6)
-        assert len(f.cache) == 11  # dropped
-        assert out == data[31:37]
 
 
 def test_default_pars(s3):
@@ -1229,30 +1155,35 @@ def test_readinto(s3):
     assert contents.startswith(b'Hello, World!')
 
 
-def test_change_defaults_only_subsequent(monkeypatch):
+def test_change_defaults_only_subsequent():
     """Test for Issue #135
 
     Ensure that changing the default block size doesn't affect existing file
     systems that were created using that default. It should only affect file
     systems created after the change.
     """
-    fs_default = S3FileSystem()
-    assert fs_default.default_block_size == 5 * (1024 ** 2)
+    try:
+        S3FileSystem.cachable = False  # don't reuse instances with same pars
 
-    fs_overridden = S3FileSystem(default_block_size=64 * (1024 ** 2))
-    assert fs_overridden.default_block_size == 64 * (1024 ** 2)
+        fs_default = S3FileSystem()
+        assert fs_default.default_block_size == 5 * (1024 ** 2)
 
-    # Suppose I want all subsequent file systems to have a block size of 1 GiB
-    # instead of 5 MiB:
-    monkeypatch.setattr(S3FileSystem, 'default_block_size', 1024 ** 3)
+        fs_overridden = S3FileSystem(default_block_size=64 * (1024 ** 2))
+        assert fs_overridden.default_block_size == 64 * (1024 ** 2)
 
-    fs_big = S3FileSystem()
-    assert fs_big.default_block_size == 1024 ** 3
+        # Suppose I want all subsequent file systems to have a block size of 1 GiB
+        # instead of 5 MiB:
+        S3FileSystem.default_block_size = 1024 ** 3
 
-    # Test the other file systems created to see if their block sizes changed
-    assert fs_overridden.default_block_size == 64 * (1024 ** 2)
-    assert fs_default.default_block_size == 5 * (1024 ** 2)
+        fs_big = S3FileSystem()
+        assert fs_big.default_block_size == 1024 ** 3
 
+        # Test the other file systems created to see if their block sizes changed
+        assert fs_overridden.default_block_size == 64 * (1024 ** 2)
+        assert fs_default.default_block_size == 5 * (1024 ** 2)
+    finally:
+        S3FileSystem.default_block_size = 5 * (1024 ** 2)
+        S3FileSystem.cachable = True
 
 def test_passed_in_session_set_correctly(s3):
     session = boto3.session.Session()
