@@ -10,13 +10,7 @@ from s3fs.core import S3FileSystem, FileNotFoundError
 from s3fs.utils import seek_delimiter, ignoring, SSEParams
 import moto
 import boto3
-
-try:
-    from unittest import mock
-except ImportError:
-    # python 2.7
-    import mock
-
+from unittest import mock
 from botocore.exceptions import NoCredentialsError
 
 test_bucket_name = 'test'
