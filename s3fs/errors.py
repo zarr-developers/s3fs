@@ -123,17 +123,21 @@ def translate_boto_error(error, message=None, *args, **kwargs):
     message : str
         An error message to use for the returned exception. If not given, the
         error message returned by the server is used instead.
+    *args, **kwargs :
+        Additional arguments to pass to the exception constructor, after the
+        error message. Useful for passing the filename arguments to ``IOError``.
 
     Returns
     -------
 
-    An instantiated exception ready to be thrown.
+    An instantiated exception ready to be thrown. If the error code isn't
+    recognized, an IOError with the original error message is returned.
     """
-    code = error.response['Error'].get('Code', 'Unknown')
+    code = error.response['Error'].get('Code')
     constructor = ERROR_CODE_TO_EXCEPTION.get(code)
     if not constructor:
-        # No match found, rethrow the original error
-        return error
+        # No match found, wrap this in an IOError with the appropriate message.
+        return IOError(errno.EIO, message or str(error), *args)
 
     if not message:
         message = error.response['Error'].get('Message', str(error))
