@@ -1,0 +1,137 @@
+"""S3 error codes adapted into more natural Python ones.
+
+Adapted from: https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
+"""
+
+import errno
+import functools
+
+
+# Fallback values since some systems don't have these
+EREMOTEIO = getattr(errno, 'EREMOTEIO', errno.EIO)
+EREMCHG = getattr(errno, 'EREMCHG', errno.ENOENT)
+
+
+ERROR_CODE_TO_EXCEPTION = {
+    'AccessDenied': PermissionError,
+    'AccountProblem': PermissionError,
+    'AllAccessDisabled': PermissionError,
+    'AmbiguousGrantByEmailAddress': functools.partial(IOError, errno.EINVAL),
+    'AuthorizationHeaderMalformed': functools.partial(IOError, errno.EINVAL),
+    'BadDigest': functools.partial(IOError, errno.EINVAL),
+    'BucketAlreadyExists': FileExistsError,
+    'BucketAlreadyOwnedByYou': FileExistsError,
+    'BucketNotEmpty': functools.partial(IOError, errno.ENOTEMPTY),
+    'CredentialsNotSupported': functools.partial(IOError, errno.EINVAL),
+    'CrossLocationLoggingProhibited': PermissionError,
+    'EntityTooSmall': functools.partial(IOError, errno.EINVAL),
+    'EntityTooLarge': functools.partial(IOError, errno.EMSGSIZE),
+    'ExpiredToken': PermissionError,
+    'IllegalVersioningConfigurationException': functools.partial(IOError, errno.EINVAL),
+    'IncompleteBody': functools.partial(IOError, errno.EINVAL),
+    'IncorrectNumberOfFilesInPostRequest': functools.partial(IOError, errno.EINVAL),
+    'InlineDataTooLarge': functools.partial(IOError, errno.EMSGSIZE),
+    'InternalError': functools.partial(IOError, EREMOTEIO),
+    'InvalidAccessKeyId': PermissionError,
+    'InvalidAddressingHeader': functools.partial(IOError, errno.EINVAL),
+    'InvalidArgument': functools.partial(IOError, errno.EINVAL),
+    'InvalidBucketName': functools.partial(IOError, errno.EINVAL),
+    'InvalidBucketState': functools.partial(IOError, errno.EPERM),
+    'InvalidDigest': functools.partial(IOError, errno.EINVAL),
+    'InvalidEncryptionAlgorithmError': functools.partial(IOError, errno.EINVAL),
+    'InvalidLocationConstraint': functools.partial(IOError, errno.EINVAL),
+    'InvalidObjectState': PermissionError,
+    'InvalidPart': functools.partial(IOError, errno.EINVAL),
+    'InvalidPartOrder': functools.partial(IOError, errno.EINVAL),
+    'InvalidPayer': PermissionError,
+    'InvalidPolicyDocument': functools.partial(IOError, errno.EINVAL),
+    'InvalidRange': functools.partial(IOError, errno.ERANGE),
+    'InvalidRequest': functools.partial(IOError, errno.EINVAL),
+    'InvalidSecurity': PermissionError,
+    'InvalidSOAPRequest': functools.partial(IOError, errno.EINVAL),
+    'InvalidStorageClass': functools.partial(IOError, errno.EINVAL),
+    'InvalidTargetBucketForLogging': functools.partial(IOError, errno.EINVAL),
+    'InvalidToken': functools.partial(IOError, errno.EINVAL),
+    'InvalidURI': functools.partial(IOError, errno.EINVAL),
+    'KeyTooLongError': functools.partial(IOError, errno.ENAMETOOLONG),
+    'MalformedACLError': functools.partial(IOError, errno.EINVAL),
+    'MalformedPOSTRequest': functools.partial(IOError, errno.EINVAL),
+    'MalformedXML': functools.partial(IOError, errno.EINVAL),
+    'MaxMessageLengthExceeded': functools.partial(IOError, errno.EMSGSIZE),
+    'MaxPostPreDataLengthExceededError': functools.partial(IOError, errno.EMSGSIZE),
+    'MetadataTooLarge': functools.partial(IOError, errno.EMSGSIZE),
+    'MethodNotAllowed': functools.partial(IOError, errno.EPERM),
+    'MissingAttachment': functools.partial(IOError, errno.EINVAL),
+    'MissingContentLength': functools.partial(IOError, errno.EINVAL),
+    'MissingRequestBodyError': functools.partial(IOError, errno.EINVAL),
+    'MissingSecurityElement': functools.partial(IOError, errno.EINVAL),
+    'MissingSecurityHeader': functools.partial(IOError, errno.EINVAL),
+    'NoLoggingStatusForKey': functools.partial(IOError, errno.EINVAL),
+    'NoSuchBucket': FileNotFoundError,
+    'NoSuchBucketPolicy': FileNotFoundError,
+    'NoSuchKey': FileNotFoundError,
+    'NoSuchLifecycleConfiguration': FileNotFoundError,
+    'NoSuchUpload': FileNotFoundError,
+    'NoSuchVersion': FileNotFoundError,
+    'NotImplemented': functools.partial(IOError, errno.ENOSYS),
+    'NotSignedUp': PermissionError,
+    'OperationAborted': functools.partial(IOError, errno.EBUSY),
+    'PermanentRedirect': functools.partial(IOError, EREMCHG),
+    'PreconditionFailed': functools.partial(IOError, errno.EINVAL),
+    'Redirect': functools.partial(IOError, EREMCHG),
+    'RestoreAlreadyInProgress': functools.partial(IOError, errno.EBUSY),
+    'RequestIsNotMultiPartContent': functools.partial(IOError, errno.EINVAL),
+    'RequestTimeout': TimeoutError,
+    'RequestTimeTooSkewed': PermissionError,
+    'RequestTorrentOfBucketError': functools.partial(IOError, errno.EPERM),
+    'SignatureDoesNotMatch': PermissionError,
+    'ServiceUnavailable': functools.partial(IOError, errno.EBUSY),
+    'SlowDown': functools.partial(IOError, errno.EBUSY),
+    'TemporaryRedirect': functools.partial(IOError, EREMCHG),
+    'TokenRefreshRequired': functools.partial(IOError, errno.EINVAL),
+    'TooManyBuckets': functools.partial(IOError, errno.EINVAL),
+    'UnexpectedContent': functools.partial(IOError, errno.EINVAL),
+    'UnresolvableGrantByEmailAddress': functools.partial(IOError, errno.EINVAL),
+    'UserKeyMustBeSpecified': functools.partial(IOError, errno.EINVAL),
+    '301': functools.partial(IOError, EREMCHG),     # PermanentRedirect
+    '307': functools.partial(IOError, EREMCHG),     # Redirect
+    '400': functools.partial(IOError, errno.EINVAL),
+    '403': PermissionError,
+    '404': FileNotFoundError,
+    '405': functools.partial(IOError, errno.EPERM),
+    '409': functools.partial(IOError, errno.EBUSY),
+    '412': functools.partial(IOError, errno.EINVAL),    # PreconditionFailed
+    '416': functools.partial(IOError, errno.ERANGE),    # InvalidRange
+    '500': functools.partial(IOError, EREMOTEIO),       # InternalError
+    '501': functools.partial(IOError, errno.ENOSYS),    # NotImplemented
+    '503': functools.partial(IOError, errno.EBUSY),     # SlowDown
+}
+
+
+def error_to_exception(error, message=None, *args, **kwargs):
+    """Convert a ClientError exception into a Python one.
+
+    Parameters
+    ----------
+
+    error : botocore.exceptions.ClientError
+        The exception returned by the boto API.
+    message : str
+        An error message to use for the returned exception. If not given, the
+        error message returned by the server is used instead.
+
+    Returns
+    -------
+
+    An instantiated exception ready to be thrown.
+    """
+    code = error.response['Error']['Code']
+    constructor = ERROR_CODE_TO_EXCEPTION.get(code)
+    if not constructor:
+        # No match found, rethrow the original error
+        return error
+
+    if not message:
+        message = error.response['Error']['Message']
+
+    return constructor(message, *args, **kwargs)

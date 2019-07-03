@@ -25,11 +25,6 @@ except ImportError:
         socket.timeout,
     )
 
-try:
-    FileNotFoundError = FileNotFoundError
-except NameError:
-    class FileNotFoundError(IOError):
-        pass
 
 # py2 has no ConnectionError only OSError with different error number for each
 # error so we need to catch OSError and compare errno to the following

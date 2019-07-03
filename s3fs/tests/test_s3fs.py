@@ -6,7 +6,7 @@ import re
 import time
 import pytest
 from itertools import chain
-from s3fs.core import S3FileSystem, FileNotFoundError
+from s3fs.core import S3FileSystem
 from s3fs.utils import seek_delimiter, ignoring, SSEParams
 import moto
 import boto3
