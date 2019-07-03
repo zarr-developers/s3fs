@@ -25,17 +25,6 @@ except ImportError:
         socket.timeout,
     )
 
-
-# py2 has no ConnectionError only OSError with different error number for each
-# error so we need to catch OSError and compare errno to the following
-# error numbers - same as catching ConnectionError on py3
-# ref: https://docs.python.org/3/library/exceptions.html#ConnectionError
-_CONNECTION_ERRORS = frozenset({
-    errno.ECONNRESET,  # ConnectionResetError
-    errno.EPIPE, errno.ESHUTDOWN,  # BrokenPipeError
-    errno.ECONNABORTED,  # ConnectionAbortedError
-    errno.ECONNREFUSED,  # ConnectionRefusedError
-})
 _VALID_FILE_MODES = {'r', 'w', 'a', 'rb', 'wb', 'ab'}
 
 
@@ -78,11 +67,6 @@ key_acls = {'private', 'public-read', 'public-read-write',
             'bucket-owner-full-control'}
 buck_acls = {'private', 'public-read', 'public-read-write',
              'authenticated-read'}
-
-
-def is_permission_error(e):
-    # type: (ClientError) -> bool
-    return e.response['Error'].get('Code', 'Unknown') == 'AccessDenied'
 
 
 class S3FileSystem(AbstractFileSystem):
@@ -1032,17 +1016,15 @@ class S3File(AbstractBufferedFile):
                         Bucket=bucket,
                         PartNumber=part, UploadId=self.mpu['UploadId'],
                         Body=data0, Key=key)
-                except S3_RETRYABLE_ERRORS:
+                    break
+                except S3_RETRYABLE_ERRORS as exc:
                     if attempt < self.retries:
-                        logger.debug('Exception %e on S3 write, retrying',
+                        logger.debug('Exception %r on S3 write, retrying', exc,
                                      exc_info=True)
                 except Exception as exc:
-                    raise IOError('Write failed', self, exc)
-                else:
-                    break
+                    raise IOError('Write failed: %r' % exc)
             else:
-                raise IOError(
-                    'Write failed after %i retries' % self.retries, self)
+                raise IOError('Write failed after %i retries' % self.retries)
 
             self.parts.append({'PartNumber': part, 'ETag': out['ETag']})
 
@@ -1090,15 +1072,11 @@ def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,
                                      **kwargs)
             return resp['Body'].read()
         except S3_RETRYABLE_ERRORS as e:
-            logger.debug('Exception %e on S3 download, retrying', e,
+            logger.debug('Exception %r on S3 download, retrying', e,
                          exc_info=True)
             continue
-        except OSError as e:
-            # only retry connection_errors - similar to catching
-            # ConnectionError on py3
-            if e.errno not in _CONNECTION_ERRORS:
-                raise
-            logger.debug('ConnectionError %e on S3 download, retrying', e,
+        except ConnectionError as e:
+            logger.debug('ConnectionError %r on S3 download, retrying', e,
                          exc_info=True)
             continue
         except ClientError as e:
