@@ -126,13 +126,13 @@ def translate_boto_error(error, message=None, *args, **kwargs):
 
     An instantiated exception ready to be thrown.
     """
-    code = error.response['Error']['Code']
+    code = error.response['Error'].get('Code', 'Unknown')
     constructor = ERROR_CODE_TO_EXCEPTION.get(code)
     if not constructor:
         # No match found, rethrow the original error
         return error
 
     if not message:
-        message = error.response['Error']['Message']
+        message = error.response['Error'].get('Message', str(error))
 
     return constructor(message, *args, **kwargs)
