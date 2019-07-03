@@ -839,7 +839,7 @@ class S3FileSystem(AbstractFileSystem):
                 self.invalidate_cache(bucket)
                 self.invalidate_cache('')
             else:
-                raise IOError('Not empty', path)
+                raise FileNotFoundError(path)
 
     def invalidate_cache(self, path=None):
         if path is None:
@@ -899,7 +899,7 @@ class S3File(AbstractBufferedFile):
                  version_id=None, fill_cache=True, s3_additional_kwargs=None,
                  autocommit=True, cache_type='bytes'):
         if not split_path(path)[1]:
-            raise IOError('Attempt to open non key-like path: %s' % path)
+            raise ValueError('Attempt to open non key-like path: %s' % path)
         self.version_id = version_id
         self.acl = acl
         self.mpu = None

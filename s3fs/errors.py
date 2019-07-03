@@ -27,6 +27,7 @@ ERROR_CODE_TO_EXCEPTION = {
     'EntityTooSmall': functools.partial(IOError, errno.EINVAL),
     'EntityTooLarge': functools.partial(IOError, errno.EMSGSIZE),
     'ExpiredToken': PermissionError,
+    'IllegalLocationConstraintException': PermissionError,
     'IllegalVersioningConfigurationException': functools.partial(IOError, errno.EINVAL),
     'IncompleteBody': functools.partial(IOError, errno.EINVAL),
     'IncorrectNumberOfFilesInPostRequest': functools.partial(IOError, errno.EINVAL),
