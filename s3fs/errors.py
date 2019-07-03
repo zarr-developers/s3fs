@@ -109,7 +109,7 @@ ERROR_CODE_TO_EXCEPTION = {
 }
 
 
-def error_to_exception(error, message=None, *args, **kwargs):
+def translate_boto_error(error, message=None, *args, **kwargs):
     """Convert a ClientError exception into a Python one.
 
     Parameters

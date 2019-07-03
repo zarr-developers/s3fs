@@ -10,7 +10,7 @@ import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError, ParamValidationError, BotoCoreError
 
-from s3fs.errors import error_to_exception
+from s3fs.errors import translate_boto_error
 from s3fs.utils import ParamKwargsHelper
 
 logger = logging.getLogger(__name__)
@@ -338,7 +338,7 @@ class S3FileSystem(AbstractFileSystem):
                     f['Key'] = '/'.join([bucket, f['Key']])
                     f['name'] = f['Key']
             except ClientError as e:
-                raise error_to_exception(e)
+                raise translate_boto_error(e)
 
             self.dircache[path] = files
         return self.dircache[path]
@@ -360,7 +360,7 @@ class S3FileSystem(AbstractFileSystem):
                 self.invalidate_cache('')
                 self.invalidate_cache(path)
             except ClientError as e:
-                raise error_to_exception(e)
+                raise translate_boto_error(e)
             except ParamValidationError as e:
                 raise ValueError('Bucket create failed %r: %s' % (path, e))
 
@@ -370,7 +370,7 @@ class S3FileSystem(AbstractFileSystem):
             try:
                 self.s3.delete_bucket(Bucket=path)
             except ClientError as e:
-                raise error_to_exception(e)
+                raise translate_boto_error(e)
             self.invalidate_cache(path)
             self.invalidate_cache('')
 
@@ -469,7 +469,7 @@ class S3FileSystem(AbstractFileSystem):
                     'VersionId': out.get('VersionId')
                 }
             except ClientError as e:
-                raise error_to_exception(e)
+                raise translate_boto_error(e)
             except ParamValidationError as e:
                 raise ValueError('Failed to head path %r: %s' % (path, e))
         return super().info(path)
@@ -738,7 +738,7 @@ class S3FileSystem(AbstractFileSystem):
                 Bucket=buc2, Key=key2, CopySource='/'.join([buc1, key1])
             )
         except ClientError as e:
-            raise error_to_exception(e)
+            raise translate_boto_error(e)
         except ParamValidationError as e:
             raise ValueError('Copy failed (%r -> %r): %s' % (path1, path2, e))
 
@@ -760,7 +760,7 @@ class S3FileSystem(AbstractFileSystem):
                 )
             )
         except ClientError as e:
-            raise error_to_exception(e)
+            raise translate_boto_error(e)
         except ParamValidationError as e:
             raise ValueError('Copy failed (%r -> %r): %s' % (path1, path2, e))
 
@@ -798,7 +798,7 @@ class S3FileSystem(AbstractFileSystem):
                 kwargs,
                 Bucket=bucket, Delete=delete_keys)
         except ClientError as e:
-            raise error_to_exception(e)
+            raise translate_boto_error(e)
 
     def rm(self, path, recursive=False, **kwargs):
         """
@@ -828,7 +828,7 @@ class S3FileSystem(AbstractFileSystem):
                 self._call_s3(
                     self.s3.delete_object, kwargs, Bucket=bucket, Key=key)
             except ClientError as e:
-                raise error_to_exception(e)
+                raise translate_boto_error(e)
             self.invalidate_cache(self._parent(path))
         else:
             if self.exists(bucket):
@@ -946,7 +946,10 @@ class S3File(AbstractBufferedFile):
                 self.fs.s3.create_multipart_upload,
                 Bucket=bucket, Key=key, ACL=self.acl)
         except ClientError as e:
-            raise error_to_exception(e)
+            raise translate_boto_error(e)
+        except ParamValidationError as e:
+            raise ValueError('Initiating write to %r failed: %s' % (self.path, e))
+
         if 'a' in self.mode and self.fs.exists(self.path):
             if self.append_block:
                 # use existing data in key when appending,
@@ -1102,7 +1105,7 @@ def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,
             if e.response['Error'].get('Code', 'Unknown') in ['416',
                                                               'InvalidRange']:
                 return b''
-            raise error_to_exception(e)
+            raise translate_boto_error(e)
         except Exception as e:
             if 'time' in str(e).lower():  # Actual exception type changes often
                 continue
