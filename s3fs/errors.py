@@ -7,7 +7,10 @@ import errno
 import functools
 
 
-# Fallback values since some systems don't have these
+# Fallback values since some systems might not have these.
+ENAMETOOLONG = getattr(errno, 'ENAMETOOLONG', errno.EINVAL)
+ENOTEMPTY = getattr(errno, 'ENOTEMPTY', errno.EINVAL)
+EMSGSIZE = getattr(errno, 'EMSGSIZE', errno.EINVAL)
 EREMOTEIO = getattr(errno, 'EREMOTEIO', errno.EIO)
 EREMCHG = getattr(errno, 'EREMCHG', errno.ENOENT)
 
@@ -21,17 +24,17 @@ ERROR_CODE_TO_EXCEPTION = {
     'BadDigest': functools.partial(IOError, errno.EINVAL),
     'BucketAlreadyExists': FileExistsError,
     'BucketAlreadyOwnedByYou': FileExistsError,
-    'BucketNotEmpty': functools.partial(IOError, errno.ENOTEMPTY),
+    'BucketNotEmpty': functools.partial(IOError, ENOTEMPTY),
     'CredentialsNotSupported': functools.partial(IOError, errno.EINVAL),
     'CrossLocationLoggingProhibited': PermissionError,
     'EntityTooSmall': functools.partial(IOError, errno.EINVAL),
-    'EntityTooLarge': functools.partial(IOError, errno.EMSGSIZE),
+    'EntityTooLarge': functools.partial(IOError, EMSGSIZE),
     'ExpiredToken': PermissionError,
     'IllegalLocationConstraintException': PermissionError,
     'IllegalVersioningConfigurationException': functools.partial(IOError, errno.EINVAL),
     'IncompleteBody': functools.partial(IOError, errno.EINVAL),
     'IncorrectNumberOfFilesInPostRequest': functools.partial(IOError, errno.EINVAL),
-    'InlineDataTooLarge': functools.partial(IOError, errno.EMSGSIZE),
+    'InlineDataTooLarge': functools.partial(IOError, EMSGSIZE),
     'InternalError': functools.partial(IOError, EREMOTEIO),
     'InvalidAccessKeyId': PermissionError,
     'InvalidAddressingHeader': functools.partial(IOError, errno.EINVAL),
@@ -46,7 +49,7 @@ ERROR_CODE_TO_EXCEPTION = {
     'InvalidPartOrder': functools.partial(IOError, errno.EINVAL),
     'InvalidPayer': PermissionError,
     'InvalidPolicyDocument': functools.partial(IOError, errno.EINVAL),
-    'InvalidRange': functools.partial(IOError, errno.ERANGE),
+    'InvalidRange': functools.partial(IOError, errno.EINVAL),
     'InvalidRequest': functools.partial(IOError, errno.EINVAL),
     'InvalidSecurity': PermissionError,
     'InvalidSOAPRequest': functools.partial(IOError, errno.EINVAL),
@@ -54,13 +57,13 @@ ERROR_CODE_TO_EXCEPTION = {
     'InvalidTargetBucketForLogging': functools.partial(IOError, errno.EINVAL),
     'InvalidToken': functools.partial(IOError, errno.EINVAL),
     'InvalidURI': functools.partial(IOError, errno.EINVAL),
-    'KeyTooLongError': functools.partial(IOError, errno.ENAMETOOLONG),
+    'KeyTooLongError': functools.partial(IOError, ENAMETOOLONG),
     'MalformedACLError': functools.partial(IOError, errno.EINVAL),
     'MalformedPOSTRequest': functools.partial(IOError, errno.EINVAL),
     'MalformedXML': functools.partial(IOError, errno.EINVAL),
-    'MaxMessageLengthExceeded': functools.partial(IOError, errno.EMSGSIZE),
-    'MaxPostPreDataLengthExceededError': functools.partial(IOError, errno.EMSGSIZE),
-    'MetadataTooLarge': functools.partial(IOError, errno.EMSGSIZE),
+    'MaxMessageLengthExceeded': functools.partial(IOError, EMSGSIZE),
+    'MaxPostPreDataLengthExceededError': functools.partial(IOError, EMSGSIZE),
+    'MetadataTooLarge': functools.partial(IOError, EMSGSIZE),
     'MethodNotAllowed': functools.partial(IOError, errno.EPERM),
     'MissingAttachment': functools.partial(IOError, errno.EINVAL),
     'MissingContentLength': functools.partial(IOError, errno.EINVAL),
@@ -102,7 +105,7 @@ ERROR_CODE_TO_EXCEPTION = {
     '405': functools.partial(IOError, errno.EPERM),
     '409': functools.partial(IOError, errno.EBUSY),
     '412': functools.partial(IOError, errno.EINVAL),    # PreconditionFailed
-    '416': functools.partial(IOError, errno.ERANGE),    # InvalidRange
+    '416': functools.partial(IOError, errno.EINVAL),    # InvalidRange
     '500': functools.partial(IOError, EREMOTEIO),       # InternalError
     '501': functools.partial(IOError, errno.ENOSYS),    # NotImplemented
     '503': functools.partial(IOError, errno.EBUSY),     # SlowDown
