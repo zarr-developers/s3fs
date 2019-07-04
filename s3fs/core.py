@@ -136,7 +136,17 @@ class S3FileSystem(AbstractFileSystem):
                  use_ssl=True, client_kwargs=None, requester_pays=False,
                  default_block_size=None, default_fill_cache=True,
                  version_aware=False, config_kwargs=None,
-                 s3_additional_kwargs=None, session=None, **kwargs):
+                 s3_additional_kwargs=None, session=None, username=None,
+                 password=None, **kwargs):
+        if key and username:
+            raise KeyError('Supply either key or username, not both')
+        if secret and password:
+            raise KeyError('Supply secret or password, not both')
+        if username:
+            key = username
+        if password:
+            secret = password
+
         super().__init__()
         self.anon = anon
         self.session = None
