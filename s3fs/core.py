@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from six import raise_from
 import errno
 import logging
 import socket
@@ -11,6 +10,7 @@ import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError, ParamValidationError, BotoCoreError
 
+from s3fs.errors import translate_boto_error
 from s3fs.utils import ParamKwargsHelper
 
 logger = logging.getLogger(__name__)
@@ -25,22 +25,6 @@ except ImportError:
         socket.timeout,
     )
 
-try:
-    FileNotFoundError = FileNotFoundError
-except NameError:
-    class FileNotFoundError(IOError):
-        pass
-
-# py2 has no ConnectionError only OSError with different error number for each
-# error so we need to catch OSError and compare errno to the following
-# error numbers - same as catching ConnectionError on py3
-# ref: https://docs.python.org/3/library/exceptions.html#ConnectionError
-_CONNECTION_ERRORS = frozenset({
-    errno.ECONNRESET,  # ConnectionResetError
-    errno.EPIPE, errno.ESHUTDOWN,  # BrokenPipeError
-    errno.ECONNABORTED,  # ConnectionAbortedError
-    errno.ECONNREFUSED,  # ConnectionRefusedError
-})
 _VALID_FILE_MODES = {'r', 'w', 'a', 'rb', 'wb', 'ab'}
 
 
@@ -83,11 +67,6 @@ key_acls = {'private', 'public-read', 'public-read-write',
             'bucket-owner-full-control'}
 buck_acls = {'private', 'public-read', 'public-read-write',
              'authenticated-read'}
-
-
-def is_permission_error(e):
-    # type: (ClientError) -> bool
-    return e.response['Error'].get('Code', 'Unknown') == 'AccessDenied'
 
 
 class S3FileSystem(AbstractFileSystem):
@@ -343,12 +322,7 @@ class S3FileSystem(AbstractFileSystem):
                     f['Key'] = '/'.join([bucket, f['Key']])
                     f['name'] = f['Key']
             except ClientError as e:
-                # path not accessible
-                if is_permission_error(e):
-                    raise
-                if not prefix:
-                    # list bucket failed - bucket doesn't exist
-                    raise FileNotFoundError(bucket)
+                raise translate_boto_error(e)
 
             self.dircache[path] = files
         return self.dircache[path]
@@ -369,8 +343,10 @@ class S3FileSystem(AbstractFileSystem):
                 self.s3.create_bucket(**params)
                 self.invalidate_cache('')
                 self.invalidate_cache(path)
-            except (ClientError, ParamValidationError) as e:
-                raise_from(IOError('Bucket create failed', path), e)
+            except ClientError as e:
+                raise translate_boto_error(e)
+            except ParamValidationError as e:
+                raise ValueError('Bucket create failed %r: %s' % (path, e))
 
     def rmdir(self, path):
         path = self._strip_protocol(path).rstrip('/')
@@ -378,7 +354,7 @@ class S3FileSystem(AbstractFileSystem):
             try:
                 self.s3.delete_bucket(Bucket=path)
             except ClientError as e:
-                raise_from(IOError('Delete bucket failed', path), e)
+                raise translate_boto_error(e)
             self.invalidate_cache(path)
             self.invalidate_cache('')
 
@@ -476,9 +452,10 @@ class S3FileSystem(AbstractFileSystem):
                     'StorageClass': "STANDARD",
                     'VersionId': out.get('VersionId')
                 }
-            except (ClientError, ParamValidationError) as e:
-                logger.debug("Failed to head path %s", path, exc_info=True)
-                raise_from(FileNotFoundError(path), e)
+            except ClientError as e:
+                raise translate_boto_error(e)
+            except ParamValidationError as e:
+                raise ValueError('Failed to head path %r: %s' % (path, e))
         return super().info(path)
 
     def ls(self, path, detail=False, refresh=False, **kwargs):
@@ -744,8 +721,10 @@ class S3FileSystem(AbstractFileSystem):
                 kwargs,
                 Bucket=buc2, Key=key2, CopySource='/'.join([buc1, key1])
             )
-        except (ClientError, ParamValidationError) as e:
-            raise_from(IOError('Copy failed', (path1, path2)), e)
+        except ClientError as e:
+            raise translate_boto_error(e)
+        except ParamValidationError as e:
+            raise ValueError('Copy failed (%r -> %r): %s' % (path1, path2, e))
 
     def copy_managed(self, path1, path2, **kwargs):
         buc1, key1 = split_path(path1)
@@ -764,8 +743,10 @@ class S3FileSystem(AbstractFileSystem):
                     kwargs
                 )
             )
-        except (ClientError, ParamValidationError) as e:
-            raise_from(IOError('Copy failed', (path1, path2)), e)
+        except ClientError as e:
+            raise translate_boto_error(e)
+        except ParamValidationError as e:
+            raise ValueError('Copy failed (%r -> %r): %s' % (path1, path2, e))
 
     def copy(self, path1, path2, **kwargs):
         self.copy_managed(path1, path2, **kwargs)
@@ -801,7 +782,7 @@ class S3FileSystem(AbstractFileSystem):
                 kwargs,
                 Bucket=bucket, Delete=delete_keys)
         except ClientError as e:
-            raise_from(IOError('Bulk delete failed'), e)
+            raise translate_boto_error(e)
 
     def rm(self, path, recursive=False, **kwargs):
         """
@@ -831,18 +812,18 @@ class S3FileSystem(AbstractFileSystem):
                 self._call_s3(
                     self.s3.delete_object, kwargs, Bucket=bucket, Key=key)
             except ClientError as e:
-                raise_from(IOError('Delete key failed', (bucket, key)), e)
+                raise translate_boto_error(e)
             self.invalidate_cache(self._parent(path))
         else:
             if self.exists(bucket):
                 try:
                     self.s3.delete_bucket(Bucket=bucket)
                 except BotoCoreError as e:
-                    raise_from(IOError('Delete bucket failed', bucket), e)
+                    raise IOError('Delete bucket %r failed: %s' % (bucket, e))
                 self.invalidate_cache(bucket)
                 self.invalidate_cache('')
             else:
-                raise IOError('Not empty', path)
+                raise FileNotFoundError(path)
 
     def invalidate_cache(self, path=None):
         if path is None:
@@ -902,7 +883,7 @@ class S3File(AbstractBufferedFile):
                  version_id=None, fill_cache=True, s3_additional_kwargs=None,
                  autocommit=True, cache_type='bytes'):
         if not split_path(path)[1]:
-            raise IOError('Attempt to open non key-like path: %s' % path)
+            raise ValueError('Attempt to open non key-like path: %s' % path)
         self.version_id = version_id
         self.acl = acl
         self.mpu = None
@@ -948,8 +929,11 @@ class S3File(AbstractBufferedFile):
             self.mpu = self._call_s3(
                 self.fs.s3.create_multipart_upload,
                 Bucket=bucket, Key=key, ACL=self.acl)
-        except (ClientError, ParamValidationError) as e:
-            raise_from(IOError('Initiating write failed: %s' % self.path), e)
+        except ClientError as e:
+            raise translate_boto_error(e)
+        except ParamValidationError as e:
+            raise ValueError('Initiating write to %r failed: %s' % (self.path, e))
+
         if 'a' in self.mode and self.fs.exists(self.path):
             if self.append_block:
                 # use existing data in key when appending,
@@ -1032,17 +1016,15 @@ class S3File(AbstractBufferedFile):
                         Bucket=bucket,
                         PartNumber=part, UploadId=self.mpu['UploadId'],
                         Body=data0, Key=key)
-                except S3_RETRYABLE_ERRORS:
+                    break
+                except S3_RETRYABLE_ERRORS as exc:
                     if attempt < self.retries:
-                        logger.debug('Exception %e on S3 write, retrying',
+                        logger.debug('Exception %r on S3 write, retrying', exc,
                                      exc_info=True)
                 except Exception as exc:
-                    raise IOError('Write failed', self, exc)
-                else:
-                    break
+                    raise IOError('Write failed: %r' % exc)
             else:
-                raise IOError(
-                    'Write failed after %i retries' % self.retries, self)
+                raise IOError('Write failed after %i retries' % self.retries)
 
             self.parts.append({'PartNumber': part, 'ETag': out['ETag']})
 
@@ -1090,23 +1072,18 @@ def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,
                                      **kwargs)
             return resp['Body'].read()
         except S3_RETRYABLE_ERRORS as e:
-            logger.debug('Exception %e on S3 download, retrying', e,
+            logger.debug('Exception %r on S3 download, retrying', e,
                          exc_info=True)
             continue
-        except OSError as e:
-            # only retry connection_errors - similar to catching
-            # ConnectionError on py3
-            if e.errno not in _CONNECTION_ERRORS:
-                raise
-            logger.debug('ConnectionError %e on S3 download, retrying', e,
+        except ConnectionError as e:
+            logger.debug('ConnectionError %r on S3 download, retrying', e,
                          exc_info=True)
             continue
         except ClientError as e:
             if e.response['Error'].get('Code', 'Unknown') in ['416',
                                                               'InvalidRange']:
                 return b''
-            else:
-                raise
+            raise translate_boto_error(e)
         except Exception as e:
             if 'time' in str(e).lower():  # Actual exception type changes often
                 continue

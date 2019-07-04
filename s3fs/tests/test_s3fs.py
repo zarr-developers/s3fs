@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from contextlib import contextmanager
+import errno
 import json
 from concurrent.futures import ProcessPoolExecutor
 import io
@@ -6,7 +8,7 @@ import re
 import time
 import pytest
 from itertools import chain
-from s3fs.core import S3FileSystem, FileNotFoundError
+from s3fs.core import S3FileSystem
 from s3fs.utils import seek_delimiter, ignoring, SSEParams
 import moto
 import boto3
@@ -110,6 +112,14 @@ def s3():
                 client.delete_object(Bucket=secure_bucket_name, Key=k)
             except:
                 pass
+
+
+@contextmanager
+def expect_errno(expected_errno):
+    """Expect an OSError and validate its errno code."""
+    with pytest.raises(OSError) as error:
+        yield
+    assert error.value.errno == expected_errno, 'OSError has wrong error code.'
 
 
 def test_simple(s3):
@@ -250,7 +260,7 @@ def test_not_delegate():
 def test_ls(s3):
     assert set(s3.ls('')) == {test_bucket_name,
                               secure_bucket_name, versioned_bucket_name}
-    with pytest.raises((OSError, IOError)):
+    with pytest.raises(FileNotFoundError):
         s3.ls('nonexistent')
     fn = test_bucket_name + '/test/accounts.1.json'
     assert fn in s3.ls(test_bucket_name + '/test')
@@ -338,9 +348,9 @@ def test_rm(s3):
     assert s3.exists(a)
     s3.rm(a)
     assert not s3.exists(a)
-    with pytest.raises((OSError, IOError)):
+    with pytest.raises(FileNotFoundError):
         s3.rm(test_bucket_name + '/nonexistent')
-    with pytest.raises((OSError, IOError)):
+    with pytest.raises(FileNotFoundError):
         s3.rm('nonexistent')
     s3.rm(test_bucket_name + '/nested', recursive=True)
     assert not s3.exists(test_bucket_name + '/nested/nested2/file1')
@@ -384,7 +394,7 @@ def test_mkdir_client_region_name():
 
 
 def test_bulk_delete(s3):
-    with pytest.raises((OSError, IOError)):
+    with pytest.raises(FileNotFoundError):
         s3.bulk_delete(['nonexistent/file'])
     with pytest.raises(ValueError):
         s3.bulk_delete(['bucket1/file', 'bucket2/file'])
@@ -398,7 +408,8 @@ def test_anonymous_access():
         s3 = S3FileSystem(anon=True)
         assert s3.ls('') == []
         # TODO: public bucket doesn't work through moto
-    with pytest.raises((OSError, IOError)):
+
+    with pytest.raises(PermissionError):
         s3.mkdir('newbucket')
 
 
@@ -418,7 +429,7 @@ def test_s3_file_info(s3):
     assert s3.exists(fn)
     assert not s3.exists(fn + 'another')
     assert s3.info(fn)['Size'] == len(data)
-    with pytest.raises((OSError, IOError)):
+    with pytest.raises(FileNotFoundError):
         s3.info(fn + 'another')
 
 
@@ -548,7 +559,7 @@ def test_seek(s3):
 
 
 def test_bad_open(s3):
-    with pytest.raises(IOError):
+    with pytest.raises(ValueError):
         s3.open('')
 
 
@@ -579,23 +590,23 @@ def test_get_put(s3, tmpdir):
 
 
 def test_errors(s3):
-    with pytest.raises((IOError, OSError)):
+    with pytest.raises(FileNotFoundError):
         s3.open(test_bucket_name + '/tmp/test/shfoshf', 'rb')
 
     # This is fine, no need for interleaving directories on S3
     # with pytest.raises((IOError, OSError)):
     #    s3.touch('tmp/test/shfoshf/x')
 
-    with pytest.raises((IOError, OSError)):
+    with pytest.raises(FileNotFoundError):
         s3.rm(test_bucket_name + '/tmp/test/shfoshf/x')
 
-    with pytest.raises((IOError, OSError)):
+    with pytest.raises(FileNotFoundError):
         s3.mv(test_bucket_name + '/tmp/test/shfoshf/x', 'tmp/test/shfoshf/y')
 
-    with pytest.raises((IOError, OSError)):
+    with pytest.raises(ValueError):
         s3.open('x', 'rb')
 
-    with pytest.raises(IOError):
+    with pytest.raises(FileNotFoundError):
         s3.rm('unknown')
 
     with pytest.raises(ValueError):
@@ -607,7 +618,7 @@ def test_errors(s3):
         f.close()
         f.read()
 
-    with pytest.raises((IOError, OSError)):
+    with pytest.raises(ValueError):
         s3.mkdir('/')
 
     with pytest.raises(ValueError):
@@ -669,13 +680,14 @@ def test_new_bucket(s3):
     assert s3.exists('new')
     with s3.open('new/temp', 'wb') as f:
         f.write(b'hello')
-    with pytest.raises((IOError, OSError)):
+    with expect_errno(errno.ENOTEMPTY):
         s3.rmdir('new')
+
     s3.rm('new/temp')
     s3.rmdir('new')
     assert 'new' not in s3.ls('')
     assert not s3.exists('new')
-    with pytest.raises((IOError, OSError)):
+    with pytest.raises(FileNotFoundError):
         s3.ls('new')
 
 
@@ -776,7 +788,7 @@ def test_write_fails(s3):
     f.close()
     with pytest.raises(ValueError):
         f.write(b'hello')
-    with pytest.raises((OSError, IOError)):
+    with pytest.raises(FileNotFoundError):
         s3.open('nonexistentbucket/temp', 'wb').close()
 
 
@@ -984,13 +996,13 @@ def test_public_file(s3):
         s3.touch(other_bucket_name + '/afile', acl='public-read')
 
         s = S3FileSystem(anon=True)
-        with pytest.raises((IOError, OSError)):
+        with pytest.raises(PermissionError):
             s.ls(test_bucket_name)
         s.ls(other_bucket_name)
 
         s3.chmod(test_bucket_name, acl='public-read')
         s3.chmod(other_bucket_name, acl='private')
-        with pytest.raises((IOError, OSError)):
+        with pytest.raises(PermissionError):
             s.ls(other_bucket_name, refresh=True)
         assert s.ls(test_bucket_name, refresh=True)
 
