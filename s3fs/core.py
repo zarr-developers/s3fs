@@ -488,10 +488,11 @@ class S3FileSystem(AbstractFileSystem):
             additional arguments passed on
         """
         path = self._strip_protocol(path).rstrip('/')
-        out = self._ls(self._parent(path), refresh=refresh)
-        out = [o for o in out
-               if o['name'].rstrip('/') == path and o['type'] != 'directory']
-        files = self._ls(path, refresh=refresh) or out
+        files = self._ls(path, refresh=refresh)
+        if not files:
+            files = self._ls(self._parent(path), refresh=refresh)
+            files = [o for o in files if o['name'].rstrip('/') == path
+                     and o['type'] != 'directory']
         if detail:
             return files
         else:
