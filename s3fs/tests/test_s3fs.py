@@ -1220,3 +1220,11 @@ def test_pickle_with_passed_in_session(s3):
     s3 = S3FileSystem(session=session)
     with pytest.raises(NotImplementedError):
         s3.__getstate__()
+
+
+def test_cache_after_copy(s3):
+    # https://github.com/dask/dask/issues/5134
+    s3.touch('test/afile')
+    assert 'test/afile' in s3.ls('s3://test', False)
+    s3.cp('test/afile', 'test/bfile')
+    assert 'test/bfile' in s3.ls('s3://test', False)

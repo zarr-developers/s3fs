@@ -839,7 +839,9 @@ class S3FileSystem(AbstractFileSystem):
         if path is None:
             self.dircache.clear()
         else:
+            path = self._strip_protocol(path)
             self.dircache.pop(path, None)
+            self.dircache.pop(self._parent(path), None)
 
     def walk(self, path, maxdepth=None):
         if path in ['', '*', 's3://']:
