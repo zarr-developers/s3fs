@@ -373,7 +373,11 @@ class S3FileSystem(AbstractFileSystem):
             if self.anon:
                 # cannot list buckets if not logged in
                 return []
-            files = self.s3.list_buckets()['Buckets']
+            try:
+                files = self.s3.list_buckets()['Buckets']
+            except ClientError:
+                # listbucket permission missing
+                return []
             for f in files:
                 f['Key'] = f['Name']
                 f['Size'] = 0
