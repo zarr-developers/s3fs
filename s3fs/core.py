@@ -253,7 +253,7 @@ class S3FileSystem(AbstractFileSystem):
                 'token': cred['SessionToken'], 'anon': False}
 
     def _open(self, path, mode='rb', block_size=None, acl='', version_id=None,
-              fill_cache=None, cache_type='bytes', **kwargs):
+              fill_cache=None, cache_type='bytes', autocommit=True, **kwargs):
         """ Open a file for reading or writing
 
         Parameters
@@ -299,7 +299,8 @@ class S3FileSystem(AbstractFileSystem):
 
         return S3File(self, path, mode, block_size=block_size, acl=acl,
                       version_id=version_id, fill_cache=fill_cache,
-                      s3_additional_kwargs=kw, cache_type=cache_type)
+                      s3_additional_kwargs=kw, cache_type=cache_type,
+                      autocommit=autocommit)
 
     def _lsdir(self, path, refresh=False, max_items=None):
         if path.startswith('s3://'):
