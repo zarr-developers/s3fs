@@ -900,8 +900,11 @@ class S3File(AbstractBufferedFile):
     def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
                  version_id=None, fill_cache=True, s3_additional_kwargs=None,
                  autocommit=True, cache_type='bytes'):
-        if not split_path(path)[1]:
+        bucket, key = split_path(self.path)
+        if not key:
             raise ValueError('Attempt to open non key-like path: %s' % path)
+        self.bucket = bucket
+        self.key = key
         self.version_id = version_id
         self.acl = acl
         self.mpu = None
@@ -965,16 +968,6 @@ class S3File(AbstractBufferedFile):
                     CopySource=self.path)
                 self.parts.append({'PartNumber': 1,
                                    'ETag': out['CopyPartResult']['ETag']})
-
-    @property
-    def bucket(self):
-        bucket, key = split_path(self.path)
-        return bucket
-
-    @property
-    def key(self):
-        bucket, key = split_path(self.path)
-        return key
 
     def metadata(self, refresh=False, **kwargs):
         """ Return metadata of file.
@@ -1083,7 +1076,7 @@ class S3File(AbstractBufferedFile):
 
     def discard(self):
         if self.autocommit:
-            raise ValueError("Cannot discad when autocommit is enabled")
+            raise ValueError("Cannot discard when autocommit is enabled")
         self._call_s3(
             self.fs.s3.abort_multipart_upload,
             Bucket=self.bucket,
