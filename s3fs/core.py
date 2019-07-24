@@ -936,7 +936,6 @@ class S3File(AbstractBufferedFile):
                                 **kwargs)
 
     def _initiate_upload(self):
-        bucket, key = split_path(self.path)
         if self.acl and self.acl not in key_acls:
             raise ValueError('ACL not in %s', key_acls)
         self.parts = []
@@ -946,7 +945,7 @@ class S3File(AbstractBufferedFile):
         try:
             self.mpu = self._call_s3(
                 self.fs.s3.create_multipart_upload,
-                Bucket=bucket, Key=key, ACL=self.acl)
+                Bucket=self.bucket, Key=self.key, ACL=self.acl)
         except ClientError as e:
             raise translate_boto_error(e)
         except ParamValidationError as e:
@@ -959,12 +958,23 @@ class S3File(AbstractBufferedFile):
                 out = self.fs._call_s3(
                     self.fs.s3.upload_part_copy,
                     self.s3_additional_kwargs,
-                    Bucket=bucket,
-                    Key=key, PartNumber=1,
+                    Bucket=self.bucket,
+                    Key=self.key, 
+                    PartNumber=1,
                     UploadId=self.mpu['UploadId'],
                     CopySource=self.path)
                 self.parts.append({'PartNumber': 1,
                                    'ETag': out['CopyPartResult']['ETag']})
+
+    @property
+    def bucket(self):
+        bucket, key = split_path(self.path)
+        return bucket
+
+    @property
+    def key(self):
+        bucket, key = split_path(self.path)
+        return key
 
     def metadata(self, refresh=False, **kwargs):
         """ Return metadata of file.
@@ -1004,8 +1014,7 @@ class S3File(AbstractBufferedFile):
         return self.fs.url(self.path, **kwargs)
 
     def _fetch_range(self, start, end):
-        bucket, key = self.path.split('/', 1)
-        return _fetch_range(self.fs.s3, bucket, key, self.version_id, start, end)
+        return _fetch_range(self.fs.s3, self.bucket, self.key, self.version_id, start, end)
 
     def _upload_chunk(self, final=False):
         bucket, key = split_path(self.path)
@@ -1051,12 +1060,11 @@ class S3File(AbstractBufferedFile):
 
     def commit(self):
         logger.debug("COMMIT")
-        bucket, key = self.path.split('/', 1)
         part_info = {'Parts': self.parts}
         write_result = self._call_s3(
             self.fs.s3.complete_multipart_upload,
-            Bucket=bucket,
-            Key=key,
+            Bucket=self.bucket,
+            Key=self.key,
             UploadId=self.mpu['UploadId'],
             MultipartUpload=part_info)
         if self.fs.version_aware:
@@ -1072,6 +1080,16 @@ class S3File(AbstractBufferedFile):
                     if f['name'] == path + '/' + p]:
                 self.fs.invalidate_cache(path)
             path = path + '/' + p
+
+    def discard(self):
+        if self.autocommit:
+            raise ValueError("Cannot discad when autocommit is enabled")
+        self._call_s3(
+            self.fs.s3.abort_multipart_upload,
+            Bucket=self.bucket,
+            Key=self.key,
+            UploadId=self.mpu['UploadId'],
+        )
 
 
 def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,
