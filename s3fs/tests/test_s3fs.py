@@ -1228,3 +1228,35 @@ def test_cache_after_copy(s3):
     assert 'test/afile' in s3.ls('s3://test', False)
     s3.cp('test/afile', 'test/bfile')
     assert 'test/bfile' in s3.ls('s3://test', False)
+
+
+def test_autocommit(s3):
+    auto_file = test_bucket_name + '/auto_file'
+    committed_file = test_bucket_name + '/commit_file'
+    aborted_file = test_bucket_name + '/aborted_file'
+    s3 = S3FileSystem(anon=False, version_aware=True)
+    
+    def write_and_flush(path, autocommit):
+        with s3.open(path, 'wb', autocommit=autocommit) as fo:
+            fo.write(b'1')
+        return fo
+
+    # regular behavior
+    fo = write_and_flush(auto_file, autocommit=True)
+    assert fo.autocommit
+    assert s3.exists(auto_file)
+    
+    fo = write_and_flush(committed_file, autocommit=False)
+    assert not fo.autocommit
+    assert not s3.exists(committed_file)
+    fo.commit()
+    assert s3.exists(committed_file)
+
+    fo = write_and_flush(aborted_file,autocommit=False)
+    assert not s3.exists(aborted_file)
+    fo.discard()
+    assert not s3.exists(aborted_file)
+    # Cannot commit a file that was discarded
+    with pytest.raises(Exception):
+        fo.commit()
+    

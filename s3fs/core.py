@@ -900,7 +900,7 @@ class S3File(AbstractBufferedFile):
     def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
                  version_id=None, fill_cache=True, s3_additional_kwargs=None,
                  autocommit=True, cache_type='bytes'):
-        bucket, key = split_path(self.path)
+        bucket, key = split_path(path)
         if not key:
             raise ValueError('Attempt to open non key-like path: %s' % path)
         self.bucket = bucket
