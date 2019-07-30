@@ -17,11 +17,9 @@ emulates the standard ``File`` protocol (``read``, ``write``, ``tell``,
 ``seek``), such that functions expecting a file can access S3. Only binary read
 and write modes are implemented, with blocked caching.
 
-This project was originally designed as a storage-layer interface
-for `dask.distributed`_ and has a very similar interface to `hdfs3`_
+This uses and is based upon `fsspec`_
 
-.. _`dask.distributed`: https://distributed.readthedocs.io/en/latest
-.. _`hdfs3`: http://hdfs3.readthedocs.io/en/latest/
+.. _fsspec: https://filesystem-spec.readthedocs.io/en/latest/
 
 Examples
 --------
@@ -77,7 +75,7 @@ The following are known current omissions:
 - file access is always binary (although readline and iterating by line are
 possible)
 
-- no permissions/access-control (i.e., no chmod/chmown methods)
+- no permissions/access-control (i.e., no chmod/chown methods)
 
 
 Credentials
