@@ -6,6 +6,7 @@ import time
 
 from fsspec import AbstractFileSystem
 from fsspec.spec import AbstractBufferedFile
+from fsspec.utils import infer_storage_options
 import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError, ParamValidationError, BotoCoreError
@@ -31,11 +32,24 @@ except ImportError:
 
 _VALID_FILE_MODES = {'r', 'w', 'a', 'rb', 'wb', 'ab'}
 
+
 key_acls = {'private', 'public-read', 'public-read-write',
             'authenticated-read', 'aws-exec-read', 'bucket-owner-read',
             'bucket-owner-full-control'}
 buck_acls = {'private', 'public-read', 'public-read-write',
              'authenticated-read'}
+
+
+def version_id_kw(version_id):
+    """Helper to make versionId kwargs.
+
+    Not all boto3 methods accept a None / empty versionId so dictionary expansion solves that problem.
+
+    """
+    if version_id:
+        return {'VersionId': version_id}
+    else:
+        return {}
 
 
 class S3FileSystem(AbstractFileSystem):
@@ -168,6 +182,22 @@ class S3FileSystem(AbstractFileSystem):
         # filter all kwargs
         return self._filter_kwargs(method, additional_kwargs)
 
+    @staticmethod
+    def _get_kwargs_from_urls(urlpath):
+        """
+        When we have a urlpath that contains a ?versionId= query assume that we want to use version_aware mode for
+        the filesystem.
+        """
+        url_storage_opts = infer_storage_options(urlpath)
+        url_query = url_storage_opts.get("url_query")
+        out = {}
+        if url_query is not None:
+            from urllib.parse import parse_qs
+            parsed = parse_qs(url_query)
+            if 'versionId' in parsed:
+                out['version_aware'] = True
+        return out
+
     def split_path(self, path):
         """
         Normalise S3 path string into bucket and key.
@@ -180,14 +210,19 @@ class S3FileSystem(AbstractFileSystem):
         Examples
         --------
         >>> split_path("s3://mybucket/path/to/file")
-        ['mybucket', 'path/to/file']
+        ['mybucket', 'path/to/file', None]
+
+        >>> split_path("s3://mybucket/path/to/versioned_file?versionId=some_version_id")
+        ['mybucket', 'path/to/versioned_file', 'some_version_id']
         """
         path = self._strip_protocol(path)
         path = path.lstrip('/')
         if '/' not in path:
-            return path, ""
+            return path, "", None
         else:
-            return path.split('/', 1)
+            bucket, keypart = path.split('/', 1)
+            key, _, version_id = keypart.partition('?versionId=')
+            return bucket, key, version_id if self.version_aware and version_id else None
 
     def connect(self, refresh=True):
         """
@@ -312,7 +347,7 @@ class S3FileSystem(AbstractFileSystem):
                       autocommit=autocommit, requester_pays=requester_pays)
 
     def _lsdir(self, path, refresh=False, max_items=None):
-        bucket, prefix = self.split_path(path)
+        bucket, prefix, _ = self.split_path(path)
         prefix = prefix + '/' if prefix else ""
         if path not in self.dircache or refresh:
             try:
@@ -422,7 +457,7 @@ class S3FileSystem(AbstractFileSystem):
         if path in ['', '/']:
             # the root always exists, even if anon
             return True
-        bucket, key = self.split_path(path)
+        bucket, key, version_id = self.split_path(path)
         if key:
             return super().exists(path)
         else:
@@ -451,12 +486,11 @@ class S3FileSystem(AbstractFileSystem):
             if not self.version_aware:
                 raise ValueError("version_id cannot be specified if the "
                                  "filesystem is not version aware")
-            kwargs['VersionId'] = version_id
         if self.version_aware:
             try:
-                bucket, key = self.split_path(path)
+                bucket, key, version_id = self.split_path(path)
                 out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
-                                    Key=key, **self.req_kw)
+                                    Key=key, **version_id_kw(version_id), **self.req_kw)
                 return {
                     'ETag': out['ETag'],
                     'Key': '/'.join([bucket, key]),
@@ -533,7 +567,7 @@ class S3FileSystem(AbstractFileSystem):
         if not self.version_aware:
             raise ValueError("version specific functionality is disabled for "
                              "non-version aware filesystems")
-        bucket, key = self.split_path(path)
+        bucket, key, _ = self.split_path(path)
         kwargs = {}
         out = {'IsTruncated': True}
         versions = []
@@ -558,13 +592,13 @@ class S3FileSystem(AbstractFileSystem):
         refresh : bool (=False)
             if False, look in local cache for file metadata first
         """
-        bucket, key = self.split_path(path)
-
+        bucket, key, version_id = self.split_path(path)
         if refresh or path not in self._metadata_cache:
             response = self._call_s3(self.s3.head_object,
                                      kwargs,
                                      Bucket=bucket,
                                      Key=key,
+                                     **version_id_kw(version_id),
                                      **self.req_kw)
             self._metadata_cache[path] = response['Metadata']
 
@@ -577,9 +611,9 @@ class S3FileSystem(AbstractFileSystem):
         -------
         {str: str}
         """
-        bucket, key = self.split_path(path)
+        bucket, key, version_id = self.split_path(path)
         response = self._call_s3(self.s3.get_object_tagging,
-                                 Bucket=bucket, Key=key)
+                                 Bucket=bucket, Key=key, **version_id_kw(version_id))
         return {v['Key']: v['Value'] for v in response['TagSet']}
 
     def put_tags(self, path, tags, mode='o'):
@@ -603,7 +637,7 @@ class S3FileSystem(AbstractFileSystem):
             'm': Will merge in new tags with existing tags.  Incurs two remote
             calls.
         """
-        bucket, key = self.split_path(path)
+        bucket, key, version_id = self.split_path(path)
 
         if mode == 'm':
             existing_tags = self.get_tags(path=path)
@@ -617,7 +651,7 @@ class S3FileSystem(AbstractFileSystem):
 
         tag = {'TagSet': new_tags}
         self._call_s3(self.s3.put_object_tagging,
-                      Bucket=bucket, Key=key, Tagging=tag)
+                      Bucket=bucket, Key=key, Tagging=tag, **version_id_kw(version_id))
 
     def getxattr(self, path, attr_name, **kwargs):
         """ Get an attribute from the metadata.
@@ -660,7 +694,7 @@ class S3FileSystem(AbstractFileSystem):
         http://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html#object-metadata
         """
 
-        bucket, key = self.split_path(path)
+        bucket, key, version_id = split_path(path, self.version_aware)
         metadata = self.metadata(path)
         metadata.update(**kw_args)
         copy_kwargs = copy_kwargs or {}
@@ -670,10 +704,14 @@ class S3FileSystem(AbstractFileSystem):
             if kw_args[kw_key] is None:
                 metadata.pop(kw_key, None)
 
+        src = {'Bucket': bucket, 'Key': key}
+        if version_id:
+            src['VersionId'] = version_id
+
         self._call_s3(
             self.s3.copy_object,
             copy_kwargs,
-            CopySource="{}/{}".format(bucket, key),
+            CopySource=src,
             Bucket=bucket,
             Key=key,
             Metadata=metadata,
@@ -695,12 +733,12 @@ class S3FileSystem(AbstractFileSystem):
         acl : string
             the value of ACL to apply
         """
-        bucket, key = self.split_path(path)
+        bucket, key, version_id = self.split_path(path)
         if key:
             if acl not in key_acls:
                 raise ValueError('ACL not in %s', key_acls)
             self._call_s3(self.s3.put_object_acl,
-                          kwargs, Bucket=bucket, Key=key, ACL=acl)
+                          kwargs, Bucket=bucket, Key=key, ACL=acl, **version_id_kw(version_id))
         else:
             if acl not in buck_acls:
                 raise ValueError('ACL not in %s', buck_acls)
@@ -717,10 +755,10 @@ class S3FileSystem(AbstractFileSystem):
         expires : int
             the number of seconds this signature will be good for.
         """
-        bucket, key = self.split_path(path)
+        bucket, key, version_id = self.split_path(path)
         return self.s3.generate_presigned_url(
             ClientMethod='get_object',
-            Params=dict(Bucket=bucket, Key=key, **kwargs),
+            Params=dict(Bucket=bucket, Key=key, **version_id_kw(version_id), **kwargs),
             ExpiresIn=expires)
 
     def merge(self, path, filelist, **kwargs):
@@ -736,13 +774,16 @@ class S3FileSystem(AbstractFileSystem):
         filelist : list of str
             The paths, in order, to assemble into the final file.
         """
-        bucket, key = self.split_path(path)
+        bucket, key, version_id = self.split_path(path)
+        if version_id:
+            raise ValueError("Cannot write to an explicit versioned file!")
         mpu = self._call_s3(
             self.s3.create_multipart_upload,
             kwargs,
             Bucket=bucket,
             Key=key
         )
+        # TODO: Make this support versions?
         out = [self._call_s3(
             self.s3.upload_part_copy,
             kwargs,
@@ -759,13 +800,18 @@ class S3FileSystem(AbstractFileSystem):
 
     def copy_basic(self, path1, path2, **kwargs):
         """ Copy file between locations on S3 """
-        buc1, key1 = self.split_path(path1)
-        buc2, key2 = self.split_path(path2)
+        buc1, key1, ver1 = self.split_path(path1)
+        buc2, key2, ver2 = self.split_path(path2)
+        if ver2:
+            raise ValueError("Cannot copy to a versioned file!")
         try:
+            copy_src = {'Bucket': buc1, 'Key': key1}
+            if ver1:
+                copy_src['VersionId'] = ver1
             self._call_s3(
                 self.s3.copy_object,
                 kwargs,
-                Bucket=buc2, Key=key2, CopySource='/'.join([buc1, key1])
+                Bucket=buc2, Key=key2, CopySource=copy_src
             )
         except ClientError as e:
             raise translate_boto_error(e)
@@ -773,12 +819,16 @@ class S3FileSystem(AbstractFileSystem):
             raise ValueError('Copy failed (%r -> %r): %s' % (path1, path2, e))
 
     def copy_managed(self, path1, path2, **kwargs):
-        buc1, key1 = self.split_path(path1)
-        buc2, key2 = self.split_path(path2)
+        buc1, key1, ver1 = self.split_path(path1)
+        buc2, key2, ver2 = self.split_path(path2)
         copy_source = {
             'Bucket': buc1,
             'Key': key1
         }
+        if ver1:
+            copy_source['VersionId'] = ver1
+        if ver2:
+            raise ValueError("Cannot copy to a versioned file!")
         try:
             self.s3.copy(
                 CopySource=copy_source,
@@ -842,7 +892,8 @@ class S3FileSystem(AbstractFileSystem):
             Whether to remove also all entries below, i.e., which are returned
             by `walk()`.
         """
-        bucket, key = self.split_path(path)
+        # TODO: explicit version deletes?
+        bucket, key, _ = self.split_path(path)
         if recursive:
             files = self.find(path, maxdepth=None)
             if key and not files:
@@ -932,11 +983,18 @@ class S3File(AbstractBufferedFile):
     def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
                  version_id=None, fill_cache=True, s3_additional_kwargs=None,
                  autocommit=True, cache_type='bytes', requester_pays=False):
-        bucket, key = s3.split_path(path)
+        bucket, key, path_version_id = s3.split_path(path)
         if not key:
             raise ValueError('Attempt to open non key-like path: %s' % path)
         self.bucket = bucket
         self.key = key
+        if (
+                (path_version_id and len(path_version_id))
+                and (version_id and len(version_id))
+                and (path_version_id != version_id)
+        ):
+            raise ValueError('VersionId passed in twice and is non matching!')
+        version_id = version_id or path_version_id
         self.version_id = version_id
         self.acl = acl
         if self.acl and self.acl not in key_acls:
@@ -1053,7 +1111,7 @@ class S3File(AbstractBufferedFile):
         return _fetch_range(self.fs.s3, self.bucket, self.key, self.version_id, start, end, req_kw=self.req_kw)
 
     def _upload_chunk(self, final=False):
-        bucket, key = self.s3.split_path(self.path)
+        bucket, key, _ = self.fs.split_path(self.path)
         logger.debug("Upload for %s, final=%s, loc=%s, buffer loc=%s" % (
             self, final, self.loc, self.buffer.tell()
         ))
@@ -1181,13 +1239,10 @@ def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,
     logger.debug("Fetch: %s/%s, %s-%s", bucket, key, start, end)
     for i in range(max_attempts):
         try:
-            if version_id is not None:
-                kwargs = dict({'VersionId': version_id}, **req_kw)
-            else:
-                kwargs = req_kw
             resp = client.get_object(Bucket=bucket, Key=key,
                                      Range='bytes=%i-%i' % (start, end - 1),
-                                     **kwargs)
+                                     **version_id_kw(version_id),
+                                     **req_kw)
             return resp['Body'].read()
         except S3_RETRYABLE_ERRORS as e:
             logger.debug('Exception %r on S3 download, retrying', e,

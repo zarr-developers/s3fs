@@ -1108,6 +1108,27 @@ def test_list_versions_many(s3):
     assert len(versions) == 1200
 
 
+def test_versioned_file_fullpath(s3):
+    versioned_file = versioned_bucket_name + '/versioned_file_fullpath'
+    s3 = S3FileSystem(anon=False, version_aware=True)
+    with s3.open(versioned_file, 'wb') as fo:
+        fo.write(b'1')
+    # moto doesn't correctly return a versionId for a multipart upload. So we resort to this.
+    # version_id = fo.version_id
+    versions = s3.object_version_info(versioned_file)
+    version_ids = [version['VersionId'] for version in versions]
+    version_id = version_ids[0]
+
+    with s3.open(versioned_file, 'wb') as fo:
+        fo.write(b'2')
+
+    file_with_version = "{}?versionId={}".format(versioned_file, version_id)
+
+    with s3.open(file_with_version, 'rb') as fo:
+        assert fo.version_id == version_id
+        assert fo.read() == b'1'
+
+
 def test_versions_unaware(s3):
     versioned_file = versioned_bucket_name + '/versioned_file3'
     s3 = S3FileSystem(anon=False, version_aware=False)
