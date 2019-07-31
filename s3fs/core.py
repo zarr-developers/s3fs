@@ -452,7 +452,7 @@ class S3FileSystem(AbstractFileSystem):
                 raise ValueError("version_id cannot be specified if the "
                                  "filesystem is not version aware")
             kwargs['VersionId'] = version_id
-        if self.version_aware:
+        if self.version_aware and version_id:
             try:
                 bucket, key = split_path(path)
                 out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
@@ -962,7 +962,7 @@ class S3File(AbstractBufferedFile):
                     self.fs.s3.upload_part_copy,
                     self.s3_additional_kwargs,
                     Bucket=self.bucket,
-                    Key=self.key, 
+                    Key=self.key,
                     PartNumber=1,
                     UploadId=self.mpu['UploadId'],
                     CopySource=self.path)
