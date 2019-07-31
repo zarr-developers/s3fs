@@ -284,6 +284,21 @@ def test_ls_touch(s3):
     assert set(L) == {a, b}
 
 
+@pytest.mark.parametrize('version_aware', [True, False])
+def test_exists_versioned(s3, version_aware):
+    """Test to ensure that a prefix exists when using a versioned bucket"""
+    import uuid
+    n = 3
+    s3 = S3FileSystem(anon=False, version_aware=version_aware)
+    segments = [versioned_bucket_name] + [str(uuid.uuid4()) for _ in range(n)]
+    path = '/'.join(segments)
+    for i in range(2, n+1):
+        assert not s3.exists('/'.join(segments[:i]))
+    s3.touch(path)
+    for i in range(2, n+1):
+        assert s3.exists('/'.join(segments[:i]))
+
+
 def test_isfile(s3):
     assert not s3.isfile('')
     assert not s3.isfile('/')
@@ -1235,7 +1250,7 @@ def test_autocommit(s3):
     committed_file = test_bucket_name + '/commit_file'
     aborted_file = test_bucket_name + '/aborted_file'
     s3 = S3FileSystem(anon=False, version_aware=True)
-    
+
     def write_and_flush(path, autocommit):
         with s3.open(path, 'wb', autocommit=autocommit) as fo:
             fo.write(b'1')
@@ -1245,7 +1260,7 @@ def test_autocommit(s3):
     fo = write_and_flush(auto_file, autocommit=True)
     assert fo.autocommit
     assert s3.exists(auto_file)
-    
+
     fo = write_and_flush(committed_file, autocommit=False)
     assert not fo.autocommit
     assert not s3.exists(committed_file)
@@ -1259,4 +1274,3 @@ def test_autocommit(s3):
     # Cannot commit a file that was discarded
     with pytest.raises(Exception):
         fo.commit()
-    
