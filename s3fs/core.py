@@ -452,7 +452,7 @@ class S3FileSystem(AbstractFileSystem):
                 raise ValueError("version_id cannot be specified if the "
                                  "filesystem is not version aware")
             kwargs['VersionId'] = version_id
-        if self.version_aware and version_id:
+        if self.version_aware:
             try:
                 bucket, key = split_path(path)
                 out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
@@ -468,7 +468,12 @@ class S3FileSystem(AbstractFileSystem):
                     'VersionId': out.get('VersionId')
                 }
             except ClientError as e:
-                raise translate_boto_error(e)
+                ee = translate_boto_error(e)
+                # This could have failed since the thing we are looking for is a prefix.
+                if isinstance(ee, FileNotFoundError):
+                    return super().info(path)
+                else:
+                    raise ee
             except ParamValidationError as e:
                 raise ValueError('Failed to head path %r: %s' % (path, e))
         return super().info(path)
@@ -689,8 +694,8 @@ class S3FileSystem(AbstractFileSystem):
         """
         bucket, key = split_path(path)
         return self.s3.generate_presigned_url(
-            ClientMethod='get_object', Params=dict(Bucket=bucket, Key=key,
-                                                   **kwargs),
+            ClientMethod='get_object',
+            Params=dict(Bucket=bucket, Key=key, **kwargs),
             ExpiresIn=expires)
 
     def merge(self, path, filelist, **kwargs):
@@ -923,6 +928,10 @@ class S3File(AbstractBufferedFile):
                 self.size = self.details['size']
             elif self.fs.version_aware:
                 self.version_id = self.details.get('VersionId')
+                if self.version_id is None:
+                    self.fs.invalidate_cache(self.path)
+                    self.details = self.fs.info(self.path)
+                    self.version_id = self.details.get('VersionId')
 
         if 'a' in mode and s3.exists(path):
             loc = s3.info(path)['size']
