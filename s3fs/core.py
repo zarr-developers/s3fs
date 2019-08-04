@@ -849,10 +849,10 @@ class S3FileSystem(AbstractFileSystem):
             self.dircache.pop(path, None)
             self.dircache.pop(self._parent(path), None)
 
-    def walk(self, path, maxdepth=None):
+    def walk(self, path, maxdepth=None, **kwargs):
         if path in ['', '*', 's3://']:
             raise ValueError('Cannot crawl all of S3')
-        return super().walk(path, maxdepth=maxdepth)
+        return super().walk(path, maxdepth=maxdepth, **kwargs)
 
 
 class S3File(AbstractBufferedFile):
