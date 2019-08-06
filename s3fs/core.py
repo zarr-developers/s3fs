@@ -928,6 +928,9 @@ class S3File(AbstractBufferedFile):
                 self.size = self.details['size']
             elif self.fs.version_aware:
                 self.version_id = self.details.get('VersionId')
+                # In this case we have not managed to get the VersionId out of details and 
+                # we should invalidate the cache and perform a full head_object since it 
+                # has likely been partially populated by ls.
                 if self.version_id is None:
                     self.fs.invalidate_cache(self.path)
                     self.details = self.fs.info(self.path)
