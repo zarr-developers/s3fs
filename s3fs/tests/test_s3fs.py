@@ -534,7 +534,7 @@ def test_read_keys_from_bucket(s3):
                 s3.cat('s3://' + '/'.join([test_bucket_name, k])))
 
 
-@pytest.mark.skip(reason="misbehaves in modern versions of moto?")
+@pytest.mark.xfail(reason="misbehaves in modern versions of moto?")
 def test_url(s3):
     fn = test_bucket_name + '/nested/file1'
     url = s3.url(fn, expires=100)
