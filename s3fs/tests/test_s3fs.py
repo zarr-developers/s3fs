@@ -4,10 +4,10 @@ import errno
 import json
 from concurrent.futures import ProcessPoolExecutor
 import io
-import re
 import time
 import pytest
 from itertools import chain
+import fsspec.core
 from s3fs.core import S3FileSystem
 from s3fs.utils import seek_delimiter, ignoring, SSEParams
 import moto
@@ -129,6 +129,21 @@ def test_simple(s3):
         f.write(data)
 
     with s3.open(a, 'rb') as f:
+        out = f.read(len(data))
+        assert len(data) == len(out)
+        assert out == data
+
+
+@pytest.mark.parametrize('default_cache_type', ['none', 'bytes', 'mmap'])
+def test_default_cache_type(s3, default_cache_type):
+    data = b'a' * (10 * 2 ** 20)
+    s3 = S3FileSystem(anon=False, default_cache_type=default_cache_type)
+
+    with s3.open(a, 'wb') as f:
+        f.write(data)
+
+    with s3.open(a, 'rb') as f:
+        assert isinstance(f.cache, fsspec.core.caches[default_cache_type])
         out = f.read(len(data))
         assert len(data) == len(out)
         assert out == data
@@ -1210,6 +1225,7 @@ def test_change_defaults_only_subsequent():
     finally:
         S3FileSystem.default_block_size = 5 * (1024 ** 2)
         S3FileSystem.cachable = True
+
 
 def test_passed_in_session_set_correctly(s3):
     session = boto3.session.Session()
