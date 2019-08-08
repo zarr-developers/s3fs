@@ -918,6 +918,7 @@ class S3File(AbstractBufferedFile):
         self.s3_additional_kwargs = s3_additional_kwargs or {}
         super().__init__(s3, path, mode, block_size, autocommit=autocommit,
                          cache_type=cache_type)
+        self.s3 = self.fs  # compatibility
         if self.writable():
             if block_size < 5 * 2 ** 20:
                 raise ValueError('Block size must be >=5MB')
