@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import errno
 import logging
 import socket
 from hashlib import md5
@@ -100,12 +99,16 @@ class S3FileSystem(AbstractFileSystem):
     client_kwargs : dict of parameters for the boto3 client
     requester_pays : bool (False)
         If RequesterPays buckets are supported.
-    default_block_size: None, int
+    default_block_size: int (None)
         If given, the default block size value used for ``open()``, if no
         specific value is given at all time. The built-in default is 5MB.
     default_fill_cache : Bool (True)
         Whether to use cache filling with open by default. Refer to
         ``S3File.open``.
+    default_cache_type : string ('bytes')
+        If given, the default cache_type value used for ``open()``. Set to "none"
+        if no caching is desired. See fsspec's documentation for other available
+        cache_type values. Default cache_type is 'bytes'.
     version_aware : bool (False)
         Whether to support bucket versioning.  If enable this will require the
         user to have the necessary IAM permissions for dealing with versioned
@@ -135,7 +138,7 @@ class S3FileSystem(AbstractFileSystem):
     def __init__(self, anon=False, key=None, secret=None, token=None,
                  use_ssl=True, client_kwargs=None, requester_pays=False,
                  default_block_size=None, default_fill_cache=True,
-                 version_aware=False, config_kwargs=None,
+                 default_cache_type='bytes', version_aware=False, config_kwargs=None,
                  s3_additional_kwargs=None, session=None, username=None,
                  password=None, **kwargs):
         if key and username:
@@ -164,6 +167,7 @@ class S3FileSystem(AbstractFileSystem):
             config_kwargs = {}
         self.default_block_size = default_block_size or self.default_block_size
         self.default_fill_cache = default_fill_cache
+        self.default_cache_type = default_cache_type
         self.version_aware = version_aware
         self.client_kwargs = client_kwargs
         self.config_kwargs = config_kwargs
@@ -253,7 +257,7 @@ class S3FileSystem(AbstractFileSystem):
                 'token': cred['SessionToken'], 'anon': False}
 
     def _open(self, path, mode='rb', block_size=None, acl='', version_id=None,
-              fill_cache=None, cache_type='bytes', autocommit=True, **kwargs):
+              fill_cache=None, cache_type=None, autocommit=True, **kwargs):
         """ Open a file for reading or writing
 
         Parameters
@@ -280,7 +284,8 @@ class S3FileSystem(AbstractFileSystem):
             The encoding to use if opening the file in text mode. The platform's
             default text encoding is used if not given.
         cache_type : str
-            "bytes", "mmap" or "none"
+            See fsspec's documentation for available cache_type values. Set to "none"
+            if no caching is desired. If None, defaults to ``self.default_cache_type``.
         kwargs: dict-like
             Additional parameters used for s3 methods.  Typically used for
             ServerSideEncryption.
@@ -296,6 +301,9 @@ class S3FileSystem(AbstractFileSystem):
         if not self.version_aware and version_id:
             raise ValueError("version_id cannot be specified if the filesystem "
                              "is not version aware")
+
+        if cache_type is None:
+            cache_type = self.default_cache_type
 
         return S3File(self, path, mode, block_size=block_size, acl=acl,
                       version_id=version_id, fill_cache=fill_cache,
