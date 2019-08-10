@@ -1076,7 +1076,7 @@ class S3File(AbstractBufferedFile):
         logger.debug("COMMIT")
         if not self.parts:
             logger.warning("Empty file committed")
-            self.discard()
+            self._abort_mpu()
             self.fs.touch(self.path)
             return
         part_info = {'Parts': self.parts}
@@ -1103,6 +1103,9 @@ class S3File(AbstractBufferedFile):
     def discard(self):
         if self.autocommit:
             raise ValueError("Cannot discard when autocommit is enabled")
+        self._abort_mpu()
+
+    def _abort_mpu(self):
         self._call_s3(
             self.fs.s3.abort_multipart_upload,
             Bucket=self.bucket,
