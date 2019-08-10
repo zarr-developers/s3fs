@@ -1279,3 +1279,11 @@ def test_autocommit(s3):
     # Cannot commit a file that was discarded
     with pytest.raises(Exception):
         fo.commit()
+
+
+def test_touch(s3):
+    fn = test_bucket_name + "/touched"
+    assert not s3.exists(fn)
+    s3.touch(fn)
+    assert s3.exists(fn)
+    assert s3.size(fn) == 0
