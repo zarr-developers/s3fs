@@ -451,6 +451,14 @@ class S3FileSystem(AbstractFileSystem):
             except FileNotFoundError:
                 return False
 
+    def touch(self, path, truncate=True, **kwargs):
+        """Create empty file or truncate"""
+        bucket, key = split_path(path)
+        if not truncate and self.exists(path):
+            raise ValueError("S3 does not support touching existent files")
+        self._call_s3(self.s3.put_object, kwargs, Bucket=bucket, Key=key)
+        self.invalidate_cache(self._parent(path))
+
     def info(self, path, version_id=None):
         if path in ['/', '']:
             return {'name': path, 'size': 0, 'type': 'directory'}
@@ -1074,6 +1082,11 @@ class S3File(AbstractBufferedFile):
 
     def commit(self):
         logger.debug("COMMIT")
+        if not self.parts:
+            logger.warning("Empty file committed")
+            self._abort_mpu()
+            self.fs.touch(self.path)
+            return
         part_info = {'Parts': self.parts}
         write_result = self._call_s3(
             self.fs.s3.complete_multipart_upload,
@@ -1098,6 +1111,9 @@ class S3File(AbstractBufferedFile):
     def discard(self):
         if self.autocommit:
             raise ValueError("Cannot discard when autocommit is enabled")
+        self._abort_mpu()
+
+    def _abort_mpu(self):
         self._call_s3(
             self.fs.s3.abort_multipart_upload,
             Bucket=self.bucket,
