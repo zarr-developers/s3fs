@@ -1319,3 +1319,22 @@ def test_touch(s3):
     with pytest.raises(ValueError):
         s3.touch(fn, truncate=False)
     assert s3.size(fn) == 4
+
+
+def test_seek_reads(s3):
+    fn = test_bucket_name + "/myfile"
+    with s3.open(fn, 'wb') as f:
+        f.write(b'a' * 175_627_146)
+    with s3.open(fn, 'rb', blocksize=100) as f:
+        f.seek(175561610)
+        d1 = f.read(65536)
+
+        f.seek(4)
+        size = 17562198
+        d2 = f.read(size)
+        assert len(d2) == size
+
+        f.seek(17562288)
+        size = 17562187
+        d3 = f.read(size)
+        assert len(d3) == size
