@@ -12,7 +12,7 @@ from botocore.exceptions import ClientError, ParamValidationError, BotoCoreError
 from s3fs.errors import translate_boto_error
 from s3fs.utils import ParamKwargsHelper
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('s3fs')
 
 logging.getLogger('boto3').setLevel(logging.WARNING)
 logging.getLogger('botocore').setLevel(logging.WARNING)
@@ -181,6 +181,9 @@ class S3FileSystem(AbstractFileSystem):
         return self._kwargs_helper.filter_dict(s3_method.__name__, kwargs)
 
     def _call_s3(self, method, *akwarglist, **kwargs):
+        kw2 = kwargs.copy()
+        kw2.pop('Body', None)
+        logger.debug("CALL: %s - %s - %s" % (method, akwarglist, kw2))
         additional_kwargs = self._get_s3_method_kwargs(method, *akwarglist,
                                                        **kwargs)
         return method(**additional_kwargs)
@@ -968,6 +971,7 @@ class S3File(AbstractBufferedFile):
                                 **kwargs)
 
     def _initiate_upload(self):
+        logger.debug("Initiate upload for %s" % self)
         if self.acl and self.acl not in key_acls:
             raise ValueError('ACL not in %s', key_acls)
         self.parts = []
@@ -1057,6 +1061,7 @@ class S3File(AbstractBufferedFile):
                     (data0, data1) = (remainder[:partition], remainder[partition:])
 
             part = len(self.parts) + 1
+            logger.debug("Upload chunk %s, %s" % (self, part))
 
             for attempt in range(self.retries + 1):
                 try:
@@ -1081,9 +1086,9 @@ class S3File(AbstractBufferedFile):
             self.commit()
 
     def commit(self):
-        logger.debug("COMMIT")
+        logger.debug("Commit %s" % self)
         if not self.parts:
-            logger.warning("Empty file committed")
+            logger.debug("Empty file committed %s" % self)
             self._abort_mpu()
             self.fs.touch(self.path)
             return
