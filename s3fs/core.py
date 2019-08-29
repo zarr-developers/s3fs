@@ -948,8 +948,8 @@ class S3File(AbstractBufferedFile):
                 self.size = self.details['size']
             elif self.fs.version_aware:
                 self.version_id = self.details.get('VersionId')
-                # In this case we have not managed to get the VersionId out of details and 
-                # we should invalidate the cache and perform a full head_object since it 
+                # In this case we have not managed to get the VersionId out of details and
+                # we should invalidate the cache and perform a full head_object since it
                 # has likely been partially populated by ls.
                 if self.version_id is None:
                     self.fs.invalidate_cache(self.path)
@@ -1131,6 +1131,18 @@ def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,
                  req_kw=None):
     if req_kw is None:
         req_kw = {}
+    if start == end:
+        # When these match, we would make a request with `range=start-end - 1`
+        # According to RFC2616, servers are supposed to ignore the Range
+        # field when it's invalid like this. S3 does ignore it, moto doesn't.
+        # To avoid differences in behavior under mocking, we just avoid
+        # making these requests. It's hoped that since we're being called
+        # from a caching object, this won't end up mattering.
+        logger.debug(
+            'skip fetch for negative range - bucket=%s,key=%s,start=%d,end=%d',
+            bucket, key, start, end
+        )
+        return b''
     logger.debug("Fetch: %s/%s, %s-%s", bucket, key, start, end)
     for i in range(max_attempts):
         try:
