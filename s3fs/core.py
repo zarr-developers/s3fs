@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+import os
 import socket
 from hashlib import md5
 
@@ -13,6 +14,13 @@ from s3fs.errors import translate_boto_error
 from s3fs.utils import ParamKwargsHelper
 
 logger = logging.getLogger('s3fs')
+handle = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s '
+                              '- %(message)s')
+handle.setFormatter(formatter)
+logger.addHandler(handle)
+if "S3FS_LOGGING_LEVEL" in os.environ:
+    logger.setLevel(os.environ["S3FS_LOGGING_LEVEL"])
 
 logging.getLogger('boto3').setLevel(logging.WARNING)
 logging.getLogger('botocore').setLevel(logging.WARNING)
@@ -230,6 +238,7 @@ class S3FileSystem(AbstractFileSystem):
                 self.session = boto3.Session(self.key, self.secret, self.token,
                                              **self.kwargs)
 
+        logger.debug("Setting up s3fs instance")
         self.s3 = self.session.client('s3', config=conf, use_ssl=ssl,
                                       **self.client_kwargs)
         return self.s3
@@ -321,6 +330,7 @@ class S3FileSystem(AbstractFileSystem):
         prefix = prefix + '/' if prefix else ""
         if path not in self.dircache or refresh:
             try:
+                logger.debug("Get directory listing page for %s" % path)
                 pag = self.s3.get_paginator('list_objects_v2')
                 config = {}
                 if max_items is not None:

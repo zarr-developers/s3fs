@@ -78,6 +78,13 @@ possible)
 - no permissions/access-control (i.e., no chmod/chown methods)
 
 
+Logging
+-------
+
+The logger ``s3fs.core.logger`` provides information about the operations of the
+file system. To see messages, set its level to DEBUG. You can also achieve this via
+an environment variable ``S3FS_LOGGING_LEVEL=DEBUG``.
+
 Credentials
 -----------
 
