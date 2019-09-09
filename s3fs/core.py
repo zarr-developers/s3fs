@@ -2,6 +2,7 @@
 import logging
 import os
 import socket
+import time
 from hashlib import md5
 
 from fsspec import AbstractFileSystem
@@ -1085,6 +1086,7 @@ class S3File(AbstractBufferedFile):
                     if attempt < self.retries:
                         logger.debug('Exception %r on S3 write, retrying', exc,
                                      exc_info=True)
+                    time.sleep(1.7**attempt * 0.1)
                 except Exception as exc:
                     raise IOError('Write failed: %r' % exc)
             else:
@@ -1167,10 +1169,12 @@ def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,
         except S3_RETRYABLE_ERRORS as e:
             logger.debug('Exception %r on S3 download, retrying', e,
                          exc_info=True)
+            time.sleep(1.7**i * 0.1)
             continue
         except ConnectionError as e:
             logger.debug('ConnectionError %r on S3 download, retrying', e,
                          exc_info=True)
+            time.sleep(1.7**i * 0.1)
             continue
         except ClientError as e:
             if e.response['Error'].get('Code', 'Unknown') in ['416',
