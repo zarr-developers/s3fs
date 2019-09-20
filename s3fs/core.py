@@ -465,12 +465,15 @@ class S3FileSystem(AbstractFileSystem):
             except FileNotFoundError:
                 return False
 
-    def touch(self, path, truncate=True, **kwargs):
+    def touch(self, path, truncate=True, data=None, **kwargs):
         """Create empty file or truncate"""
         bucket, key = split_path(path)
         if not truncate and self.exists(path):
             raise ValueError("S3 does not support touching existent files")
-        self._call_s3(self.s3.put_object, kwargs, Bucket=bucket, Key=key)
+        try:
+            self._call_s3(self.s3.put_object, kwargs, Bucket=bucket, Key=key)
+        except ClientError as ex:
+            raise translate_boto_error(ex)
         self.invalidate_cache(self._parent(path))
 
     def info(self, path, version_id=None):
@@ -942,6 +945,8 @@ class S3File(AbstractBufferedFile):
         self.key = key
         self.version_id = version_id
         self.acl = acl
+        if self.acl and self.acl not in key_acls:
+            raise ValueError('ACL not in %s', key_acls)
         self.mpu = None
         self.parts = None
         self.fill_cache = fill_cache
@@ -967,12 +972,12 @@ class S3File(AbstractBufferedFile):
                     self.details = self.fs.info(self.path)
                     self.version_id = self.details.get('VersionId')
 
+        self.append_block = False
         if 'a' in mode and s3.exists(path):
             loc = s3.info(path)['size']
             if loc < 5 * 2 ** 20:
                 # existing file too small for multi-upload: download
                 self.write(self.fs.cat(self.path))
-                self.append_block = False
             else:
                 self.append_block = True
             self.loc = loc
@@ -983,12 +988,10 @@ class S3File(AbstractBufferedFile):
 
     def _initiate_upload(self):
         logger.debug("Initiate upload for %s" % self)
-        if self.acl and self.acl not in key_acls:
-            raise ValueError('ACL not in %s', key_acls)
+        if not self.append_block and self.forced and self.tell() < self.blocksize:
+            # only happens when closing small file, use on-shot PUT
+            return
         self.parts = []
-        self.size = 0
-        if self.blocksize < 5 * 2 ** 20:
-            raise ValueError('Block size must be >=5MB')
         try:
             self.mpu = self._call_s3(
                 self.fs.s3.create_multipart_upload,
@@ -998,20 +1001,19 @@ class S3File(AbstractBufferedFile):
         except ParamValidationError as e:
             raise ValueError('Initiating write to %r failed: %s' % (self.path, e))
 
-        if 'a' in self.mode and self.fs.exists(self.path):
-            if self.append_block:
-                # use existing data in key when appending,
-                # and block is big enough
-                out = self.fs._call_s3(
-                    self.fs.s3.upload_part_copy,
-                    self.s3_additional_kwargs,
-                    Bucket=self.bucket,
-                    Key=self.key,
-                    PartNumber=1,
-                    UploadId=self.mpu['UploadId'],
-                    CopySource=self.path)
-                self.parts.append({'PartNumber': 1,
-                                   'ETag': out['CopyPartResult']['ETag']})
+        if self.append_block:
+            # use existing data in key when appending,
+            # and block is big enough
+            out = self.fs._call_s3(
+                self.fs.s3.upload_part_copy,
+                self.s3_additional_kwargs,
+                Bucket=self.bucket,
+                Key=self.key,
+                PartNumber=1,
+                UploadId=self.mpu['UploadId'],
+                CopySource=self.path)
+            self.parts.append({'PartNumber': 1,
+                               'ETag': out['CopyPartResult']['ETag']})
 
     def metadata(self, refresh=False, **kwargs):
         """ Return metadata of file.
@@ -1055,8 +1057,17 @@ class S3File(AbstractBufferedFile):
 
     def _upload_chunk(self, final=False):
         bucket, key = split_path(self.path)
-        self.buffer.seek(0)
-        (data0, data1) = (None, self.buffer.read(self.blocksize))
+        logger.debug("Upload for %s, final=%s, loc=%s, buffer loc=%s" % (
+            self, final, self.loc, self.buffer.tell()
+        ))
+        if not self.append_block and final and self.tell() < self.blocksize:
+            # only happens when closing small file, use on-shot PUT
+            key = False
+            data1 = False
+        else:
+            self.buffer.seek(0)
+            (data0, data1) = (None, self.buffer.read(self.blocksize))
+
         while data1:
             (data0, data1) = (data1, self.buffer.read(self.blocksize))
             data1_size = len(data1)
@@ -1096,26 +1107,41 @@ class S3File(AbstractBufferedFile):
 
         if self.autocommit and final:
             self.commit()
+        return key
 
     def commit(self):
         logger.debug("Commit %s" % self)
-        if not self.parts:
-            logger.debug("Empty file committed %s" % self)
-            self._abort_mpu()
-            self.fs.touch(self.path)
-            return
-        part_info = {'Parts': self.parts}
-        write_result = self._call_s3(
-            self.fs.s3.complete_multipart_upload,
-            Bucket=self.bucket,
-            Key=self.key,
-            UploadId=self.mpu['UploadId'],
-            MultipartUpload=part_info)
-        if self.fs.version_aware:
-            self.version_id = write_result.get('VersionId')
+        if self.tell() == 0:
+            if self.buffer is not None:
+                logger.debug("Empty file committed %s" % self)
+                self._abort_mpu()
+                self.fs.touch(self.path)
+        elif not self.parts:
+            if self.buffer is not None:
+                logger.debug("One-shot upload of %s" % self)
+                self.buffer.seek(0)
+                data = self.buffer.read()
+                self._call_s3(
+                    self.fs.s3.put_object,
+                    Key=self.key, Bucket=self.bucket, Body=data, **self.kwargs
+                )
+            else:
+                raise RuntimeError
+        else:
+            logger.debug("Complete multi-part upload for %s " % self)
+            part_info = {'Parts': self.parts}
+            write_result = self._call_s3(
+                self.fs.s3.complete_multipart_upload,
+                Bucket=self.bucket,
+                Key=self.key,
+                UploadId=self.mpu['UploadId'],
+                MultipartUpload=part_info)
+            if self.fs.version_aware:
+                self.version_id = write_result.get('VersionId')
 
         # complex cache invalidation, since file's appearance can cause several
         # directories
+        self.buffer = None
         parts = self.path.split('/')
         path = parts[0]
         for p in parts[1:]:
@@ -1126,17 +1152,18 @@ class S3File(AbstractBufferedFile):
             path = path + '/' + p
 
     def discard(self):
-        if self.autocommit:
-            raise ValueError("Cannot discard when autocommit is enabled")
         self._abort_mpu()
+        self.buffer = None  # file becomes unusable
 
     def _abort_mpu(self):
-        self._call_s3(
-            self.fs.s3.abort_multipart_upload,
-            Bucket=self.bucket,
-            Key=self.key,
-            UploadId=self.mpu['UploadId'],
-        )
+        if self.mpu:
+            self._call_s3(
+                self.fs.s3.abort_multipart_upload,
+                Bucket=self.bucket,
+                Key=self.key,
+                UploadId=self.mpu['UploadId'],
+            )
+            self.mpu = None
 
 
 def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,
