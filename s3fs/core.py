@@ -1062,7 +1062,6 @@ class S3File(AbstractBufferedFile):
         ))
         if not self.append_block and final and self.tell() < self.blocksize:
             # only happens when closing small file, use on-shot PUT
-            key = False
             data1 = False
         else:
             self.buffer.seek(0)
@@ -1107,7 +1106,7 @@ class S3File(AbstractBufferedFile):
 
         if self.autocommit and final:
             self.commit()
-        return key
+        return not final
 
     def commit(self):
         logger.debug("Commit %s" % self)
