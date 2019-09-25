@@ -192,7 +192,7 @@ class S3FileSystem(AbstractFileSystem):
     def _call_s3(self, method, *akwarglist, **kwargs):
         kw2 = kwargs.copy()
         kw2.pop('Body', None)
-        logger.debug("CALL: %s - %s - %s" % (method, akwarglist, kw2))
+        logger.debug("CALL: %s - %s - %s" % (method.__name__, akwarglist, kw2))
         additional_kwargs = self._get_s3_method_kwargs(method, *akwarglist,
                                                        **kwargs)
         return method(**additional_kwargs)
@@ -987,10 +987,10 @@ class S3File(AbstractBufferedFile):
                                 **kwargs)
 
     def _initiate_upload(self):
-        logger.debug("Initiate upload for %s" % self)
-        if not self.append_block and self.forced and self.tell() < self.blocksize:
+        if not self.append_block and self.tell() < self.blocksize:
             # only happens when closing small file, use on-shot PUT
             return
+        logger.debug("Initiate upload for %s" % self)
         self.parts = []
         try:
             self.mpu = self._call_s3(
