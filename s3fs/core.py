@@ -972,7 +972,12 @@ class S3File(AbstractBufferedFile):
                     self.details = self.fs.info(self.path)
                     self.version_id = self.details.get('VersionId')
 
-        self.append_block = False
+        # when not using autocommit we want to have transactional state to manage
+        if self.autocommit:
+            self.append_block = False
+        else:
+            self.append_block = True
+
         if 'a' in mode and s3.exists(path):
             loc = s3.info(path)['size']
             if loc < 5 * 2 ** 20:
