@@ -973,10 +973,7 @@ class S3File(AbstractBufferedFile):
                     self.version_id = self.details.get('VersionId')
 
         # when not using autocommit we want to have transactional state to manage
-        if self.autocommit:
-            self.append_block = False
-        else:
-            self.append_block = True
+        self.append_block = False
 
         if 'a' in mode and s3.exists(path):
             loc = s3.info(path)['size']
@@ -992,7 +989,7 @@ class S3File(AbstractBufferedFile):
                                 **kwargs)
 
     def _initiate_upload(self):
-        if not self.append_block and self.tell() < self.blocksize:
+        if not self.autocommit and not self.append_block and self.tell() < self.blocksize:
             # only happens when closing small file, use on-shot PUT
             return
         logger.debug("Initiate upload for %s" % self)
