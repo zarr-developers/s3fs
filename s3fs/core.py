@@ -159,6 +159,8 @@ class S3FileSystem(AbstractFileSystem):
         if password:
             secret = password
 
+        if self._cached:
+            return
         super().__init__()
         self.anon = anon
         self.session = None
@@ -411,23 +413,6 @@ class S3FileSystem(AbstractFileSystem):
                 del f['Name']
             self.dircache[''] = files
         return self.dircache['']
-
-    def __getstate__(self):
-        if self.passed_in_session:
-            raise NotImplementedError
-        d = self.__dict__.copy()
-        del d['s3']
-        del d['session']
-        del d['_kwargs_helper']
-        del d['dircache']
-        logger.debug("Serialize with state: %s", d)
-        return d
-
-    def __setstate__(self, state):
-        self.__dict__.update(state)
-        self.s3 = self.connect()
-        self.dircache = {}
-        self._kwargs_helper = ParamKwargsHelper(self.s3)
 
     def _ls(self, path, refresh=False):
         """ List files in given bucket, or list of buckets.

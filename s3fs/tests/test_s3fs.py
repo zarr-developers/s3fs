@@ -1244,18 +1244,17 @@ def test_without_passed_in_session_set_unique(s3):
 
 
 def test_pickle_without_passed_in_session(s3):
+    import pickle
     s3 = S3FileSystem()
-    try:
-        s3.__getstate__()
-    except NotImplementedError:
-        pytest.fail("Unexpected NotImplementedError")
+    pickle.dumps(s3)
 
 
 def test_pickle_with_passed_in_session(s3):
+    import pickle
     session = boto3.session.Session()
     s3 = S3FileSystem(session=session)
-    with pytest.raises(NotImplementedError):
-        s3.__getstate__()
+    with pytest.raises((AttributeError, NotImplementedError, TypeError)):
+        pickle.dumps(s3)
 
 
 def test_cache_after_copy(s3):
