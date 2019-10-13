@@ -1297,6 +1297,16 @@ def test_autocommit(s3):
         fo.commit()
 
 
+def test_autocommit_mpu(s3):
+    """When not autocommitting we always want to use multipart uploads"""
+    path = test_bucket_name + '/auto_commit_with_mpu'
+    with s3.open(path, 'wb', autocommit=True) as fo:
+        fo.write(b'1')
+    # fo.flush()
+    assert fo.mpu is not None
+    assert len(fo.parts) == 1
+
+
 def test_touch(s3):
     # create
     fn = test_bucket_name + "/touched"

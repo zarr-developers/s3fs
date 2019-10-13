@@ -1062,7 +1062,7 @@ class S3File(AbstractBufferedFile):
         logger.debug("Upload for %s, final=%s, loc=%s, buffer loc=%s" % (
             self, final, self.loc, self.buffer.tell()
         ))
-        if not self.append_block and final and self.tell() < self.blocksize:
+        if not self.autocommit and not self.append_block and final and self.tell() < self.blocksize:
             # only happens when closing small file, use on-shot PUT
             data1 = False
         else:
