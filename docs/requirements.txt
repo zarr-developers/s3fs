@@ -1,2 +1,4 @@
 numpydoc
 boto3
+sphinx
+sphinx-rtd-theme

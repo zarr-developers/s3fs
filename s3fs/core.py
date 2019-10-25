@@ -632,7 +632,7 @@ class S3FileSystem(AbstractFileSystem):
         `Metadata Reference`_.
 
         Parameters
-        ---------
+        ----------
         kw_args : key-value pairs like field="value", where the values must be
             strings. Does not alter existing fields, unless
             the field appears here - if the value is None, delete the
