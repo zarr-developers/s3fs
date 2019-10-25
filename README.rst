@@ -13,6 +13,6 @@ View the documentation_ for s3fs.
 .. |Build Status| image:: https://travis-ci.org/dask/s3fs.svg?branch=master
     :target: https://travis-ci.org/dask/s3fs
     :alt: Build Status
-.. |Doc Status| image:: http://readthedocs.io/projects/s3fs/badge/?version=latest
-    :target: http://s3fs.readthedocs.io/en/latest/?badge=latest
+.. |Doc Status| image:: https://readthedocs.org/projects/s3fs/badge/?version=latest
+    :target: https://s3fs.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
