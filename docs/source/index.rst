@@ -17,7 +17,7 @@ emulates the standard ``File`` protocol (``read``, ``write``, ``tell``,
 ``seek``), such that functions expecting a file can access S3. Only binary read
 and write modes are implemented, with blocked caching.
 
-This uses and is based upon `fsspec`_
+S3Fs uses and is based upon `fsspec`_.
 
 .. _fsspec: https://filesystem-spec.readthedocs.io/en/latest/
 
@@ -72,45 +72,45 @@ Limitations
 This project is meant for convenience, rather than feature completeness.
 The following are known current omissions:
 
-- file access is always binary (although readline and iterating by line are
-possible)
+- file access is always binary (although ``readline`` and iterating by line
+  are possible)
 
-- no permissions/access-control (i.e., no chmod/chown methods)
+- no permissions/access-control (i.e., no ``chmod``/``chown`` methods)
 
 
 Logging
 -------
 
 The logger ``s3fs.core.logger`` provides information about the operations of the
-file system. To see messages, set its level to DEBUG. You can also achieve this via
+file system. To see messages, set its level to ``DEBUG``. You can also achieve this via
 an environment variable ``S3FS_LOGGING_LEVEL=DEBUG``.
 
 Credentials
 -----------
 
-The AWS key and secret may be provided explicitly when creating an S3FileSystem.
+The AWS key and secret may be provided explicitly when creating an ``S3FileSystem``.
 A more secure way, not including the credentials directly in code, is to allow
 boto to establish the credentials automatically. Boto will try the following
 methods, in order:
 
-- aws_access_key_id, aws_secret_access_key, and aws_session_token environment
-variables
+- ``aws_access_key_id``, ``aws_secret_access_key``, and ``aws_session_token``
+  environment variables
 
-- configuration files such as `~/.aws/credentials`
+- configuration files such as ``~/.aws/credentials``
 
 - for nodes on EC2, the IAM metadata provider
 
 In a distributed environment, it is not expected that raw credentials should
 be passed between machines. In the explicitly provided credentials case, the
-method `get_delegated_s3pars()` can be used to obtain temporary credentials.
+method ``get_delegated_s3pars()`` can be used to obtain temporary credentials.
 When not using explicit credentials, it should be expected that every machine
 also has the appropriate environment variables, config files or IAM roles
 available.
 
 If none of the credential methods are available, only anonymous access will
-work, and `anon=True` must be passed to the constructor.
+work, and ``anon=True`` must be passed to the constructor.
 
-Furthermore, `S3FileSystem.current()` will return the most-recently created
+Furthermore, ``S3FileSystem.current()`` will return the most-recently created
 instance, so this method could be used in preference to the constructor in
 cases where the code must be agnostic of the credentials/config used.
 
@@ -134,7 +134,7 @@ Serverside Encryption
 ---------------------
 
 For some buckets/files you may want to use some of s3's server side encryption
-features. `s3fs` supports these in a few ways
+features. ``s3fs`` supports these in a few ways
 
 
 .. code-block:: python
@@ -145,21 +145,21 @@ features. `s3fs` supports these in a few ways
 This will create an s3 filesystem instance that will append the
 ServerSideEncryption argument to all s3 calls (where applicable).
 
-The same applies for `s3.open`.  Most of the methods on the filesystem object
+The same applies for ``s3.open``.  Most of the methods on the filesystem object
 will also accept and forward keyword arguments to the underlying calls.  The
 most recently specified argument is applied last in the case where both
-`s3_additional_kwargs` and a method's `**kwargs` are used.
+``s3_additional_kwargs`` and a method's ``**kwargs`` are used.
 
-The `s3.utils.SSEParams` provides some convenient helpers for the serverside
+The ``s3.utils.SSEParams`` provides some convenient helpers for the serverside
 encryption parameters in particular.  An instance can be passed instead of a
-regular python dictionary as the `s3_additional_kwargs` parameter.
+regular python dictionary as the ``s3_additional_kwargs`` parameter.
 
 
 Bucket Version Awareness
 ------------------------
 
 If your bucket has object versioning enabled then you can add version-aware support
-to s3fs.  This ensures that if a file is opened at a particular point in time that
+to ``s3fs``.  This ensures that if a file is opened at a particular point in time that
 version will be used for reading.
 
 This mitigates the issue where more than one user is concurrently reading and writing
@@ -167,16 +167,12 @@ to the same object.
 
 .. code-block:: python
 
-   s3 = s3fs.S3FileSytem(version_aware=True)
-
+   >>> s3 = s3fs.S3FileSytem(version_aware=True)
    # Open the file at the latest version
-   fo = s3.open('versioned_bucket/object')
-
-   versions = s3.object_version_info('versioned_bucket/object')
-
-   # open the file at a particular version
-   fo_old_version = s3.open('versioned_bucket/object', version_id='SOMEVERSIONID')
-   >>>
+   >>> fo = s3.open('versioned_bucket/object')
+   >>> versions = s3.object_version_info('versioned_bucket/object')
+   # Open the file at a particular version
+   >>> fo_old_version = s3.open('versioned_bucket/object', version_id='SOMEVERSIONID')
 
 In order for this to function the user must have the necessary IAM permissions to perform
 a GetObjectVersion
