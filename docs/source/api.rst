@@ -46,7 +46,7 @@ API
 
 .. currentmodule:: s3fs.mapping
 
-.. autoclass:: S3Map
+.. autofunction:: S3Map
 
 .. currentmodule:: s3fs.utils
 
