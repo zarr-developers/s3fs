@@ -184,6 +184,7 @@ Contents
 .. toctree::
    install
    api
+   changelog
    :maxdepth: 2
 
 

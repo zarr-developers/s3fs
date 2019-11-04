@@ -35,6 +35,7 @@ extensions = [
     'sphinx.ext.ifconfig',
     'sphinx.ext.viewcode',
     'sphinx.ext.autosummary',
+    'sphinx.ext.extlinks',
     'numpydoc',
 ]
 
@@ -110,6 +111,10 @@ pygments_style = 'sphinx'
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = False
+
+extlinks = {
+    "pr": ("https://github.com/dask/s3fs/pull/%s", "PR #"),
+}
 
 
 # -- Options for HTML output ----------------------------------------------
