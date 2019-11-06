@@ -1337,3 +1337,18 @@ def test_seek_reads(s3):
         size = 17562187
         d3 = f.read(size)
         assert len(d3) == size
+
+
+def test_connect_many():
+    from multiprocessing.pool import ThreadPool
+
+    def task(i):
+        S3FileSystem(anon=False).ls("")
+        return True
+
+    pool = ThreadPool(processes=20)
+    out = pool.map(task, range(40))
+    assert all(out)
+    pool.close()
+    pool.join()
+
