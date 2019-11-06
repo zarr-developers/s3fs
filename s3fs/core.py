@@ -161,7 +161,6 @@ class S3FileSystem(AbstractFileSystem):
 
         if self._cached:
             return
-        super().__init__()
         self.anon = anon
         self.session = None
         self.passed_in_session = session
@@ -187,6 +186,7 @@ class S3FileSystem(AbstractFileSystem):
         self.use_ssl = use_ssl
         self.s3 = self.connect()
         self._kwargs_helper = ParamKwargsHelper(self.s3)
+        super().__init__()
 
     def _filter_kwargs(self, s3_method, kwargs):
         return self._kwargs_helper.filter_dict(s3_method.__name__, kwargs)
