@@ -143,6 +143,7 @@ class S3FileSystem(AbstractFileSystem):
     read_timeout = 15
     default_block_size = 5 * 2**20
     protocol = 's3'
+    _extra_tokenize_attributes = ('default_block_size',)
 
     def __init__(self, anon=False, key=None, secret=None, token=None,
                  use_ssl=True, client_kwargs=None, requester_pays=False,

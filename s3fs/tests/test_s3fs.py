@@ -94,6 +94,7 @@ def s3():
         for flist in [files, csv_files, text_files, glob_files]:
             for f, data in flist.items():
                 client.put_object(Bucket=test_bucket_name, Key=f, Body=data)
+        S3FileSystem.clear_instance_cache()
         s3 = S3FileSystem(anon=False)
         s3.invalidate_cache()
         yield s3
