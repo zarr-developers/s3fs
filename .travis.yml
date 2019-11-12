@@ -8,6 +8,8 @@ matrix:
       - PYVER=3.6
     - env:
       - PYVER=3.7
+    - env:
+      - PYVER=3.8
 
 install:
   # Install conda
@@ -17,12 +19,11 @@ install:
   - conda config --set always_yes yes --set changeps1 no
 
   # Install dependencies
-  - conda create -n test python=$PYVER pip
+  - conda create -n test -y -c conda-forge python=$PYVER pip boto=2.49.0 moto>=1.3.12 pytest
   - source activate test
   - export BOTO_CONFIG=/dev/null
   - export AWS_ACCESS_KEY_ID=foobar_key
   - export AWS_SECRET_ACCESS_KEY=foobar_secret
-  - conda install boto=2.49.0 moto>=1.3.12 pytest -c conda-forge -y
   - pip install git+https://github.com/intake/filesystem_spec/ --no-deps
 
 script:
