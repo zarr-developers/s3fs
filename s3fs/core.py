@@ -31,6 +31,14 @@ except ImportError:
 
 _VALID_FILE_MODES = {'r', 'w', 'a', 'rb', 'wb', 'ab'}
 
+S3_SCHEMES = ['s3://', 's3a://', 's3n://']
+
+def strip_scheme(path):
+    for scheme in S3_SCHEMES:
+        if path.startswith(scheme):
+            path = path[len(scheme):]
+    return path.rstrip('/').lstrip('/')
+
 
 def split_path(path):
     """
@@ -46,9 +54,7 @@ def split_path(path):
     >>> split_path("s3://mybucket/path/to/file")
     ['mybucket', 'path/to/file']
     """
-    if path.startswith('s3://'):
-        path = path[5:]
-    path = path.rstrip('/').lstrip('/')
+    path = strip_scheme(path)
     if '/' not in path:
         return path, ""
     else:
@@ -315,9 +321,7 @@ class S3FileSystem(AbstractFileSystem):
                       autocommit=autocommit, requester_pays=requester_pays)
 
     def _lsdir(self, path, refresh=False, max_items=None):
-        if path.startswith('s3://'):
-            path = path[len('s3://'):]
-        path = path.rstrip('/')
+        path = strip_scheme(path)
         bucket, prefix = split_path(path)
         prefix = prefix + '/' if prefix else ""
         if path not in self.dircache or refresh:
@@ -418,8 +422,7 @@ class S3FileSystem(AbstractFileSystem):
         refresh : bool (=False)
             if False, look in local cache for file details first
         """
-        if path.startswith('s3://'):
-            path = path[len('s3://'):]
+        path = strip_scheme(path)
         if path in ['', '/']:
             return self._lsbuckets(refresh)
         else:
@@ -887,7 +890,7 @@ class S3FileSystem(AbstractFileSystem):
             self.dircache.pop(self._parent(path), None)
 
     def walk(self, path, maxdepth=None, **kwargs):
-        if path in ['', '*', 's3://']:
+        if path in ['', '*'] + S3_SCHEMES:
             raise ValueError('Cannot crawl all of S3')
         return super().walk(path, maxdepth=maxdepth, **kwargs)
 
