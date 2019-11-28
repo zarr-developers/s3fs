@@ -31,8 +31,6 @@ except ImportError:
 
 _VALID_FILE_MODES = {'r', 'w', 'a', 'rb', 'wb', 'ab'}
 
-S3_SCHEMES = ['s3://', 's3a://', 's3n://']
-
 key_acls = {'private', 'public-read', 'public-read-write',
             'authenticated-read', 'aws-exec-read', 'bucket-owner-read',
             'bucket-owner-full-control'}
