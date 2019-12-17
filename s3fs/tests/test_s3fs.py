@@ -1108,6 +1108,26 @@ def test_list_versions_many(s3):
     assert len(versions) == 1200
 
 
+def test_fsspec_versions_multiple(s3):
+    """Test that the standard fsspec.core.get_fs_token_paths behaves as expected for versionId urls"""
+    s3 = S3FileSystem(anon=False, version_aware=True)
+    versioned_file = versioned_bucket_name + '/versioned_file3'
+    version_lookup = {}
+    for i in range(20):
+        contents = str(i).encode()
+        with s3.open(versioned_file, 'wb') as fo:
+            fo.write(contents)
+        version_lookup[fo.version_id] = contents
+    urls = [f"s3://{versioned_file}?versionId={version}" for version in version_lookup.keys()]
+    fs, token, paths = fsspec.core.get_fs_token_paths(urls)
+    assert isinstance(fs, S3FileSystem)
+    assert fs.version_aware
+    for path in paths:
+        with fs.open(path, 'rb') as fo:
+            contents = fo.read()
+            assert contents == version_lookup[fo.version_id]
+
+
 def test_versioned_file_fullpath(s3):
     versioned_file = versioned_bucket_name + '/versioned_file_fullpath'
     s3 = S3FileSystem(anon=False, version_aware=True)

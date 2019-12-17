@@ -1178,10 +1178,12 @@ class S3File(AbstractBufferedFile):
                 logger.debug("One-shot upload of %s" % self)
                 self.buffer.seek(0)
                 data = self.buffer.read()
-                self._call_s3(
+                write_result = self._call_s3(
                     self.fs.s3.put_object,
                     Key=self.key, Bucket=self.bucket, Body=data, **self.kwargs
                 )
+                if self.fs.version_aware:
+                    self.version_id = write_result.get('VersionId')
             else:
                 raise RuntimeError
         else:
