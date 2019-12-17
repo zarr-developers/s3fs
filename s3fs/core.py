@@ -3,6 +3,7 @@ import logging
 import os
 import socket
 import time
+from typing import Tuple, Optional
 
 from fsspec import AbstractFileSystem
 from fsspec.spec import AbstractBufferedFile
@@ -198,7 +199,7 @@ class S3FileSystem(AbstractFileSystem):
                 out['version_aware'] = True
         return out
 
-    def split_path(self, path):
+    def split_path(self, path) -> Tuple[str, str, Optional[str]]:
         """
         Normalise S3 path string into bucket and key.
 
@@ -469,7 +470,9 @@ class S3FileSystem(AbstractFileSystem):
 
     def touch(self, path, truncate=True, data=None, **kwargs):
         """Create empty file or truncate"""
-        bucket, key = self.split_path(path)
+        bucket, key, version_id = self.split_path(path)
+        if version_id:
+            raise ValueError("S3 does not support touching existing versions of files")
         if not truncate and self.exists(path):
             raise ValueError("S3 does not support touching existent files")
         try:
@@ -694,7 +697,7 @@ class S3FileSystem(AbstractFileSystem):
         http://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html#object-metadata
         """
 
-        bucket, key, version_id = split_path(path, self.version_aware)
+        bucket, key, version_id = self.split_path(path)
         metadata = self.metadata(path)
         metadata.update(**kw_args)
         copy_kwargs = copy_kwargs or {}
