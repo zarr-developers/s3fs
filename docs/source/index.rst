@@ -1,7 +1,7 @@
 S3Fs
 ====
 
-S3Fs is a Pythonic file interface to S3.  It builds on top of boto3_.
+S3Fs is a Pythonic file interface to S3.  It builds on top of botocore_.
 
 The top-level class ``S3FileSystem`` holds connection information and allows
 typical file-system style operations like ``cp``, ``mv``, ``ls``, ``du``,
@@ -188,7 +188,7 @@ Contents
    :maxdepth: 2
 
 
-.. _boto3: https://boto3.readthedocs.io/en/latest/
+.. _botocore: https://botocore.readthedocs.io/en/latest/
 
 Indices and tables
 ==================
