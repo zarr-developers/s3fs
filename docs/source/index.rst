@@ -81,9 +81,14 @@ The following are known current omissions:
 Logging
 -------
 
-The logger ``s3fs.core.logger`` provides information about the operations of the
-file system. To see messages, set its level to ``DEBUG``. You can also achieve this via
-an environment variable ``S3FS_LOGGING_LEVEL=DEBUG``.
+The logger named ``s3fs`` provides information about the operations of the file
+system.  To quickly see all messages, you can set the environment variable
+``S3FS_LOGGING_LEVEL=DEBUG``.  The presence of this environment variable will
+install a handler for the logger that prints messages to stderr and set the log
+level to the given value.  More advance logging configuration is possible using
+Python's standard `logging framework`_.
+
+.. _logging framework: https://docs.python.org/3/library/logging.html
 
 Credentials
 -----------
