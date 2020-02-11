@@ -11,7 +11,7 @@ import fsspec.core
 from s3fs.core import S3FileSystem
 from s3fs.utils import ignoring, SSEParams
 import moto
-import boto3
+import botocore
 from unittest import mock
 from botocore.exceptions import NoCredentialsError
 
@@ -52,18 +52,22 @@ d = test_bucket_name + '/tmp/test/d'
 def s3():
     # writable local S3 system
     with moto.mock_s3():
-        import boto3
-        client = boto3.client('s3')
+        from botocore.session import Session
+        session = Session()
+        client = session.create_client('s3')
         client.create_bucket(Bucket=test_bucket_name, ACL='public-read')
 
-        bucket = client.create_bucket(
+        client.create_bucket(
             Bucket=versioned_bucket_name, ACL='public-read')
-        bucket_versioning = boto3.resource(
-            's3').BucketVersioning(versioned_bucket_name)
-        bucket_versioning.enable()
+        client.put_bucket_versioning(
+            Bucket=versioned_bucket_name,
+            VersioningConfiguration={
+                'Status': 'Enabled'
+            }
+        )
 
         # initialize secure bucket
-        bucket = client.create_bucket(
+        client.create_bucket(
             Bucket=secure_bucket_name, ACL='public-read')
         policy = json.dumps({
             "Version": "2012-10-17",
@@ -1206,7 +1210,7 @@ def test_change_defaults_only_subsequent():
 
 
 def test_passed_in_session_set_correctly(s3):
-    session = boto3.session.Session()
+    session = botocore.session.Session()
     s3 = S3FileSystem(session=session)
     assert s3.passed_in_session is session
     client = s3.connect()
@@ -1214,7 +1218,7 @@ def test_passed_in_session_set_correctly(s3):
 
 
 def test_without_passed_in_session_set_unique(s3):
-    session = boto3.session.Session()
+    session = botocore.session.Session()
     s3 = S3FileSystem()
     assert s3.passed_in_session is None
     client = s3.connect()
@@ -1229,9 +1233,9 @@ def test_pickle_without_passed_in_session(s3):
 
 def test_pickle_with_passed_in_session(s3):
     import pickle
-    session = boto3.session.Session()
+    session = botocore.session.Session()
     s3 = S3FileSystem(session=session)
-    with pytest.raises((AttributeError, NotImplementedError, TypeError)):
+    with pytest.raises((AttributeError, NotImplementedError, TypeError, pickle.PicklingError)):
         pickle.dumps(s3)
 
 

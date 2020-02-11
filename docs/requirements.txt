@@ -1,4 +1,4 @@
 numpydoc
-boto3
+botocore
 sphinx
 sphinx-rtd-theme

@@ -6,7 +6,8 @@ import time
 
 from fsspec import AbstractFileSystem
 from fsspec.spec import AbstractBufferedFile
-import boto3
+import botocore
+import botocore.session
 from botocore.client import Config
 from botocore.exceptions import ClientError, ParamValidationError, BotoCoreError
 
@@ -23,12 +24,9 @@ if "S3FS_LOGGING_LEVEL" in os.environ:
     logger.addHandler(handle)
     logger.setLevel(os.environ["S3FS_LOGGING_LEVEL"])
 
-try:
-    from boto3.s3.transfer import S3_RETRYABLE_ERRORS
-except ImportError:
-    S3_RETRYABLE_ERRORS = (
-        socket.timeout,
-    )
+S3_RETRYABLE_ERRORS = (
+    socket.timeout,
+)
 
 _VALID_FILE_MODES = {'r', 'w', 'a', 'rb', 'wb', 'ab'}
 
@@ -47,7 +45,7 @@ class S3FileSystem(AbstractFileSystem):
     storage.
 
     Provide credentials either explicitly (``key=``, ``secret=``) or depend
-    on boto's credential methods. See boto3 documentation for more
+    on boto's credential methods. See botocore documentation for more
     information. If no credentials are available, use ``anon=True``.
 
     Parameters
@@ -67,7 +65,7 @@ class S3FileSystem(AbstractFileSystem):
         insecure
     s3_additional_kwargs : dict of parameters that are used when calling s3 api
         methods. Typically used for things like "ServerSideEncryption".
-    client_kwargs : dict of parameters for the boto3 client
+    client_kwargs : dict of parameters for the botocore client
     requester_pays : bool (False)
         If RequesterPays buckets are supported.
     default_block_size: int (None)
@@ -85,7 +83,7 @@ class S3FileSystem(AbstractFileSystem):
         user to have the necessary IAM permissions for dealing with versioned
         objects.
     config_kwargs : dict of parameters passed to ``botocore.client.Config``
-    kwargs : other parameters for boto3 session
+    kwargs : other parameters for core session
     session : botocore Session object to be used for all connections.
          This session will be used inplace of creating a new session inside S3FileSystem.
 
@@ -208,24 +206,24 @@ class S3FileSystem(AbstractFileSystem):
             self.anon, self.key, self.secret, self.kwargs,
             self.client_kwargs, self.token, self.use_ssl)
 
+        if not self.passed_in_session:
+            self.session = botocore.session.Session(**self.kwargs)
+
+        logger.debug("Setting up s3fs instance")
+
         if self.anon:
             from botocore import UNSIGNED
             conf = Config(connect_timeout=self.connect_timeout,
                           read_timeout=self.read_timeout,
                           signature_version=UNSIGNED, **self.config_kwargs)
-            if not self.passed_in_session:
-                self.session = boto3.Session(**self.kwargs)
+            self.s3 = self.session.create_client('s3', config=conf, use_ssl=ssl,
+                                        **self.client_kwargs)
         else:
             conf = Config(connect_timeout=self.connect_timeout,
                           read_timeout=self.read_timeout,
                           **self.config_kwargs)
-            if not self.passed_in_session:
-                self.session = boto3.Session(self.key, self.secret, self.token,
-                                             **self.kwargs)
-
-        logger.debug("Setting up s3fs instance")
-        self.s3 = self.session.client('s3', config=conf, use_ssl=ssl,
-                                      **self.client_kwargs)
+            self.s3 = self.session.create_client('s3', aws_access_key_id=self.key, aws_secret_access_key=self.secret, aws_session_token=self.token, config=conf, use_ssl=ssl,
+                                        **self.client_kwargs)
         return self.s3
 
     def get_delegated_s3pars(self, exp=3600):
@@ -248,7 +246,7 @@ class S3FileSystem(AbstractFileSystem):
                     'anon': False}
         if self.key is None or self.secret is None:  # automatic credentials
             return {'anon': False}
-        sts = self.session.client('sts')
+        sts = self.session.create_client('sts')
         cred = sts.get_session_token(DurationSeconds=exp)['Credentials']
         return {'key': cred['AccessKeyId'], 'secret': cred['SecretAccessKey'],
                 'token': cred['SessionToken'], 'anon': False}
@@ -774,30 +772,8 @@ class S3FileSystem(AbstractFileSystem):
         except ParamValidationError as e:
             raise ValueError('Copy failed (%r -> %r): %s' % (path1, path2, e))
 
-    def copy_managed(self, path1, path2, **kwargs):
-        buc1, key1 = self.split_path(path1)
-        buc2, key2 = self.split_path(path2)
-        copy_source = {
-            'Bucket': buc1,
-            'Key': key1
-        }
-        try:
-            self.s3.copy(
-                CopySource=copy_source,
-                Bucket=buc2,
-                Key=key2,
-                ExtraArgs=self._get_s3_method_kwargs(
-                    self.s3.copy_object,
-                    kwargs
-                )
-            )
-        except ClientError as e:
-            raise translate_boto_error(e)
-        except ParamValidationError as e:
-            raise ValueError('Copy failed (%r -> %r): %s' % (path1, path2, e))
-
     def copy(self, path1, path2, **kwargs):
-        self.copy_managed(path1, path2, **kwargs)
+        self.copy_basic(path1, path2, **kwargs)
         self.invalidate_cache(path2)
 
     def bulk_delete(self, pathlist, **kwargs):
@@ -894,7 +870,7 @@ class S3File(AbstractBufferedFile):
     Parameters
     ----------
     s3 : S3FileSystem
-        boto3 connection
+        botocore connection
     path : string
         S3 bucket/key to access
     mode : str
