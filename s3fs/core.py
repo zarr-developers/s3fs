@@ -773,7 +773,39 @@ class S3FileSystem(AbstractFileSystem):
             raise ValueError('Copy failed (%r -> %r): %s' % (path1, path2, e))
 
     def copy(self, path1, path2, **kwargs):
-        self.copy_basic(path1, path2, **kwargs)
+        gb5 = 5 * 2**30
+        path1 = self._strip_protocol(path1)
+        size = self.info(path1)['size']
+        bucket, key = self.split_path(path2)
+        if size <= gb5:
+            # simple copy allowed for <5GB
+            self.copy_basic(path1, path2, **kwargs)
+        else:
+            # serial multipart copy
+            mpu = self._call_s3(
+                self.s3.create_multipart_upload,
+                Bucket=bucket, Key=key, **kwargs)
+            for i, offset in zip(range(0, size, gb5)):
+                for attempt in range(self.retries + 1):
+                    try:
+                        self.fs._call_s3(
+                            self.s3.upload_part_copy,
+                            self.s3_additional_kwargs,
+                            Bucket=bucket,
+                            Key=key,
+                            PartNumber=i + 1,
+                            UploadId=mpu['UploadId'],
+                            CopySource=path1,
+                            CopySourceRange="bytes=%i-%i" % (offset, offset + gb5 + 1))
+                        break
+                    except S3_RETRYABLE_ERRORS as exc:
+                        if attempt < self.retries:
+                            logger.debug('Exception %r on S3 write, retrying', exc,
+                                         exc_info=True)
+                        time.sleep(1.7**attempt * 0.1)
+                    except Exception as exc:
+                        raise IOError('Write failed: %r' % exc)
+
         self.invalidate_cache(path2)
 
     def bulk_delete(self, pathlist, **kwargs):
