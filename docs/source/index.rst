@@ -1,7 +1,7 @@
 S3Fs
 ====
 
-S3Fs is a Pythonic file interface to S3.  It builds on top of boto3_.
+S3Fs is a Pythonic file interface to S3.  It builds on top of botocore_.
 
 The top-level class ``S3FileSystem`` holds connection information and allows
 typical file-system style operations like ``cp``, ``mv``, ``ls``, ``du``,
@@ -81,9 +81,14 @@ The following are known current omissions:
 Logging
 -------
 
-The logger ``s3fs.core.logger`` provides information about the operations of the
-file system. To see messages, set its level to ``DEBUG``. You can also achieve this via
-an environment variable ``S3FS_LOGGING_LEVEL=DEBUG``.
+The logger named ``s3fs`` provides information about the operations of the file
+system.  To quickly see all messages, you can set the environment variable
+``S3FS_LOGGING_LEVEL=DEBUG``.  The presence of this environment variable will
+install a handler for the logger that prints messages to stderr and set the log
+level to the given value.  More advance logging configuration is possible using
+Python's standard `logging framework`_.
+
+.. _logging framework: https://docs.python.org/3/library/logging.html
 
 Credentials
 -----------
@@ -188,7 +193,7 @@ Contents
    :maxdepth: 2
 
 
-.. _boto3: https://boto3.readthedocs.io/en/latest/
+.. _botocore: https://botocore.readthedocs.io/en/latest/
 
 Indices and tables
 ==================
