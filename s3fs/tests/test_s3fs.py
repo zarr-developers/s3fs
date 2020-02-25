@@ -606,6 +606,19 @@ def test_copy(s3):
     assert s3.cat(fn) == s3.cat(fn + '2')
 
 
+def test_copy_managed(s3):
+    data = b'abc' * 12*2**20
+    fn = test_bucket_name + '/test/biggerfile'
+    with s3.open(fn, 'wb') as f:
+        f.write(data)
+    s3.copy_managed(fn, fn + '2', block=5 * 2 ** 20)
+    assert s3.cat(fn) == s3.cat(fn + '2')
+    with pytest.raises(ValueError):
+        s3.copy_managed(fn, fn + '3', block=4 * 2 ** 20)
+    with pytest.raises(ValueError):
+        s3.copy_managed(fn, fn + '3', block=6 * 2 ** 30)
+
+
 def test_move(s3):
     fn = test_bucket_name + '/test/accounts.1.json'
     data = s3.cat(fn)
