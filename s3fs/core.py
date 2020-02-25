@@ -452,9 +452,9 @@ class S3FileSystem(AbstractFileSystem):
                 raise ValueError("version_id cannot be specified if the "
                                  "filesystem is not version aware")
             kwargs['VersionId'] = version_id
-        if self.version_aware:
+        bucket, key = self.split_path(path)
+        if self.version_aware or (key and self._ls_from_cache(path) is None):
             try:
-                bucket, key = self.split_path(path)
                 out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
                                     Key=key, **self.req_kw)
                 return {
@@ -463,7 +463,7 @@ class S3FileSystem(AbstractFileSystem):
                     'LastModified': out['LastModified'],
                     'Size': out['ContentLength'],
                     'size': out['ContentLength'],
-                    'path': '/'.join([bucket, key]),
+                    'name': '/'.join([bucket, key]),
                     'type': 'file',
                     'StorageClass': "STANDARD",
                     'VersionId': out.get('VersionId')
@@ -472,7 +472,7 @@ class S3FileSystem(AbstractFileSystem):
                 ee = translate_boto_error(e)
                 # This could have failed since the thing we are looking for is a prefix.
                 if isinstance(ee, FileNotFoundError):
-                    return super().info(path)
+                    return super(S3FileSystem, self).info(path)
                 else:
                     raise ee
             except ParamValidationError as e:
@@ -913,7 +913,9 @@ class S3FileSystem(AbstractFileSystem):
         else:
             path = self._strip_protocol(path)
             self.dircache.pop(path, None)
-            self.dircache.pop(self._parent(path), None)
+            while path:
+                self.dircache.pop(path, None)
+                path = self._parent(path)
 
     def walk(self, path, maxdepth=None, **kwargs):
         if path in ['', '*'] + [f'{p}://' for p in self.protocol]:

@@ -188,7 +188,11 @@ def test_multiple_objects(s3):
 def test_info(s3):
     s3.touch(a)
     s3.touch(b)
-    assert s3.info(a) == s3.ls(a, detail=True)[0]
+    info = s3.info(a)
+    linfo = s3.ls(a, detail=True)[0]
+    assert abs(info.pop('LastModified') - linfo.pop('LastModified')).seconds < 1
+    info.pop('VersionId')
+    assert info == linfo
     parent = a.rsplit('/', 1)[0]
     s3.invalidate_cache()  # remove full path from the cache
     s3.ls(parent)  # fill the cache with parent dir
