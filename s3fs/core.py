@@ -189,6 +189,14 @@ class S3FileSystem(AbstractFileSystem):
         else:
             return path.split('/', 1)
 
+    def _prepare_config_kwargs(self):
+        config_kwargs = self.config_kwargs.copy()
+        if "connect_timeout" not in config_kwargs.keys():
+            config_kwargs['connect_timeout'] = self.connect_timeout
+        if "read_timeout" not in config_kwargs.keys():
+            config_kwargs['read_timeout'] = self.read_timeout
+        return config_kwargs
+
     def connect(self, refresh=True):
         """
         Establish S3 connection object.
@@ -212,17 +220,14 @@ class S3FileSystem(AbstractFileSystem):
 
         logger.debug("Setting up s3fs instance")
 
+        config_kwargs = self._prepare_config_kwargs()
         if self.anon:
             from botocore import UNSIGNED
-            conf = Config(connect_timeout=self.connect_timeout,
-                          read_timeout=self.read_timeout,
-                          signature_version=UNSIGNED, **self.config_kwargs)
+            conf = Config(signature_version=UNSIGNED, **config_kwargs)
             self.s3 = self.session.create_client('s3', config=conf, use_ssl=ssl,
                                         **self.client_kwargs)
         else:
-            conf = Config(connect_timeout=self.connect_timeout,
-                          read_timeout=self.read_timeout,
-                          **self.config_kwargs)
+            conf = Config(**config_kwargs)
             self.s3 = self.session.create_client('s3', aws_access_key_id=self.key, aws_secret_access_key=self.secret, aws_session_token=self.token, config=conf, use_ssl=ssl,
                                         **self.client_kwargs)
         return self.s3

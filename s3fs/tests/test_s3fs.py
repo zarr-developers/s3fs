@@ -169,6 +169,23 @@ def test_config_kwargs():
     assert s3.connect(refresh=True).meta.config.signature_version == 's3v4'
 
 
+def test_config_kwargs_class_attributes_default():
+    s3 = S3FileSystem()
+    assert s3.connect(refresh=True).meta.config.connect_timeout == 5
+    assert s3.connect(refresh=True).meta.config.read_timeout == 15
+
+
+def test_config_kwargs_class_attributes_override():
+    s3 = S3FileSystem(
+        config_kwargs={
+            "connect_timeout": 60,
+            "read_timeout": 120,
+        }
+    )
+    assert s3.connect(refresh=True).meta.config.connect_timeout == 60
+    assert s3.connect(refresh=True).meta.config.read_timeout == 120
+
+
 def test_idempotent_connect(s3):
     con1 = s3.connect()
     con2 = s3.connect(refresh=False)
