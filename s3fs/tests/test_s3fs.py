@@ -46,7 +46,7 @@ a = test_bucket_name + '/tmp/test/a'
 b = test_bucket_name + '/tmp/test/b'
 c = test_bucket_name + '/tmp/test/c'
 d = test_bucket_name + '/tmp/test/d'
-
+e = test_bucket_name + '/tmp/test/e'
 
 @pytest.yield_fixture
 def s3():
@@ -90,7 +90,7 @@ def s3():
         })
         client.put_bucket_policy(Bucket=secure_bucket_name, Policy=policy)
 
-        for k in [a, b, c, d]:
+        for k in [a, b, c, d, e]:
             try:
                 client.delete_object(Bucket=test_bucket_name, Key=k)
             except:
@@ -111,7 +111,7 @@ def s3():
                         Bucket=secure_bucket_name, Key=f, Body=data)
                 except:
                     pass
-        for k in [a, b, c, d]:
+        for k in [a, b, c, d, e]:
             try:
                 client.delete_object(Bucket=test_bucket_name, Key=k)
                 client.delete_object(Bucket=secure_bucket_name, Key=k)
@@ -208,6 +208,29 @@ def test_info(s3):
         s3.info(new_parent)
 
 
+def test_checksum(s3):
+    with moto.mock_s3():
+        from botocore.session import Session
+        session = Session()
+        object_path = e
+        object_name = object_path[len(test_bucket_name):]
+        
+        client = session.create_client('s3')
+        client.create_bucket(Bucket=test_bucket_name, ACL='public-read')
+
+        client.put_object(Bucket=test_bucket_name, Key=object_name, Body="foo")
+        checksum = s3.checksum(object_path)
+        client.put_object(Bucket=test_bucket_name, Key=object_name, Body="bar")
+        # refresh == False => checksum doesn't change
+        assert checksum == s3.checksum(object_path)
+
+        client.put_object(Bucket=test_bucket_name, Key=object_name, Body="foo")
+        checksum = s3.checksum(object_path, refresh=True)
+        client.put_object(Bucket=test_bucket_name, Key=object_name, Body="bar")
+
+        # refresh == True => checksum changes
+        assert checksum != s3.checksum(object_path, refresh=True)
+        
 test_xattr_sample_metadata = {'test_xattr': '1'}
 
 

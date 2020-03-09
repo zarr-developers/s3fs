@@ -6,6 +6,8 @@ import time
 
 from fsspec import AbstractFileSystem
 from fsspec.spec import AbstractBufferedFile
+from fsspec.utils import tokenize
+
 import botocore
 import botocore.session
 from botocore.client import Config
@@ -478,6 +480,34 @@ class S3FileSystem(AbstractFileSystem):
             except ParamValidationError as e:
                 raise ValueError('Failed to head path %r: %s' % (path, e))
         return super().info(path)
+    
+    def checksum(self, path, refresh=False):
+        """
+        Unique value for current version of file
+
+        If the checksum is the same from one moment to another, the contents
+        are guaranteed to be the same. If the checksum changes, the contents
+        *might* have changed.
+
+        Parameters
+        ----------
+        path : string/bytes
+            location at which to list files
+        refresh : bool (=False)
+            if False, look in local cache for file details first
+        
+        """
+
+        listing = self.ls(path, detail=True, refresh=refresh)
+        
+        if not listing:
+            raise FileNotFoundError(path)
+        elif len(listing)==1:
+            return int(listing[0]["ETag"].strip('"'), 16)
+        else:
+            return int(tokenize(self.info(path)), 16)
+
+        return checksum
 
     def isdir(self, path):
         path = self._strip_protocol(path).strip("/")
