@@ -225,6 +225,7 @@ def test_checksum(s3):
     # change one file, using cache
     client.put_object(Bucket=bucket, Key=o1, Body="foo")
     checksum = s3.checksum(path1)
+    s3.ls(path1) # force caching
     client.put_object(Bucket=bucket, Key=o1, Body="bar")
     # refresh == False => checksum doesn't change
     assert checksum == s3.checksum(path1)
@@ -232,26 +233,15 @@ def test_checksum(s3):
     # change one file, without cache
     client.put_object(Bucket=bucket, Key=o1, Body="foo")
     checksum = s3.checksum(path1, refresh=True)
+    s3.ls(path1) # force caching
     client.put_object(Bucket=bucket, Key=o1, Body="bar")
     # refresh == True => checksum changes
     assert checksum != s3.checksum(path1, refresh=True)
 
-    # Test for directory; checksum doesn't change
-    client.put_object(Bucket=bucket, Key=o1, Body="foo")
-    checksum = s3.checksum(bucket, refresh=True)
-    client.put_object(Bucket=bucket, Key=o1, Body="bar")
-    assert checksum == s3.checksum(bucket, refresh=True)
-
-
-    # List multiple files; checksum changes when one object is changed
-    client.put_object(Bucket=bucket, Key=o1, Body="foo")
-    client.put_object(Bucket=bucket, Key=o2, Body="bar")
-    checksum = s3.checksum(bucket+"/"+d, refresh=True)
-    client.put_object(Bucket=bucket, Key=o2, Body="baz")
-    assert checksum != s3.checksum(bucket+"/"+d, refresh=True)
 
     # Test for nonexistent file
     client.put_object(Bucket=bucket, Key=o1, Body="bar")
+    s3.ls(path1) # force caching
     client.delete_object(Bucket=bucket, Key=o1)
     with pytest.raises(FileNotFoundError):
         checksum = s3.checksum(o1, refresh=True)

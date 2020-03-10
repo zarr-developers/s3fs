@@ -445,7 +445,7 @@ class S3FileSystem(AbstractFileSystem):
             raise translate_boto_error(ex)
         self.invalidate_cache(self._parent(path))
 
-    def info(self, path, version_id=None):
+    def info(self, path, version_id=None, refresh=False):
         if path in ['/', '']:
             return {'name': path, 'size': 0, 'type': 'directory'}
         kwargs = self.kwargs.copy()
@@ -455,7 +455,7 @@ class S3FileSystem(AbstractFileSystem):
                                  "filesystem is not version aware")
             kwargs['VersionId'] = version_id
         bucket, key = self.split_path(path)
-        if self.version_aware or (key and self._ls_from_cache(path) is None):
+        if self.version_aware or (key and self._ls_from_cache(path) is None) or refresh:
             try:
                 out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
                                     Key=key, **self.req_kw)
@@ -492,26 +492,18 @@ class S3FileSystem(AbstractFileSystem):
         Parameters
         ----------
         path : string/bytes
-            file or path to get checksum for
+            path of file to get checksum for
         refresh : bool (=False)
             if False, look in local cache for file details first
         
         """
 
-        listing = self.ls(path, detail=True, refresh=refresh)
+        info = self.info(path, refresh=refresh)
         
-        def get_checksum(item):
-            if item["type"] != 'directory':
-                return item["ETag"].strip('"')
-            else:
-                return tokenize(item)
-             
-        if not listing:
-            raise FileNotFoundError(path)
-        elif len(listing)==1:
-            return int(get_checksum(listing[0]), 16)
+        if info["type"] != 'directory':
+            return int(info["ETag"].strip('"'), 16)
         else:
-            return int(tokenize([get_checksum(x) for x in listing]), 16)
+            return int(tokenize(info), 16)
         
 
     def isdir(self, path):
