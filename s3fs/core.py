@@ -492,7 +492,7 @@ class S3FileSystem(AbstractFileSystem):
         Parameters
         ----------
         path : string/bytes
-            location at which to list files
+            file or path to get checksum for
         refresh : bool (=False)
             if False, look in local cache for file details first
         
