@@ -46,8 +46,6 @@ a = test_bucket_name + '/tmp/test/a'
 b = test_bucket_name + '/tmp/test/b'
 c = test_bucket_name + '/tmp/test/c'
 d = test_bucket_name + '/tmp/test/d'
-e1 = test_bucket_name + '/tmp/test/e1'
-e2 = test_bucket_name + '/tmp/test/e2'
 
 @pytest.yield_fixture
 def s3():
@@ -91,7 +89,7 @@ def s3():
         })
         client.put_bucket_policy(Bucket=secure_bucket_name, Policy=policy)
 
-        for k in [a, b, c, d, e1, e2]:
+        for k in [a, b, c, d]:
             try:
                 client.delete_object(Bucket=test_bucket_name, Key=k)
             except:
@@ -112,7 +110,7 @@ def s3():
                         Bucket=secure_bucket_name, Key=f, Body=data)
                 except:
                     pass
-        for k in [a, b, c, d, e1, e2]:
+        for k in [a, b, c, d]:
             try:
                 client.delete_object(Bucket=test_bucket_name, Key=k)
                 client.delete_object(Bucket=secure_bucket_name, Key=k)
