@@ -47,7 +47,6 @@ b = test_bucket_name + '/tmp/test/b'
 c = test_bucket_name + '/tmp/test/c'
 d = test_bucket_name + '/tmp/test/d'
 
-
 @pytest.yield_fixture
 def s3():
     # writable local S3 system
@@ -208,6 +207,45 @@ def test_info(s3):
         s3.info(new_parent)
 
 
+def test_checksum(s3):
+    bucket = test_bucket_name
+    d = "checksum"
+    prefix = d+"/e"
+    o1 = prefix + "1"
+    o2 = prefix + "2"
+    path1 = bucket + "/" + o1
+    path2 = bucket + "/" + o2
+
+    client=s3.s3
+
+    # init client and files
+    client.put_object(Bucket=bucket, Key=o1, Body="")
+    client.put_object(Bucket=bucket, Key=o2, Body="")
+
+    # change one file, using cache
+    client.put_object(Bucket=bucket, Key=o1, Body="foo")
+    checksum = s3.checksum(path1)
+    s3.ls(path1) # force caching
+    client.put_object(Bucket=bucket, Key=o1, Body="bar")
+    # refresh == False => checksum doesn't change
+    assert checksum == s3.checksum(path1)
+
+    # change one file, without cache
+    client.put_object(Bucket=bucket, Key=o1, Body="foo")
+    checksum = s3.checksum(path1, refresh=True)
+    s3.ls(path1) # force caching
+    client.put_object(Bucket=bucket, Key=o1, Body="bar")
+    # refresh == True => checksum changes
+    assert checksum != s3.checksum(path1, refresh=True)
+
+
+    # Test for nonexistent file
+    client.put_object(Bucket=bucket, Key=o1, Body="bar")
+    s3.ls(path1) # force caching
+    client.delete_object(Bucket=bucket, Key=o1)
+    with pytest.raises(FileNotFoundError):
+        checksum = s3.checksum(o1, refresh=True)
+        
 test_xattr_sample_metadata = {'test_xattr': '1'}
 
 

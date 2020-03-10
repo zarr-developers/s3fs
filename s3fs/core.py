@@ -6,6 +6,8 @@ import time
 
 from fsspec import AbstractFileSystem
 from fsspec.spec import AbstractBufferedFile
+from fsspec.utils import tokenize
+
 import botocore
 import botocore.session
 from botocore.client import Config
@@ -443,7 +445,7 @@ class S3FileSystem(AbstractFileSystem):
             raise translate_boto_error(ex)
         self.invalidate_cache(self._parent(path))
 
-    def info(self, path, version_id=None):
+    def info(self, path, version_id=None, refresh=False):
         if path in ['/', '']:
             return {'name': path, 'size': 0, 'type': 'directory'}
         kwargs = self.kwargs.copy()
@@ -453,7 +455,7 @@ class S3FileSystem(AbstractFileSystem):
                                  "filesystem is not version aware")
             kwargs['VersionId'] = version_id
         bucket, key = self.split_path(path)
-        if self.version_aware or (key and self._ls_from_cache(path) is None):
+        if self.version_aware or (key and self._ls_from_cache(path) is None) or refresh:
             try:
                 out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
                                     Key=key, **self.req_kw)
@@ -478,6 +480,31 @@ class S3FileSystem(AbstractFileSystem):
             except ParamValidationError as e:
                 raise ValueError('Failed to head path %r: %s' % (path, e))
         return super().info(path)
+    
+    def checksum(self, path, refresh=False):
+        """
+        Unique value for current version of file
+
+        If the checksum is the same from one moment to another, the contents
+        are guaranteed to be the same. If the checksum changes, the contents
+        *might* have changed.
+
+        Parameters
+        ----------
+        path : string/bytes
+            path of file to get checksum for
+        refresh : bool (=False)
+            if False, look in local cache for file details first
+        
+        """
+
+        info = self.info(path, refresh=refresh)
+        
+        if info["type"] != 'directory':
+            return int(info["ETag"].strip('"'), 16)
+        else:
+            return int(tokenize(info), 16)
+        
 
     def isdir(self, path):
         path = self._strip_protocol(path).strip("/")
