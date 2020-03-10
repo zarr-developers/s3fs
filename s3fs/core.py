@@ -500,14 +500,19 @@ class S3FileSystem(AbstractFileSystem):
 
         listing = self.ls(path, detail=True, refresh=refresh)
         
+        def get_checksum(item):
+            if item["type"] != 'directory':
+                return item["ETag"].strip('"')
+            else:
+                return tokenize(item)
+             
         if not listing:
             raise FileNotFoundError(path)
         elif len(listing)==1:
-            return int(listing[0]["ETag"].strip('"'), 16)
+            return int(get_checksum(listing[0]), 16)
         else:
-            return int(tokenize(self.info(path)), 16)
-
-        return checksum
+            return int(tokenize([get_checksum(x) for x in listing]), 16)
+        
 
     def isdir(self, path):
         path = self._strip_protocol(path).strip("/")

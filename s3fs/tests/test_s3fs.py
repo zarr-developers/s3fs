@@ -46,7 +46,8 @@ a = test_bucket_name + '/tmp/test/a'
 b = test_bucket_name + '/tmp/test/b'
 c = test_bucket_name + '/tmp/test/c'
 d = test_bucket_name + '/tmp/test/d'
-e = test_bucket_name + '/tmp/test/e'
+e1 = test_bucket_name + '/tmp/test/e1'
+e2 = test_bucket_name + '/tmp/test/e2'
 
 @pytest.yield_fixture
 def s3():
@@ -90,7 +91,7 @@ def s3():
         })
         client.put_bucket_policy(Bucket=secure_bucket_name, Policy=policy)
 
-        for k in [a, b, c, d, e]:
+        for k in [a, b, c, d, e1, e2]:
             try:
                 client.delete_object(Bucket=test_bucket_name, Key=k)
             except:
@@ -111,7 +112,7 @@ def s3():
                         Bucket=secure_bucket_name, Key=f, Body=data)
                 except:
                     pass
-        for k in [a, b, c, d, e]:
+        for k in [a, b, c, d, e1, e2]:
             try:
                 client.delete_object(Bucket=test_bucket_name, Key=k)
                 client.delete_object(Bucket=secure_bucket_name, Key=k)
@@ -209,27 +210,53 @@ def test_info(s3):
 
 
 def test_checksum(s3):
-    with moto.mock_s3():
-        from botocore.session import Session
-        session = Session()
-        object_path = e
-        object_name = object_path[len(test_bucket_name):]
-        
-        client = session.create_client('s3')
-        client.create_bucket(Bucket=test_bucket_name, ACL='public-read')
+    bucket = test_bucket_name
+    d = "checksum"
+    prefix = d+"/e"
+    o1 = prefix + "1"
+    o2 = prefix + "2"
+    path1 = bucket + "/" + o1
+    path2 = bucket + "/" + o2
 
-        client.put_object(Bucket=test_bucket_name, Key=object_name, Body="foo")
-        checksum = s3.checksum(object_path)
-        client.put_object(Bucket=test_bucket_name, Key=object_name, Body="bar")
-        # refresh == False => checksum doesn't change
-        assert checksum == s3.checksum(object_path)
+    client=s3.s3
 
-        client.put_object(Bucket=test_bucket_name, Key=object_name, Body="foo")
-        checksum = s3.checksum(object_path, refresh=True)
-        client.put_object(Bucket=test_bucket_name, Key=object_name, Body="bar")
+    # init client and files
+    client.put_object(Bucket=bucket, Key=o1, Body="")
+    client.put_object(Bucket=bucket, Key=o2, Body="")
 
-        # refresh == True => checksum changes
-        assert checksum != s3.checksum(object_path, refresh=True)
+    # change one file, using cache
+    client.put_object(Bucket=bucket, Key=o1, Body="foo")
+    checksum = s3.checksum(path1)
+    client.put_object(Bucket=bucket, Key=o1, Body="bar")
+    # refresh == False => checksum doesn't change
+    assert checksum == s3.checksum(path1)
+
+    # change one file, without cache
+    client.put_object(Bucket=bucket, Key=o1, Body="foo")
+    checksum = s3.checksum(path1, refresh=True)
+    client.put_object(Bucket=bucket, Key=o1, Body="bar")
+    # refresh == True => checksum changes
+    assert checksum != s3.checksum(path1, refresh=True)
+
+    # Test for directory; checksum doesn't change
+    client.put_object(Bucket=bucket, Key=o1, Body="foo")
+    checksum = s3.checksum(bucket, refresh=True)
+    client.put_object(Bucket=bucket, Key=o1, Body="bar")
+    assert checksum == s3.checksum(bucket, refresh=True)
+
+
+    # List multiple files; checksum changes when one object is changed
+    client.put_object(Bucket=bucket, Key=o1, Body="foo")
+    client.put_object(Bucket=bucket, Key=o2, Body="bar")
+    checksum = s3.checksum(bucket+"/"+d, refresh=True)
+    client.put_object(Bucket=bucket, Key=o2, Body="baz")
+    assert checksum != s3.checksum(bucket+"/"+d, refresh=True)
+
+    # Test for nonexistent file
+    client.put_object(Bucket=bucket, Key=o1, Body="bar")
+    client.delete_object(Bucket=bucket, Key=o1)
+    with pytest.raises(FileNotFoundError):
+        checksum = s3.checksum(o1, refresh=True)
         
 test_xattr_sample_metadata = {'test_xattr': '1'}
 
