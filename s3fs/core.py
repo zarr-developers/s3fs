@@ -9,6 +9,8 @@ from fsspec import AbstractFileSystem
 from fsspec.spec import AbstractBufferedFile
 
 from fsspec.utils import infer_storage_options
+from fsspec.utils import tokenize
+
 import botocore
 import botocore.session
 from botocore.client import Config
@@ -116,6 +118,7 @@ class S3FileSystem(AbstractFileSystem):
     """
     root_marker = ""
     connect_timeout = 5
+    retries = 5
     read_timeout = 15
     default_block_size = 5 * 2**20
     protocol = ['s3', 's3a']
@@ -481,7 +484,7 @@ class S3FileSystem(AbstractFileSystem):
             raise translate_boto_error(ex)
         self.invalidate_cache(self._parent(path))
 
-    def info(self, path, version_id=None):
+    def info(self, path, version_id=None, refresh=False):
         if path in ['/', '']:
             return {'name': path, 'size': 0, 'type': 'directory'}
         kwargs = self.kwargs.copy()
@@ -489,9 +492,9 @@ class S3FileSystem(AbstractFileSystem):
             if not self.version_aware:
                 raise ValueError("version_id cannot be specified if the "
                                  "filesystem is not version aware")
-        if self.version_aware:
+        bucket, key, version_id = self.split_path(path)
+        if self.version_aware or (key and self._ls_from_cache(path) is None) or refresh:
             try:
-                bucket, key, version_id = self.split_path(path)
                 out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
                                     Key=key, **version_id_kw(version_id), **self.req_kw)
                 return {
@@ -500,7 +503,7 @@ class S3FileSystem(AbstractFileSystem):
                     'LastModified': out['LastModified'],
                     'Size': out['ContentLength'],
                     'size': out['ContentLength'],
-                    'path': '/'.join([bucket, key]),
+                    'name': '/'.join([bucket, key]),
                     'type': 'file',
                     'StorageClass': "STANDARD",
                     'VersionId': out.get('VersionId')
@@ -509,12 +512,37 @@ class S3FileSystem(AbstractFileSystem):
                 ee = translate_boto_error(e)
                 # This could have failed since the thing we are looking for is a prefix.
                 if isinstance(ee, FileNotFoundError):
-                    return super().info(path)
+                    return super(S3FileSystem, self).info(path)
                 else:
                     raise ee
             except ParamValidationError as e:
                 raise ValueError('Failed to head path %r: %s' % (path, e))
         return super().info(path)
+    
+    def checksum(self, path, refresh=False):
+        """
+        Unique value for current version of file
+
+        If the checksum is the same from one moment to another, the contents
+        are guaranteed to be the same. If the checksum changes, the contents
+        *might* have changed.
+
+        Parameters
+        ----------
+        path : string/bytes
+            path of file to get checksum for
+        refresh : bool (=False)
+            if False, look in local cache for file details first
+        
+        """
+
+        info = self.info(path, refresh=refresh)
+        
+        if info["type"] != 'directory':
+            return int(info["ETag"].strip('"'), 16)
+        else:
+            return int(tokenize(info), 16)
+        
 
     def isdir(self, path):
         path = self._strip_protocol(path).strip("/")
@@ -803,7 +831,10 @@ class S3FileSystem(AbstractFileSystem):
         self.invalidate_cache(path)
 
     def copy_basic(self, path1, path2, **kwargs):
-        """ Copy file between locations on S3 """
+        """ Copy file between locations on S3
+
+        Not allowed where the origin is >5GB - use copy_managed
+        """
         buc1, key1, ver1 = self.split_path(path1)
         buc2, key2, ver2 = self.split_path(path2)
         if ver2:
@@ -821,10 +852,64 @@ class S3FileSystem(AbstractFileSystem):
             raise translate_boto_error(e)
         except ParamValidationError as e:
             raise ValueError('Copy failed (%r -> %r): %s' % (path1, path2, e))
+        self.invalidate_cache(path2)
+
+    def copy_managed(self, path1, path2, block=5 * 2**30, **kwargs):
+        """Copy file between locations on S3 as multi-part
+
+        block: int
+            The size of the pieces, must be larger than 5MB and at most 5GB.
+            Smaller blocks mean more calls, only useful for testing.
+        """
+        if block < 5*2**20 or block > 5*2**30:
+            raise ValueError('Copy block size must be 5MB<=block<=5GB')
+        size = self.info(path1)['size']
+        bucket, key, version = self.split_path(path2)
+        mpu = self._call_s3(
+            self.s3.create_multipart_upload,
+            Bucket=bucket, Key=key, **kwargs)
+        parts = []
+        for i, offset in enumerate(range(0, size + 1, block)):
+            for attempt in range(self.retries + 1):
+                try:
+                    brange = "bytes=%i-%i" % (
+                            offset, min(offset + block - 1, size))
+                    out = self._call_s3(
+                        self.s3.upload_part_copy,
+                        Bucket=bucket,
+                        Key=key,
+                        PartNumber=i + 1,
+                        UploadId=mpu['UploadId'],
+                        CopySource=path1,
+                        CopySourceRange=brange)
+                    break
+                except S3_RETRYABLE_ERRORS as exc:
+                    if attempt < self.retries:
+                        logger.debug('Exception %r on S3 write, retrying', exc,
+                                     exc_info=True)
+                    time.sleep(1.7 ** attempt * 0.1)
+                except Exception as exc:
+                    raise IOError('Write failed: %r' % exc)
+            parts.append({'PartNumber': i + 1,
+                          'ETag': out['CopyPartResult']['ETag']})
+        self._call_s3(
+            self.s3.complete_multipart_upload,
+            Bucket=bucket,
+            Key=key,
+            UploadId=mpu['UploadId'],
+            MultipartUpload={'Parts': parts})
+        self.invalidate_cache(path2)
 
     def copy(self, path1, path2, **kwargs):
-        self.copy_basic(path1, path2, **kwargs)
-        self.invalidate_cache(path2)
+        gb5 = 5 * 2**30
+        path1 = self._strip_protocol(path1)
+        size = self.info(path1)['size']
+        if size <= gb5:
+            # simple copy allowed for <5GB
+            self.copy_basic(path1, path2, **kwargs)
+        else:
+            # serial multipart copy
+            self.copy_managed(path1, path2, **kwargs)
 
     def bulk_delete(self, pathlist, **kwargs):
         """
@@ -906,7 +991,9 @@ class S3FileSystem(AbstractFileSystem):
         else:
             path = self._strip_protocol(path)
             self.dircache.pop(path, None)
-            self.dircache.pop(self._parent(path), None)
+            while path:
+                self.dircache.pop(path, None)
+                path = self._parent(path)
 
     def walk(self, path, maxdepth=None, **kwargs):
         if path in ['', '*'] + [f'{p}://' for p in self.protocol]:
