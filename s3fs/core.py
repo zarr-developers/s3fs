@@ -89,6 +89,10 @@ class S3FileSystem(AbstractFileSystem):
     session : botocore Session object to be used for all connections.
          This session will be used inplace of creating a new session inside S3FileSystem.
 
+    The following parameters are passed on to fsspec:
+
+    skip_instance_cache: to control reuse of instances
+    use_listings_cache, listings_expiry_time, max_paths: to control reuse of directory listings
 
     Examples
     --------
@@ -132,6 +136,11 @@ class S3FileSystem(AbstractFileSystem):
         self.secret = secret
         self.token = token
         self.kwargs = kwargs
+        print(kwargs)
+        super_kwargs = {k: kwargs.pop(k)
+                        for k in ['use_listings_cache', 'listings_expiry_time', 'max_paths']
+                        if k in kwargs}  # passed to fsspec superclass
+        print(self.kwargs, super_kwargs)
 
         if client_kwargs is None:
             client_kwargs = {}
@@ -148,7 +157,7 @@ class S3FileSystem(AbstractFileSystem):
         self.use_ssl = use_ssl
         self.s3 = self.connect()
         self._kwargs_helper = ParamKwargsHelper(self.s3)
-        super().__init__()
+        super().__init__(**super_kwargs)
 
     def _filter_kwargs(self, s3_method, kwargs):
         return self._kwargs_helper.filter_dict(s3_method.__name__, kwargs)
@@ -350,6 +359,7 @@ class S3FileSystem(AbstractFileSystem):
                 raise translate_boto_error(e)
 
             self.dircache[path] = files
+            return files
         return self.dircache[path]
 
     def mkdir(self, path, acl="", **kwargs):
@@ -402,6 +412,7 @@ class S3FileSystem(AbstractFileSystem):
                 f['name'] = f['Name']
                 del f['Name']
             self.dircache[''] = files
+            return files
         return self.dircache['']
 
     def _ls(self, path, refresh=False):
