@@ -136,11 +136,9 @@ class S3FileSystem(AbstractFileSystem):
         self.secret = secret
         self.token = token
         self.kwargs = kwargs
-        print(kwargs)
         super_kwargs = {k: kwargs.pop(k)
                         for k in ['use_listings_cache', 'listings_expiry_time', 'max_paths']
                         if k in kwargs}  # passed to fsspec superclass
-        print(self.kwargs, super_kwargs)
 
         if client_kwargs is None:
             client_kwargs = {}
