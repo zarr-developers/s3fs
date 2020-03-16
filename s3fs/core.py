@@ -59,7 +59,7 @@ def _coalesce_version_id(*args):
     """Helper to coalesce a list of version_ids down to one"""
     version_ids = set(args)
     if None in version_ids:
-        verssion_ids.remove(None)
+        version_ids.remove(None)
     if len(version_ids > 1):
         raise ValueError(
             f"Cannot coalesce version_ids where more than one are defined, {version_ids}")
