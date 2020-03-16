@@ -46,13 +46,27 @@ buck_acls = {'private', 'public-read', 'public-read-write',
 def version_id_kw(version_id):
     """Helper to make versionId kwargs.
 
-    Not all boto3 methods accept a None / empty versionId so dictionary expansion solves that problem.
-
+    Not all boto3 methods accept a None / empty versionId so dictionary expansion solves
+    that problem.
     """
     if version_id:
         return {'VersionId': version_id}
     else:
         return {}
+
+
+def _coalesce_version_id(*args):
+    """Helper to coalesce a list of version_ids down to one"""
+    version_ids = set(args)
+    if None in version_ids:
+        verssion_ids.remove(None)
+    if len(version_ids > 1):
+        raise ValueError(
+            f"Cannot coalesce version_ids where more than one are defined, {version_ids}")
+    elif len(version_ids) == 0:
+        return None
+    else:
+        return version_ids.pop()
 
 
 class S3FileSystem(AbstractFileSystem):
@@ -506,7 +520,8 @@ class S3FileSystem(AbstractFileSystem):
             if not self.version_aware:
                 raise ValueError("version_id cannot be specified if the "
                                  "filesystem is not version aware")
-        bucket, key, version_id = self.split_path(path)
+        bucket, key, path_version_id = self.split_path(path)
+        version_id = _coalesce_version_id(path_version_id, version_id)
         if self.version_aware or (key and self._ls_from_cache(path) is None) or refresh:
             try:
                 out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
@@ -1067,14 +1082,7 @@ class S3File(AbstractBufferedFile):
             raise ValueError('Attempt to open non key-like path: %s' % path)
         self.bucket = bucket
         self.key = key
-        if (
-                (path_version_id and len(path_version_id))
-                and (version_id and len(version_id))
-                and (path_version_id != version_id)
-        ):
-            raise ValueError('VersionId passed in twice and is non matching!')
-        version_id = version_id or path_version_id
-        self.version_id = version_id
+        self.version_id = _coalesce_version_id(version_id, path_version_id)
         self.acl = acl
         if self.acl and self.acl not in key_acls:
             raise ValueError('ACL not in %s', key_acls)
