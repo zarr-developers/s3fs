@@ -105,6 +105,10 @@ class S3FileSystem(AbstractFileSystem):
     session : botocore Session object to be used for all connections.
          This session will be used inplace of creating a new session inside S3FileSystem.
 
+    The following parameters are passed on to fsspec:
+
+    skip_instance_cache: to control reuse of instances
+    use_listings_cache, listings_expiry_time, max_paths: to control reuse of directory listings
 
     Examples
     --------
@@ -148,6 +152,9 @@ class S3FileSystem(AbstractFileSystem):
         self.secret = secret
         self.token = token
         self.kwargs = kwargs
+        super_kwargs = {k: kwargs.pop(k)
+                        for k in ['use_listings_cache', 'listings_expiry_time', 'max_paths']
+                        if k in kwargs}  # passed to fsspec superclass
 
         if client_kwargs is None:
             client_kwargs = {}
@@ -164,7 +171,7 @@ class S3FileSystem(AbstractFileSystem):
         self.use_ssl = use_ssl
         self.s3 = self.connect()
         self._kwargs_helper = ParamKwargsHelper(self.s3)
-        super().__init__()
+        super().__init__(**super_kwargs)
 
     def _filter_kwargs(self, s3_method, kwargs):
         return self._kwargs_helper.filter_dict(s3_method.__name__, kwargs)
@@ -228,6 +235,14 @@ class S3FileSystem(AbstractFileSystem):
             key, _, version_id = keypart.partition('?versionId=')
             return bucket, key, version_id if self.version_aware and version_id else None
 
+    def _prepare_config_kwargs(self):
+        config_kwargs = self.config_kwargs.copy()
+        if "connect_timeout" not in config_kwargs.keys():
+            config_kwargs['connect_timeout'] = self.connect_timeout
+        if "read_timeout" not in config_kwargs.keys():
+            config_kwargs['read_timeout'] = self.read_timeout
+        return config_kwargs
+
     def connect(self, refresh=True):
         """
         Establish S3 connection object.
@@ -251,17 +266,14 @@ class S3FileSystem(AbstractFileSystem):
 
         logger.debug("Setting up s3fs instance")
 
+        config_kwargs = self._prepare_config_kwargs()
         if self.anon:
             from botocore import UNSIGNED
-            conf = Config(connect_timeout=self.connect_timeout,
-                          read_timeout=self.read_timeout,
-                          signature_version=UNSIGNED, **self.config_kwargs)
+            conf = Config(signature_version=UNSIGNED, **config_kwargs)
             self.s3 = self.session.create_client('s3', config=conf, use_ssl=ssl,
                                         **self.client_kwargs)
         else:
-            conf = Config(connect_timeout=self.connect_timeout,
-                          read_timeout=self.read_timeout,
-                          **self.config_kwargs)
+            conf = Config(**config_kwargs)
             self.s3 = self.session.create_client('s3', aws_access_key_id=self.key, aws_secret_access_key=self.secret, aws_session_token=self.token, config=conf, use_ssl=ssl,
                                         **self.client_kwargs)
         return self.s3
@@ -382,6 +394,7 @@ class S3FileSystem(AbstractFileSystem):
                 raise translate_boto_error(e)
 
             self.dircache[path] = files
+            return files
         return self.dircache[path]
 
     def mkdir(self, path, acl="", **kwargs):
@@ -434,6 +447,7 @@ class S3FileSystem(AbstractFileSystem):
                 f['name'] = f['Name']
                 del f['Name']
             self.dircache[''] = files
+            return files
         return self.dircache['']
 
     def _ls(self, path, refresh=False):
