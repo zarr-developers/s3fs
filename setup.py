@@ -23,6 +23,6 @@ setup(name='s3fs',
       license='BSD',
       keywords='s3, boto',
       packages=['s3fs'],
-      python_requires='>= 3.5',
+      python_requires='>= 3.6',
       install_requires=[open('requirements.txt').read().strip().split('\n')],
       zip_safe=False)
