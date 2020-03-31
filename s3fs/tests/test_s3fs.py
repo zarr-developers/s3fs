@@ -1195,7 +1195,8 @@ def test_fsspec_versions_multiple(s3):
         with s3.open(versioned_file, 'wb') as fo:
             fo.write(contents)
         version_lookup[fo.version_id] = contents
-    urls = [f"s3://{versioned_file}?versionId={version}" for version in version_lookup.keys()]
+    urls = ["s3://{}?versionId={}".format(versioned_file, version)
+            for version in version_lookup.keys()]
     fs, token, paths = fsspec.core.get_fs_token_paths(urls)
     assert isinstance(fs, S3FileSystem)
     assert fs.version_aware
