@@ -1157,7 +1157,7 @@ def test_tags(s3):
     assert s3.get_tags(fname) == tagset
 
 
-@pytest.mark.skipif(py35)
+@pytest.mark.skipif(py35, reason='no versions on old moto for py36')
 def test_versions(s3):
     versioned_file = versioned_bucket_name + '/versioned_file'
     s3 = S3FileSystem(anon=False, version_aware=True)
@@ -1179,7 +1179,7 @@ def test_versions(s3):
         assert fo.read() == b'1'
 
 
-@pytest.mark.skipif(py35)
+@pytest.mark.skipif(py35, reason='no versions on old moto for py36')
 def test_list_versions_many(s3):
     # moto doesn't actually behave in the same way that s3 does here so this doesn't test
     # anything really in moto 1.2
@@ -1213,7 +1213,7 @@ def test_fsspec_versions_multiple(s3):
             assert contents == version_lookup[fo.version_id]
 
 
-@pytest.mark.skipif(py35)
+@pytest.mark.skipif(py35, reason='no versions on old moto for py36')
 def test_versioned_file_fullpath(s3):
     versioned_file = versioned_bucket_name + '/versioned_file_fullpath'
     s3 = S3FileSystem(anon=False, version_aware=True)
