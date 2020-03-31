@@ -62,7 +62,8 @@ def _coalesce_version_id(*args):
         version_ids.remove(None)
     if len(version_ids) > 1:
         raise ValueError(
-            f"Cannot coalesce version_ids where more than one are defined, {version_ids}")
+            "Cannot coalesce version_ids where more than one are defined,"
+            " {}".format(version_ids))
     elif len(version_ids) == 0:
         return None
     else:
@@ -513,6 +514,7 @@ class S3FileSystem(AbstractFileSystem):
         self.invalidate_cache(self._parent(path))
 
     def info(self, path, version_id=None, refresh=False):
+        path = self._strip_protocol(path)
         if path in ['/', '']:
             return {'name': path, 'size': 0, 'type': 'directory'}
         kwargs = self.kwargs.copy()
@@ -1025,7 +1027,7 @@ class S3FileSystem(AbstractFileSystem):
                 path = self._parent(path)
 
     def walk(self, path, maxdepth=None, **kwargs):
-        if path in ['', '*'] + [f'{p}://' for p in self.protocol]:
+        if path in ['', '*'] + ['{}://'.format(p) for p in self.protocol]:
             raise ValueError('Cannot crawl all of S3')
         return super().walk(path, maxdepth=maxdepth, **kwargs)
 

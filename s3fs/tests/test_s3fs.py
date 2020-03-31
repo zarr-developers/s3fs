@@ -5,6 +5,7 @@ import json
 from concurrent.futures import ProcessPoolExecutor
 import io
 import time
+import sys
 import pytest
 from itertools import chain
 import fsspec.core
@@ -46,6 +47,8 @@ a = test_bucket_name + '/tmp/test/a'
 b = test_bucket_name + '/tmp/test/b'
 c = test_bucket_name + '/tmp/test/c'
 d = test_bucket_name + '/tmp/test/d'
+py35 = sys.version_info.minor == 3.5
+
 
 @pytest.yield_fixture
 def s3():
@@ -573,8 +576,10 @@ def test_s3_glob(s3):
                for f in s3.glob(test_bucket_name + '/nested/*'))
     assert [test_bucket_name +
             '/nested/nested2'] == s3.glob(test_bucket_name + '/nested/nested2')
+    out = s3.glob(test_bucket_name + '/nested/nested2/*')
+    out = sorted(out) if py35 else out
     assert ['test/nested/nested2/file1',
-            'test/nested/nested2/file2'] == s3.glob(test_bucket_name + '/nested/nested2/*')
+            'test/nested/nested2/file2'] == out
 
     with pytest.raises(ValueError):
         s3.glob('*')
@@ -1152,6 +1157,7 @@ def test_tags(s3):
     assert s3.get_tags(fname) == tagset
 
 
+@pytest.mark.skipif(py35, reason='no versions on old moto for py36')
 def test_versions(s3):
     versioned_file = versioned_bucket_name + '/versioned_file'
     s3 = S3FileSystem(anon=False, version_aware=True)
@@ -1173,6 +1179,7 @@ def test_versions(s3):
         assert fo.read() == b'1'
 
 
+@pytest.mark.skipif(py35, reason='no versions on old moto for py36')
 def test_list_versions_many(s3):
     # moto doesn't actually behave in the same way that s3 does here so this doesn't test
     # anything really in moto 1.2
@@ -1195,7 +1202,8 @@ def test_fsspec_versions_multiple(s3):
         with s3.open(versioned_file, 'wb') as fo:
             fo.write(contents)
         version_lookup[fo.version_id] = contents
-    urls = [f"s3://{versioned_file}?versionId={version}" for version in version_lookup.keys()]
+    urls = ["s3://{}?versionId={}".format(versioned_file, version)
+            for version in version_lookup.keys()]
     fs, token, paths = fsspec.core.get_fs_token_paths(urls)
     assert isinstance(fs, S3FileSystem)
     assert fs.version_aware
@@ -1205,6 +1213,7 @@ def test_fsspec_versions_multiple(s3):
             assert contents == version_lookup[fo.version_id]
 
 
+@pytest.mark.skipif(py35, reason='no versions on old moto for py36')
 def test_versioned_file_fullpath(s3):
     versioned_file = versioned_bucket_name + '/versioned_file_fullpath'
     s3 = S3FileSystem(anon=False, version_aware=True)
@@ -1427,7 +1436,7 @@ def test_touch(s3):
 def test_seek_reads(s3):
     fn = test_bucket_name + "/myfile"
     with s3.open(fn, 'wb') as f:
-        f.write(b'a' * 175_627_146)
+        f.write(b'a' * 175627146)
     with s3.open(fn, 'rb', blocksize=100) as f:
         f.seek(175561610)
         d1 = f.read(65536)
