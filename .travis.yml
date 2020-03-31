@@ -21,7 +21,7 @@ install:
   - conda config --set always_yes yes --set changeps1 no
 
   # Install dependencies
-  - conda create -n test -y -c conda-forge python=$PYVER pip boto=2.49.0 moto>=1.3.12 pytest
+  - conda create -n test -y -c conda-forge python=$PYVER pip botocore moto>=1.3.12 pytest
   - source activate test
   - export BOTO_CONFIG=/dev/null
   - export AWS_ACCESS_KEY_ID=foobar_key
