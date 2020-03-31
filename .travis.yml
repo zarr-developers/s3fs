@@ -5,6 +5,8 @@ language: generic
 matrix:
   include:
     - env:
+      - PYVER=3.5
+    - env:
       - PYVER=3.6
     - env:
       - PYVER=3.7
