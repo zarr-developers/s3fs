@@ -85,8 +85,8 @@ class S3FileSystem(AbstractFileSystem):
     ----------
     anon : bool (False)
         Whether to use anonymous connection (public buckets only). If False,
-        uses the key/secret given, or boto's credential resolver (environment
-        variables, config files, EC2 IAM server, in that order)
+        uses the key/secret given, or boto's credential resolver (client_kwargs,
+        environment, variables, config files, EC2 IAM server, in that order)
     key : string (None)
         If not anonymous, use this access key ID, if specified
     secret : string (None)
@@ -95,7 +95,8 @@ class S3FileSystem(AbstractFileSystem):
         If not anonymous, use this security token, if specified
     use_ssl : bool (True)
         Whether to use SSL in connections to S3; may be faster without, but
-        insecure
+        insecure. If ``use_ssl`` is also set in ``client_kwargs``, 
+        the value set in ``client_kwargs`` will take priority.
     s3_additional_kwargs : dict of parameters that are used when calling s3 api
         methods. Typically used for things like "ServerSideEncryption".
     client_kwargs : dict of parameters for the botocore client
@@ -272,25 +273,33 @@ class S3FileSystem(AbstractFileSystem):
         if refresh is False:
             # back compat: we store whole FS instance now
             return self.s3
-        anon, key, secret, kwargs, ckwargs, token, ssl = (
-            self.anon, self.key, self.secret, self.kwargs,
-            self.client_kwargs, self.token, self.use_ssl)
 
         if not self.passed_in_session:
             self.session = botocore.session.Session(**self.kwargs)
 
         logger.debug("Setting up s3fs instance")
-
+        
+        client_kwargs = self.client_kwargs.copy()
+        init_kwargs = dict(aws_access_key_id=self.key, 
+                           aws_secret_access_key=self.secret,
+                           aws_session_token=self.token)
+        init_kwargs = {key: value for key, value in init_kwargs.items()
+                       if value is not None and value != client_kwargs.get(key)}
+        if "use_ssl" not in client_kwargs.keys():
+            init_kwargs["use_ssl"] = self.use_ssl
         config_kwargs = self._prepare_config_kwargs()
         if self.anon:
             from botocore import UNSIGNED
-            conf = Config(signature_version=UNSIGNED, **config_kwargs)
-            self.s3 = self.session.create_client('s3', config=conf, use_ssl=ssl,
-                                        **self.client_kwargs)
-        else:
-            conf = Config(**config_kwargs)
-            self.s3 = self.session.create_client('s3', aws_access_key_id=self.key, aws_secret_access_key=self.secret, aws_session_token=self.token, config=conf, use_ssl=ssl,
-                                        **self.client_kwargs)
+            drop_keys = {"aws_access_key_id", 
+                         "aws_secret_access_key", 
+                         "aws_session_token"}
+            init_kwargs = {key: value for key, value 
+                           in init_kwargs.items() if key not in drop_keys}
+            client_kwargs = {key: value for key, value 
+                             in client_kwargs.items() if key not in drop_keys}
+            config_kwargs["signature_version"] = UNSIGNED
+        conf = Config(**config_kwargs)
+        self.s3 = self.session.create_client('s3', config=conf, **init_kwargs, **self.client_kwargs)
         return self.s3
 
     def get_delegated_s3pars(self, exp=3600):

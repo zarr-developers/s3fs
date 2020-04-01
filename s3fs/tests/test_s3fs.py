@@ -47,7 +47,7 @@ a = test_bucket_name + '/tmp/test/a'
 b = test_bucket_name + '/tmp/test/b'
 c = test_bucket_name + '/tmp/test/c'
 d = test_bucket_name + '/tmp/test/d'
-py35 = sys.version_info.minor == 3.5
+py35 = sys.version_info[:2] == (3, 5)
 
 
 @pytest.yield_fixture
@@ -577,9 +577,8 @@ def test_s3_glob(s3):
     assert [test_bucket_name +
             '/nested/nested2'] == s3.glob(test_bucket_name + '/nested/nested2')
     out = s3.glob(test_bucket_name + '/nested/nested2/*')
-    out = sorted(out) if py35 else out
-    assert ['test/nested/nested2/file1',
-            'test/nested/nested2/file2'] == out
+    assert {'test/nested/nested2/file1',
+            'test/nested/nested2/file2'} == set(out)
 
     with pytest.raises(ValueError):
         s3.glob('*')
@@ -1475,3 +1474,29 @@ def test_requester_pays():
         s3.touch(fn)
         with s3.open(fn, "rb") as f:
             assert f.req_kw["RequestPayer"] == "requester"
+
+
+def test_credentials():
+    s3 = S3FileSystem(key='foo', secret='foo')
+    assert s3.s3._request_signer._credentials.access_key == 'foo'
+    assert s3.s3._request_signer._credentials.secret_key == 'foo'
+    s3 = S3FileSystem(client_kwargs={'aws_access_key_id': 'bar',
+                                     'aws_secret_access_key': 'bar'})
+    assert s3.s3._request_signer._credentials.access_key == 'bar'
+    assert s3.s3._request_signer._credentials.secret_key == 'bar'
+    s3 = S3FileSystem(key='foo',
+                      client_kwargs={'aws_secret_access_key': 'bar'})
+    assert s3.s3._request_signer._credentials.access_key == 'foo'
+    assert s3.s3._request_signer._credentials.secret_key == 'bar'
+    s3 = S3FileSystem(key='foobar',
+                      secret='foobar',
+                      client_kwargs={'aws_access_key_id': 'foobar',
+                                     'aws_secret_access_key': 'foobar'})
+    assert s3.s3._request_signer._credentials.access_key == 'foobar'
+    assert s3.s3._request_signer._credentials.secret_key == 'foobar'
+    with pytest.raises(TypeError) as excinfo:
+        s3 = S3FileSystem(key='foo',
+                          secret='foo',
+                          client_kwargs={'aws_access_key_id': 'bar',
+                                         'aws_secret_access_key': 'bar'})
+        assert 'multiple values for keyword argument' in str(excinfo.value)
