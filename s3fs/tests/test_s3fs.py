@@ -47,7 +47,7 @@ a = test_bucket_name + '/tmp/test/a'
 b = test_bucket_name + '/tmp/test/b'
 c = test_bucket_name + '/tmp/test/c'
 d = test_bucket_name + '/tmp/test/d'
-py35 = sys.version_info.minor == 3.5
+py35 = sys.version_info[:2] == (3, 5)
 
 
 @pytest.yield_fixture
