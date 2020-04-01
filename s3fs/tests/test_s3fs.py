@@ -563,6 +563,7 @@ def test_s3_ls_detail(s3):
     assert all(isinstance(item, dict) for item in L)
 
 
+@pytest.mark.skipif(py35, reason='odd sorting issue')
 def test_s3_glob(s3):
     fn = test_bucket_name + '/nested/file1'
     assert fn not in s3.glob(test_bucket_name + '/')
