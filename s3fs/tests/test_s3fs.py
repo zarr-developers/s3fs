@@ -1475,3 +1475,29 @@ def test_requester_pays():
         s3.touch(fn)
         with s3.open(fn, "rb") as f:
             assert f.req_kw["RequestPayer"] == "requester"
+
+
+def test_credentials():
+    s3 = S3FileSystem(key='foo', secret='foo')
+    assert s3.s3._request_signer._credentials.access_key == 'foo'
+    assert s3.s3._request_signer._credentials.secret_key == 'foo'
+    s3 = S3FileSystem(client_kwargs={'aws_access_key_id': 'bar',
+                                     'aws_secret_access_key': 'bar'})
+    assert s3.s3._request_signer._credentials.access_key == 'bar'
+    assert s3.s3._request_signer._credentials.secret_key == 'bar'
+    s3 = S3FileSystem(key='foo',
+                      client_kwargs={'aws_secret_access_key': 'bar'})
+    assert s3.s3._request_signer._credentials.access_key == 'foo'
+    assert s3.s3._request_signer._credentials.secret_key == 'bar'
+    s3 = S3FileSystem(key='foobar',
+                      secret='foobar',
+                      client_kwargs={'aws_access_key_id': 'foobar',
+                                     'aws_secret_access_key': 'foobar'})
+    assert s3.s3._request_signer._credentials.access_key == 'foobar'
+    assert s3.s3._request_signer._credentials.secret_key == 'foobar'
+    with pytest.raises(TypeError) as excinfo:
+        s3 = S3FileSystem(key='foo',
+                          secret='foo',
+                          client_kwargs={'aws_access_key_id': 'bar',
+                                         'aws_secret_access_key': 'bar'})
+        assert 'multiple values for keyword argument' in str(excinfo.value)
