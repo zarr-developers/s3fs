@@ -119,6 +119,26 @@ Furthermore, ``S3FileSystem.current()`` will return the most-recently created
 instance, so this method could be used in preference to the constructor in
 cases where the code must be agnostic of the credentials/config used.
 
+Self-hosted S3
+--------------
+
+To use ``s3fs`` against your self hosted S3-compatible storage, like `MinIO`_ or
+`Ceph Object Gateway`_, you can set your custom ``endpoint_url`` when creating
+the ``s3fs`` filesystem:
+
+.. code-block:: python
+
+   >>> s3 = s3fs.S3FileSystem(
+         anon=false,
+         client_kwargs={
+            'endpoint_url': 'https://...'
+         }
+      )
+
+
+.. _MinIO: https://min.io
+.. _Ceph Object Gateway: https://docs.ceph.com/docs/master/radosgw/
+
 Requester Pays Buckets
 ----------------------
 
