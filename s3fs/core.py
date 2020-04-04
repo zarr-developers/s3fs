@@ -1040,6 +1040,10 @@ class S3FileSystem(AbstractFileSystem):
             raise ValueError('Cannot crawl all of S3')
         return super().walk(path, maxdepth=maxdepth, **kwargs)
 
+    def modified(self, path, version_id=None, refresh=False):
+        info = self.info(path=path, version_id=version_id, refresh=refresh)
+        return info['LastModified'].replace(tzinfo=None)
+
 
 class S3File(AbstractBufferedFile):
     """

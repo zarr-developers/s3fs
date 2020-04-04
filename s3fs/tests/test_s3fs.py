@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import datetime
 from contextlib import contextmanager
 import errno
 import json
@@ -1500,3 +1501,9 @@ def test_credentials():
                           client_kwargs={'aws_access_key_id': 'bar',
                                          'aws_secret_access_key': 'bar'})
         assert 'multiple values for keyword argument' in str(excinfo.value)
+
+
+def test_modified(s3):
+    s3.touch(a)
+    modified = s3.modified(path=a)
+    assert isinstance(modified, datetime.datetime)
