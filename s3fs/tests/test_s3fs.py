@@ -227,6 +227,15 @@ def test_info(s3):
         s3.info(new_parent)
 
 
+def test_info_cached(s3):
+    path = test_bucket_name + '/tmp/'
+    fqpath = 's3://' + path
+    s3.touch(path + '/test')
+    info = s3.info(fqpath)
+    assert info == s3.info(fqpath)
+    assert info == s3.info(path)
+
+
 def test_checksum(s3):
     bucket = test_bucket_name
     d = "checksum"
