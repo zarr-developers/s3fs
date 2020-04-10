@@ -1504,6 +1504,20 @@ def test_credentials():
 
 
 def test_modified(s3):
-    s3.touch(a)
-    modified = s3.modified(path=a)
+    dir_path = test_bucket_name+'/modified'
+    file_path = dir_path + '/file'
+
+    # Test file
+    s3.touch(file_path)
+    modified = s3.modified(path=file_path)
     assert isinstance(modified, datetime.datetime)
+
+    # Test directory
+    modified = s3.modified(path=dir_path)
+    assert modified is None
+
+    # Test bucket
+    modified = s3.modified(path=test_bucket_name)
+    assert modified is None
+
+
