@@ -1041,6 +1041,7 @@ class S3FileSystem(AbstractFileSystem):
         return super().walk(path, maxdepth=maxdepth, **kwargs)
 
     def modified(self, path, version_id=None, refresh=False):
+        """Return the last modified timestamp of file at `path` as a datetime"""
         info = self.info(path=path, version_id=version_id, refresh=refresh)
         if 'LastModified' not in info:
             # This path is a bucket or folder, which do not currently have a modified date

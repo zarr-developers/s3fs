@@ -1519,5 +1519,3 @@ def test_modified(s3):
     # Test bucket
     modified = s3.modified(path=test_bucket_name)
     assert modified is None
-
-
