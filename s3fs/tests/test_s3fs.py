@@ -1513,9 +1513,9 @@ def test_modified(s3):
     assert isinstance(modified, datetime.datetime)
 
     # Test directory
-    modified = s3.modified(path=dir_path)
-    assert modified is None
+    with pytest.raises(IsADirectoryError):
+        modified = s3.modified(path=dir_path)
 
     # Test bucket
-    modified = s3.modified(path=test_bucket_name)
-    assert modified is None
+    with pytest.raises(IsADirectoryError):
+        modified = s3.modified(path=test_bucket_name)
