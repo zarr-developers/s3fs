@@ -1045,7 +1045,7 @@ class S3FileSystem(AbstractFileSystem):
         info = self.info(path=path, version_id=version_id, refresh=refresh)
         if 'LastModified' not in info:
             # This path is a bucket or folder, which do not currently have a modified date
-            return
+            raise IsADirectoryError
         return info['LastModified'].replace(tzinfo=None)
 
 
