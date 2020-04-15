@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import datetime
 from contextlib import contextmanager
 import errno
 import json
@@ -1509,3 +1510,21 @@ def test_credentials():
                           client_kwargs={'aws_access_key_id': 'bar',
                                          'aws_secret_access_key': 'bar'})
         assert 'multiple values for keyword argument' in str(excinfo.value)
+
+
+def test_modified(s3):
+    dir_path = test_bucket_name+'/modified'
+    file_path = dir_path + '/file'
+
+    # Test file
+    s3.touch(file_path)
+    modified = s3.modified(path=file_path)
+    assert isinstance(modified, datetime.datetime)
+
+    # Test directory
+    with pytest.raises(IsADirectoryError):
+        modified = s3.modified(path=dir_path)
+
+    # Test bucket
+    with pytest.raises(IsADirectoryError):
+        modified = s3.modified(path=test_bucket_name)
