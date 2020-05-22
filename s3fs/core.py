@@ -551,12 +551,38 @@ class S3FileSystem(AbstractFileSystem):
             except ClientError as e:
                 ee = translate_boto_error(e)
                 # This could have failed since the thing we are looking for is a prefix.
-                if isinstance(ee, FileNotFoundError):
-                    return super(S3FileSystem, self).info(path)
-                else:
+                if not isinstance(ee, FileNotFoundError):
                     raise ee
             except ParamValidationError as e:
                 raise ValueError('Failed to head path %r: %s' % (path, e))
+
+            # We could look for a prefix.
+            try:
+                out = self._call_s3(
+                    self.s3.list_objects_v2,
+                    kwargs,
+                    Bucket=bucket,
+                    Prefix=key.rstrip("/") + "/",
+                    Delimiter="/",
+                    MaxKeys=1,
+                    **self.req_kw
+                )
+                if out["KeyCount"] > 0:
+                    return {
+                        "Key": "/".join([bucket, key]),
+                        "name": "/".join([bucket, key]),
+                        "type": "directory",
+                        "Size": 0,
+                        "size": 0,
+                        "StorageClass": "DIRECTORY",
+                    }
+
+                raise FileNotFoundError(path)
+            except ClientError as e:
+                raise translate_boto_error(e)
+            except ParamValidationError as e:
+                raise ValueError("Failed to head path %r: %s" % (path, e))
+
         return super().info(path)
     
     def checksum(self, path, refresh=False):
