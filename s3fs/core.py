@@ -909,11 +909,11 @@ class S3FileSystem(AbstractFileSystem):
             self.s3.create_multipart_upload,
             Bucket=bucket, Key=key, **kwargs)
         parts = []
-        for i, offset in enumerate(range(0, size + 1, block)):
+        for i, offset in enumerate(range(0, size, block)):
             for attempt in range(self.retries + 1):
                 try:
                     brange = "bytes=%i-%i" % (
-                            offset, min(offset + block - 1, size))
+                            offset, min(offset + block - 1, size - 1))
                     out = self._call_s3(
                         self.s3.upload_part_copy,
                         Bucket=bucket,
