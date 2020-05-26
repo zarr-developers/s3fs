@@ -556,8 +556,9 @@ class S3FileSystem(AbstractFileSystem):
             except ParamValidationError as e:
                 raise ValueError('Failed to head path %r: %s' % (path, e))
 
-            # We could look for a prefix.
             try:
+                # We check to see if the path is a directory by attempting to list its
+                # contexts. If anything is found, it is indeed a directory
                 out = self._call_s3(
                     self.s3.list_objects_v2,
                     kwargs,
@@ -581,7 +582,7 @@ class S3FileSystem(AbstractFileSystem):
             except ClientError as e:
                 raise translate_boto_error(e)
             except ParamValidationError as e:
-                raise ValueError("Failed to head path %r: %s" % (path, e))
+                raise ValueError("Failed to list path %r: %s" % (path, e))
 
         return super().info(path)
     
