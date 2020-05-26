@@ -675,6 +675,12 @@ def test_copy(s3):
     assert s3.cat(fn) == s3.cat(fn + '2')
 
 
+def test_get_brange(s3):
+    assert list(s3._get_brange(100, 24)) == [(0, 23), (24, 47), (48, 71), (72, 95), (96, 99)]
+    assert list(s3._get_brange(100, 25)) == [(0, 24), (25, 49), (50, 74), (75, 99)]
+    assert list(s3._get_brange(100, 26)) == [(0, 25), (26, 51), (52, 77), (78, 99)]
+
+
 def test_copy_managed(s3):
     data = b'abc' * 12*2**20
     fn = test_bucket_name + '/test/biggerfile'

@@ -894,6 +894,13 @@ class S3FileSystem(AbstractFileSystem):
             raise ValueError('Copy failed (%r -> %r): %s' % (path1, path2, e))
         self.invalidate_cache(path2)
 
+
+    @staticmethod
+    def _get_brange(size, block):
+        for offset in range(0, size, block):
+            yield offset, min(offset + block - 1, size - 1)
+
+
     def copy_managed(self, path1, path2, block=5 * 2**30, **kwargs):
         """Copy file between locations on S3 as multi-part
 
@@ -909,11 +916,10 @@ class S3FileSystem(AbstractFileSystem):
             self.s3.create_multipart_upload,
             Bucket=bucket, Key=key, **kwargs)
         parts = []
-        for i, offset in enumerate(range(0, size, block)):
+        for i, (brange_first, brange_last) in enumerate(self._get_brange(size, block)):
             for attempt in range(self.retries + 1):
                 try:
-                    brange = "bytes=%i-%i" % (
-                            offset, min(offset + block - 1, size - 1))
+                    brange = "bytes=%i-%i" % (brange_first, brange_last)
                     out = self._call_s3(
                         self.s3.upload_part_copy,
                         Bucket=bucket,
