@@ -533,7 +533,8 @@ class S3FileSystem(AbstractFileSystem):
                                  "filesystem is not version aware")
         bucket, key, path_version_id = self.split_path(path)
         version_id = _coalesce_version_id(path_version_id, version_id)
-        if self.version_aware or (key and self._ls_from_cache(path) is None) or refresh:
+        should_fetch_from_s3 = (key and self._ls_from_cache(path) is None) or refresh
+        if self.version_aware or should_fetch_from_s3:
             try:
                 out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
                                     Key=key, **version_id_kw(version_id), **self.req_kw)
@@ -551,12 +552,40 @@ class S3FileSystem(AbstractFileSystem):
             except ClientError as e:
                 ee = translate_boto_error(e)
                 # This could have failed since the thing we are looking for is a prefix.
-                if isinstance(ee, FileNotFoundError):
-                    return super(S3FileSystem, self).info(path)
-                else:
+                if not isinstance(ee, FileNotFoundError):
                     raise ee
             except ParamValidationError as e:
                 raise ValueError('Failed to head path %r: %s' % (path, e))
+
+        if should_fetch_from_s3:
+            try:
+                # We check to see if the path is a directory by attempting to list its
+                # contexts. If anything is found, it is indeed a directory
+                out = self._call_s3(
+                    self.s3.list_objects_v2,
+                    kwargs,
+                    Bucket=bucket,
+                    Prefix=key.rstrip("/") + "/",
+                    Delimiter="/",
+                    MaxKeys=1,
+                    **self.req_kw
+                )
+                if out["KeyCount"] > 0:
+                    return {
+                        "Key": "/".join([bucket, key]),
+                        "name": "/".join([bucket, key]),
+                        "type": "directory",
+                        "Size": 0,
+                        "size": 0,
+                        "StorageClass": "DIRECTORY",
+                    }
+
+                raise FileNotFoundError(path)
+            except ClientError as e:
+                raise translate_boto_error(e)
+            except ParamValidationError as e:
+                raise ValueError("Failed to list path %r: %s" % (path, e))
+
         return super().info(path)
     
     def checksum(self, path, refresh=False):
