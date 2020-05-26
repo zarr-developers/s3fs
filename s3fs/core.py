@@ -17,7 +17,7 @@ from botocore.client import Config
 from botocore.exceptions import ClientError, ParamValidationError, BotoCoreError
 
 from s3fs.errors import translate_boto_error
-from s3fs.utils import ParamKwargsHelper
+from s3fs.utils import ParamKwargsHelper, _get_brange
 
 logger = logging.getLogger('s3fs')
 
@@ -895,12 +895,6 @@ class S3FileSystem(AbstractFileSystem):
         self.invalidate_cache(path2)
 
 
-    @staticmethod
-    def _get_brange(size, block):
-        for offset in range(0, size, block):
-            yield offset, min(offset + block - 1, size - 1)
-
-
     def copy_managed(self, path1, path2, block=5 * 2**30, **kwargs):
         """Copy file between locations on S3 as multi-part
 
@@ -916,7 +910,7 @@ class S3FileSystem(AbstractFileSystem):
             self.s3.create_multipart_upload,
             Bucket=bucket, Key=key, **kwargs)
         parts = []
-        for i, (brange_first, brange_last) in enumerate(self._get_brange(size, block)):
+        for i, (brange_first, brange_last) in enumerate(_get_brange(size, block)):
             for attempt in range(self.retries + 1):
                 try:
                     brange = "bytes=%i-%i" % (brange_first, brange_last)
