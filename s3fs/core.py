@@ -533,7 +533,8 @@ class S3FileSystem(AbstractFileSystem):
                                  "filesystem is not version aware")
         bucket, key, path_version_id = self.split_path(path)
         version_id = _coalesce_version_id(path_version_id, version_id)
-        if self.version_aware or (key and self._ls_from_cache(path) is None) or refresh:
+        should_fetch = (key and self._ls_from_cache(path) is None) or refresh
+        if self.version_aware or should_fetch:
             try:
                 out = self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
                                     Key=key, **version_id_kw(version_id), **self.req_kw)
@@ -556,6 +557,7 @@ class S3FileSystem(AbstractFileSystem):
             except ParamValidationError as e:
                 raise ValueError('Failed to head path %r: %s' % (path, e))
 
+        if should_fetch:
             try:
                 # We check to see if the path is a directory by attempting to list its
                 # contexts. If anything is found, it is indeed a directory
