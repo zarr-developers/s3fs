@@ -61,3 +61,16 @@ class SSEParams(object):
 
     def to_kwargs(self):
         return {k: v for k, v in self.__dict__.items() if v is not None}
+
+
+def _get_brange(size, block):
+    """
+    Chunk up a file into zero-based byte ranges
+
+    Parameters
+    ----------
+    size : file size
+    block : block size
+    """
+    for offset in range(0, size, block):
+        yield offset, min(offset + block - 1, size - 1)
