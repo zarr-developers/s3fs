@@ -773,7 +773,7 @@ def test_new_bucket(s3):
     assert s3.exists('new')
     with s3.open('new/temp', 'wb') as f:
         f.write(b'hello')
-    with expect_errno(errno.ENOTEMPTY):
+    with pytest.raises(OSError):
         s3.rmdir('new')
 
     s3.rm('new/temp')

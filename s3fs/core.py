@@ -414,7 +414,7 @@ class S3FileSystem(AbstractFileSystem):
 
     def mkdir(self, path, acl="", create_parents=True, **kwargs):
         path = self._strip_protocol(path).rstrip('/')
-        bucket, key = self.split_path(path)
+        bucket, key, _ = self.split_path(path)
         if not key or create_parents:
             if acl and acl not in buck_acls:
                 raise ValueError('ACL not in %s', buck_acls)
