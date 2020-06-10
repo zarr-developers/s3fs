@@ -412,13 +412,14 @@ class S3FileSystem(AbstractFileSystem):
             return files
         return self.dircache[path]
 
-    def mkdir(self, path, acl="", **kwargs):
+    def mkdir(self, path, acl="", create_parents=True, **kwargs):
         path = self._strip_protocol(path).rstrip('/')
-        if not self._parent(path):
+        bucket, key = self.split_path(path)
+        if not key or create_parents:
             if acl and acl not in buck_acls:
                 raise ValueError('ACL not in %s', buck_acls)
             try:
-                params = {"Bucket": path, 'ACL': acl}
+                params = {"Bucket": bucket, 'ACL': acl}
                 region_name = (kwargs.get("region_name", None) or
                                self.client_kwargs.get("region_name", None))
                 if region_name:
@@ -427,14 +428,16 @@ class S3FileSystem(AbstractFileSystem):
                     }
                 self.s3.create_bucket(**params)
                 self.invalidate_cache('')
-                self.invalidate_cache(path)
+                self.invalidate_cache(bucket)
             except ClientError as e:
                 raise translate_boto_error(e)
             except ParamValidationError as e:
-                raise ValueError('Bucket create failed %r: %s' % (path, e))
+                raise ValueError('Bucket create failed %r: %s' % (bucket, e))
 
     def rmdir(self, path):
         path = self._strip_protocol(path).rstrip('/')
+        if self.ls(path):
+            raise OSError("Directory is not empty")
         if not self._parent(path):
             try:
                 self.s3.delete_bucket(Bucket=path)
