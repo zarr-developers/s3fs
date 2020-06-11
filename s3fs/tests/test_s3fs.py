@@ -782,7 +782,7 @@ def test_new_bucket(s3):
     assert s3.exists('new')
     with s3.open('new/temp', 'wb') as f:
         f.write(b'hello')
-    with expect_errno(errno.ENOTEMPTY):
+    with pytest.raises(OSError):
         s3.rmdir('new')
 
     s3.rm('new/temp')
@@ -791,6 +791,21 @@ def test_new_bucket(s3):
     assert not s3.exists('new')
     with pytest.raises(FileNotFoundError):
         s3.ls('new')
+
+
+def test_new_bucket_auto(s3):
+    assert not s3.exists('new')
+    with pytest.raises(Exception):
+        s3.mkdir('new/other', create_parents=False)
+    s3.mkdir('new/other', create_parents=True)
+    assert s3.exists('new')
+    s3.touch('new/afile')
+    with pytest.raises(Exception):
+        s3.rm('new')
+    with pytest.raises(Exception):
+        s3.rmdir('new')
+    s3.rm('new', recursive=True)
+    assert not s3.exists('new')
 
 
 def test_dynamic_add_rm(s3):
