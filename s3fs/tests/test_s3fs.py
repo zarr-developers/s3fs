@@ -784,6 +784,21 @@ def test_new_bucket(s3):
         s3.ls('new')
 
 
+def test_new_bucket_auto(s3):
+    assert not s3.exists('new')
+    with pytest.raises(Exception):
+        s3.mkdir('new/other', create_parents=False)
+    s3.mkdir('new/other', create_parents=True)
+    assert s3.exists('new')
+    s3.touch('new/afile')
+    with pytest.raises(Exception):
+        s3.rm('new')
+    with pytest.raises(Exception):
+        s3.rmdir('new')
+    s3.rm('new', recursive=True)
+    assert not s3.exists('new')
+
+
 def test_dynamic_add_rm(s3):
     s3.mkdir('one')
     s3.mkdir('one/two')

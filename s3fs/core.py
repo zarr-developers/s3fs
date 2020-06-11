@@ -433,6 +433,8 @@ class S3FileSystem(AbstractFileSystem):
                 raise translate_boto_error(e)
             except ParamValidationError as e:
                 raise ValueError('Bucket create failed %r: %s' % (bucket, e))
+        elif not self.exists(bucket):
+            raise FileNotFoundError
 
     def rmdir(self, path):
         path = self._strip_protocol(path).rstrip('/')
