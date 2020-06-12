@@ -1293,7 +1293,7 @@ class S3File(AbstractBufferedFile):
                                      exc_info=True)
                     time.sleep(1.7**attempt * 0.1)
                 except Exception as exc:
-                    raise IOError('Write failed: %r' % exc)
+                    raise IOError('Write failed: %r' % exc) from exc
             else:
                 raise IOError('Write failed after %i retries' % self.retries)
 
@@ -1400,7 +1400,7 @@ def _fetch_range(client, bucket, key, version_id, start, end, max_attempts=10,
             if e.response['Error'].get('Code', 'Unknown') in ['416',
                                                               'InvalidRange']:
                 return b''
-            raise translate_boto_error(e)
+            raise translate_boto_error(e) from e
         except Exception as e:
             if 'time' in str(e).lower():  # Actual exception type changes often
                 continue
