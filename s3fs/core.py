@@ -95,7 +95,7 @@ class S3FileSystem(AbstractFileSystem):
         If not anonymous, use this security token, if specified
     use_ssl : bool (True)
         Whether to use SSL in connections to S3; may be faster without, but
-        insecure. If ``use_ssl`` is also set in ``client_kwargs``, 
+        insecure. If ``use_ssl`` is also set in ``client_kwargs``,
         the value set in ``client_kwargs`` will take priority.
     s3_additional_kwargs : dict of parameters that are used when calling s3 api
         methods. Typically used for things like "ServerSideEncryption".
@@ -278,9 +278,9 @@ class S3FileSystem(AbstractFileSystem):
             self.session = botocore.session.Session(**self.kwargs)
 
         logger.debug("Setting up s3fs instance")
-        
+
         client_kwargs = self.client_kwargs.copy()
-        init_kwargs = dict(aws_access_key_id=self.key, 
+        init_kwargs = dict(aws_access_key_id=self.key,
                            aws_secret_access_key=self.secret,
                            aws_session_token=self.token)
         init_kwargs = {key: value for key, value in init_kwargs.items()
@@ -290,12 +290,12 @@ class S3FileSystem(AbstractFileSystem):
         config_kwargs = self._prepare_config_kwargs()
         if self.anon:
             from botocore import UNSIGNED
-            drop_keys = {"aws_access_key_id", 
-                         "aws_secret_access_key", 
+            drop_keys = {"aws_access_key_id",
+                         "aws_secret_access_key",
                          "aws_session_token"}
-            init_kwargs = {key: value for key, value 
+            init_kwargs = {key: value for key, value
                            in init_kwargs.items() if key not in drop_keys}
-            client_kwargs = {key: value for key, value 
+            client_kwargs = {key: value for key, value
                              in client_kwargs.items() if key not in drop_keys}
             config_kwargs["signature_version"] = UNSIGNED
         conf = Config(**config_kwargs)
@@ -415,7 +415,7 @@ class S3FileSystem(AbstractFileSystem):
                     f['Key'] = '/'.join([bucket, f['Key']])
                     f['name'] = f['Key']
             except ClientError as e:
-                raise translate_boto_error(e)
+                raise translate_boto_error(e) from e
 
             self.dircache[path] = files
             return files
@@ -439,9 +439,9 @@ class S3FileSystem(AbstractFileSystem):
                 self.invalidate_cache('')
                 self.invalidate_cache(bucket)
             except ClientError as e:
-                raise translate_boto_error(e)
+                raise translate_boto_error(e) from e
             except ParamValidationError as e:
-                raise ValueError('Bucket create failed %r: %s' % (bucket, e))
+                raise ValueError('Bucket create failed %r: %s' % (bucket, e)) from e
         elif not self.exists(bucket):
             raise FileNotFoundError
 
@@ -453,7 +453,7 @@ class S3FileSystem(AbstractFileSystem):
             try:
                 self.s3.delete_bucket(Bucket=path)
             except ClientError as e:
-                raise translate_boto_error(e)
+                raise translate_boto_error(e) from e
             self.invalidate_cache(path)
             self.invalidate_cache('')
 
@@ -524,7 +524,7 @@ class S3FileSystem(AbstractFileSystem):
         try:
             self._call_s3(self.s3.put_object, kwargs, Bucket=bucket, Key=key)
         except ClientError as ex:
-            raise translate_boto_error(ex)
+            raise translate_boto_error(ex) from ex
         self.invalidate_cache(self._parent(path))
 
     def info(self, path, version_id=None, refresh=False):
@@ -558,9 +558,9 @@ class S3FileSystem(AbstractFileSystem):
                 ee = translate_boto_error(e)
                 # This could have failed since the thing we are looking for is a prefix.
                 if not isinstance(ee, FileNotFoundError):
-                    raise ee
+                    raise ee from e
             except ParamValidationError as e:
-                raise ValueError('Failed to head path %r: %s' % (path, e))
+                raise ValueError('Failed to head path %r: %s' % (path, e)) from e
 
         if should_fetch_from_s3:
             try:
@@ -587,12 +587,12 @@ class S3FileSystem(AbstractFileSystem):
 
                 raise FileNotFoundError(path)
             except ClientError as e:
-                raise translate_boto_error(e)
+                raise translate_boto_error(e) from e
             except ParamValidationError as e:
-                raise ValueError("Failed to list path %r: %s" % (path, e))
+                raise ValueError("Failed to list path %r: %s" % (path, e)) from e
 
         return super().info(path)
-    
+
     def checksum(self, path, refresh=False):
         """
         Unique value for current version of file
@@ -607,16 +607,16 @@ class S3FileSystem(AbstractFileSystem):
             path of file to get checksum for
         refresh : bool (=False)
             if False, look in local cache for file details first
-        
+
         """
 
         info = self.info(path, refresh=refresh)
-        
+
         if info["type"] != 'directory':
             return int(info["ETag"].strip('"'), 16)
         else:
             return int(tokenize(info), 16)
-        
+
 
     def isdir(self, path):
         path = self._strip_protocol(path).strip("/")
@@ -923,9 +923,9 @@ class S3FileSystem(AbstractFileSystem):
                 Bucket=buc2, Key=key2, CopySource=copy_src
             )
         except ClientError as e:
-            raise translate_boto_error(e)
+            raise translate_boto_error(e) from e
         except ParamValidationError as e:
-            raise ValueError('Copy failed (%r -> %r): %s' % (path1, path2, e))
+            raise ValueError('Copy failed (%r -> %r): %s' % (path1, path2, e)) from e
         self.invalidate_cache(path2)
 
 
@@ -963,7 +963,7 @@ class S3FileSystem(AbstractFileSystem):
                                      exc_info=True)
                     time.sleep(1.7 ** attempt * 0.1)
                 except Exception as exc:
-                    raise IOError('Write failed: %r' % exc)
+                    raise IOError('Write failed: %r' % exc) from exc
             parts.append({'PartNumber': i + 1,
                           'ETag': out['CopyPartResult']['ETag']})
         self._call_s3(
@@ -1015,7 +1015,7 @@ class S3FileSystem(AbstractFileSystem):
                 kwargs,
                 Bucket=bucket, Delete=delete_keys)
         except ClientError as e:
-            raise translate_boto_error(e)
+            raise translate_boto_error(e) from e
 
     def rm(self, path, recursive=False, **kwargs):
         """
@@ -1046,14 +1046,14 @@ class S3FileSystem(AbstractFileSystem):
                 self._call_s3(
                     self.s3.delete_object, kwargs, Bucket=bucket, Key=key)
             except ClientError as e:
-                raise translate_boto_error(e)
+                raise translate_boto_error(e) from e
             self.invalidate_cache(self._parent(path))
         else:
             if self.exists(bucket):
                 try:
                     self.s3.delete_bucket(Bucket=bucket)
                 except BotoCoreError as e:
-                    raise IOError('Delete bucket %r failed: %s' % (bucket, e))
+                    raise IOError('Delete bucket %r failed: %s' % (bucket, e)) from e
                 self.invalidate_cache(bucket)
                 self.invalidate_cache('')
             else:
@@ -1192,9 +1192,9 @@ class S3File(AbstractBufferedFile):
                 self.fs.s3.create_multipart_upload,
                 Bucket=self.bucket, Key=self.key, ACL=self.acl)
         except ClientError as e:
-            raise translate_boto_error(e)
+            raise translate_boto_error(e) from e
         except ParamValidationError as e:
-            raise ValueError('Initiating write to %r failed: %s' % (self.path, e))
+            raise ValueError('Initiating write to %r failed: %s' % (self.path, e)) from e
 
         if self.append_block:
             # use existing data in key when appending,
