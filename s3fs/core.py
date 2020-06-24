@@ -421,6 +421,9 @@ class S3FileSystem(AbstractFileSystem):
             return files
         return self.dircache[path]
 
+    def makedirs(self, path, exist_ok=False):
+        self.mkdir(path, create_parents=True)
+
     def mkdir(self, path, acl="", create_parents=True, **kwargs):
         path = self._strip_protocol(path).rstrip('/')
         bucket, key, _ = self.split_path(path)
