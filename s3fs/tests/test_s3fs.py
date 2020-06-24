@@ -474,13 +474,6 @@ def test_mkdir(s3):
     assert bucket in s3.ls('/')
 
 
-def test_makedirs(s3):
-    bucket = 'test_makedirs_bucket'
-    test_file = bucket + "/a/b/c/file"
-    s3.makedirs(test_file)
-    assert bucket in s3.ls('/')
-
-
 def test_mkdir_region_name(s3):
     bucket = 'test1_bucket'
     s3.mkdir(bucket, region_name="eu-central-1")
@@ -498,6 +491,13 @@ def test_mkdir_client_region_name():
         assert bucket in s3.ls('/')
     finally:
         m.stop()
+
+
+def test_makedirs(s3):
+    bucket = 'test_makedirs_bucket'
+    test_file = bucket + "/a/b/c/file"
+    s3.makedirs(test_file)
+    assert bucket in s3.ls('/')
 
 
 def test_bulk_delete(s3):
