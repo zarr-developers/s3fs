@@ -445,6 +445,9 @@ class S3FileSystem(AbstractFileSystem):
         elif not self.exists(bucket):
             raise FileNotFoundError
 
+    def makedirs(self, path, exist_ok=False):
+        self.mkdir(path, create_parents=True)
+
     def rmdir(self, path):
         path = self._strip_protocol(path).rstrip('/')
         if self.ls(path):

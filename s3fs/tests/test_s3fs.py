@@ -493,6 +493,13 @@ def test_mkdir_client_region_name():
         m.stop()
 
 
+def test_makedirs(s3):
+    bucket = 'test_makedirs_bucket'
+    test_file = bucket + "/a/b/c/file"
+    s3.makedirs(test_file)
+    assert bucket in s3.ls('/')
+
+
 def test_bulk_delete(s3):
     with pytest.raises(FileNotFoundError):
         s3.bulk_delete(['nonexistent/file'])
