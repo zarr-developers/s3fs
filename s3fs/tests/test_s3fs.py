@@ -275,6 +275,36 @@ def test_checksum(s3):
     client.delete_object(Bucket=bucket, Key=o1)
     with pytest.raises(FileNotFoundError):
         checksum = s3.checksum(o1, refresh=True)
+    
+    # Test multipart upload
+    upload_id = client.create_multipart_upload(
+        Bucket=bucket,
+        Key=o1,
+    )["UploadId"]
+    etag1 = client.upload_part(
+        Bucket=bucket,
+        Key=o1,
+        UploadId=upload_id,
+        PartNumber=1,
+        Body="0" * (5 * 1024 * 1024),
+    )['ETag']
+    etag2 = client.upload_part(
+        Bucket=bucket,
+        Key=o1,
+        UploadId=upload_id,
+        PartNumber=2,
+        Body="0",
+    )['ETag']
+    client.complete_multipart_upload(
+        Bucket=bucket,
+        Key=o1,
+        UploadId=upload_id,
+        MultipartUpload={'Parts': [
+            {'PartNumber': 1, 'ETag': etag1},
+            {'PartNumber': 2, 'ETag': etag2},
+        ]},
+    )
+    s3.checksum(path1, refresh=True)
         
 test_xattr_sample_metadata = {'test_xattr': '1'}
 
