@@ -546,7 +546,9 @@ class S3FileSystem(AsyncFileSystem):
             self.s3.get_object, Bucket=bucket, Key=key,
             **version_id_kw(version_id or vers),
         )
-        return await resp['Body'].read()
+        data = await resp['Body'].read()
+        resp['Body'].close()
+        return data
 
     async def _pipe_file(self, path, data, chunksize=50*2**20, **kwargs):
         bucket, key, _ = self.split_path(path)
@@ -1011,7 +1013,7 @@ class S3FileSystem(AsyncFileSystem):
             Key=key
         )
         # TODO: Make this support versions?
-        out = asyncio.gather(*[
+        out = await asyncio.gather(*[
             self._call_s3(self.s3.upload_part_copy, kwargs,
                           Bucket=bucket, Key=key, UploadId=mpu['UploadId'],
                           CopySource=f, PartNumber=i + 1)
@@ -1151,10 +1153,33 @@ class S3FileSystem(AsyncFileSystem):
         [(self.invalidate_cache(p), self.invalidate_cache(self._parent(p)))
          for p in paths]
 
-    async def _cat_file(self, path, **kwargs):
-        bucket, key, _ = self.split_path(path)
-        out = await self._call_s3(self.s3.get_object, Bucket=bucket, Key=key)
-        return await out['Body'].read()
+    async def _is_bucket_versioned(self, bucket):
+        return (await self._call_s3(
+            self.s3.get_bucket_versioning,
+            Bucket=bucket)).get('Status', "") == 'Enabled'
+
+    is_bucket_versioned = sync_wrapper(_is_bucket_versioned)
+
+    async def _rm_versioned_bucket_contents(self, bucket):
+        """Remove a versioned bucket and all contents"""
+        pag = self.s3.get_paginator('list_object_versions')
+        async for plist in pag.paginate(Bucket=bucket):
+            obs = plist.get('Versions', []) + plist.get('DeleteMarkers', [])
+            delete_keys = {'Objects': [{'Key': i['Key'], 'VersionId': i['VersionId']}
+                           for i in obs],
+                           'Quiet': True}
+            if obs:
+                await self._call_s3(
+                    self.s3.delete_objects,
+                    Bucket=bucket, Delete=delete_keys)
+
+    def rm(self, path, recursive=False, **kwargs):
+        if recursive and isinstance(path, str):
+            bucket, key, _ = self.split_path(path)
+            if not key and self.is_bucket_versioned(bucket):
+                # special path to completely remove versioned bucket
+                sync(self.loop, self._rm_versioned_bucket_contents, bucket)
+        super().rm(path, recursive=recursive, **kwargs)
 
     def invalidate_cache(self, path=None):
         if path is None:

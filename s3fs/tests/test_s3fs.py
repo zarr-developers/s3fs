@@ -52,7 +52,7 @@ port = 5555
 endpoint_uri = 'http://127.0.0.1:%s/' % port
 
 
-@pytest.yield_fixture(scope='module')
+@pytest.yield_fixture
 def s3_base():
     # writable local S3 system
     import shlex
@@ -123,9 +123,6 @@ def s3(s3_base):
     s3 = S3FileSystem(anon=False, client_kwargs={'endpoint_url': endpoint_uri})
     s3.invalidate_cache()
     yield s3
-    s3.rm(test_bucket_name, recursive=True)
-    s3.rm(versioned_bucket_name, recursive=True)
-    s3.clear_instance_cache()
 
 
 @contextmanager
@@ -741,8 +738,9 @@ def test_errors(s3):
     # with pytest.raises((IOError, OSError)):
     #    s3.touch('tmp/test/shfoshf/x')
 
-    with pytest.raises(FileNotFoundError):
-        s3.rm(test_bucket_name + '/tmp/test/shfoshf/x')
+    # Deleting nonexistent or zero paths is allowed for now
+    # with pytest.raises(FileNotFoundError):
+    #    s3.rm(test_bucket_name + '/tmp/test/shfoshf/x')
 
     with pytest.raises(FileNotFoundError):
         s3.mv(test_bucket_name + '/tmp/test/shfoshf/x', 'tmp/test/shfoshf/y')
@@ -1237,7 +1235,10 @@ def test_fsspec_versions_multiple(s3):
         version_lookup[fo.version_id] = contents
     urls = ["s3://{}?versionId={}".format(versioned_file, version)
             for version in version_lookup.keys()]
-    fs, token, paths = fsspec.core.get_fs_token_paths(urls)
+    fs, token, paths = fsspec.core.get_fs_token_paths(
+        urls,
+        storage_options=dict(client_kwargs={'endpoint_url': endpoint_uri})
+    )
     assert isinstance(fs, S3FileSystem)
     assert fs.version_aware
     for path in paths:
@@ -1457,7 +1458,7 @@ def test_seek_reads(s3):
         assert len(d3) == size
 
 
-def test_connect_many():
+def test_connect_many(s3):
     from multiprocessing.pool import ThreadPool
 
     def task(i):
@@ -1471,7 +1472,7 @@ def test_connect_many():
     pool.join()
 
 
-def test_requester_pays():
+def test_requester_pays(s3):
     fn = test_bucket_name + "/myfile"
     s3 = S3FileSystem(requester_pays=True, client_kwargs={'endpoint_url': endpoint_uri})
     assert s3.req_kw["RequestPayer"] == "requester"
