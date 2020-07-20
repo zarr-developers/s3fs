@@ -988,7 +988,7 @@ class S3FileSystem(AsyncFileSystem):
             the number of seconds this signature will be good for.
         """
         bucket, key, version_id = self.split_path(path)
-        return self.s3.generate_presigned_url(
+        return sync(self.loop, self.s3.generate_presigned_url,
             ClientMethod='get_object',
             Params=dict(Bucket=bucket, Key=key, **version_id_kw(version_id), **kwargs),
             ExpiresIn=expires)

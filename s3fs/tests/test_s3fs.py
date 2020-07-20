@@ -275,9 +275,9 @@ def test_checksum(s3):
     # Test for nonexistent file
     sync(s3.loop, client.put_object, Bucket=bucket, Key=o1, Body="bar")
     s3.ls(path1) # force caching
-    client.delete_object(Bucket=bucket, Key=o1)
+    sync(s3.loop, client.delete_object, Bucket=bucket, Key=o1)
     with pytest.raises(FileNotFoundError):
-        checksum = s3.checksum(o1, refresh=True)
+         s3.checksum(o1, refresh=True)
 
 
 # attrs should contain dashes, not underscores
@@ -631,7 +631,6 @@ def test_read_keys_from_bucket(s3):
                 s3.cat('s3://' + '/'.join([test_bucket_name, k])))
 
 
-@pytest.mark.xfail(reason="misbehaves in modern versions of moto?")
 def test_url(s3):
     fn = test_bucket_name + '/nested/file1'
     url = s3.url(fn, expires=100)
