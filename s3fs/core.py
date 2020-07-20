@@ -96,7 +96,7 @@ class S3FileSystem(AsyncFileSystem):
         If not anonymous, use this security token, if specified
     use_ssl : bool (True)
         Whether to use SSL in connections to S3; may be faster without, but
-        insecure. If ``use_ssl`` is also set in ``client_kwargs``, 
+        insecure. If ``use_ssl`` is also set in ``client_kwargs``,
         the value set in ``client_kwargs`` will take priority.
     s3_additional_kwargs : dict of parameters that are used when calling s3 api
         methods. Typically used for things like "ServerSideEncryption".
@@ -278,9 +278,9 @@ class S3FileSystem(AsyncFileSystem):
         Establish S3 connection object.
         """
         logger.debug("Setting up s3fs instance")
-        
+
         client_kwargs = self.client_kwargs.copy()
-        init_kwargs = dict(aws_access_key_id=self.key, 
+        init_kwargs = dict(aws_access_key_id=self.key,
                            aws_secret_access_key=self.secret,
                            aws_session_token=self.token)
         init_kwargs = {key: value for key, value in init_kwargs.items()
@@ -290,12 +290,12 @@ class S3FileSystem(AsyncFileSystem):
         config_kwargs = self._prepare_config_kwargs()
         if self.anon:
             from botocore import UNSIGNED
-            drop_keys = {"aws_access_key_id", 
-                         "aws_secret_access_key", 
+            drop_keys = {"aws_access_key_id",
+                         "aws_secret_access_key",
                          "aws_session_token"}
-            init_kwargs = {key: value for key, value 
+            init_kwargs = {key: value for key, value
                            in init_kwargs.items() if key not in drop_keys}
-            client_kwargs = {key: value for key, value 
+            client_kwargs = {key: value for key, value
                              in client_kwargs.items() if key not in drop_keys}
             config_kwargs["signature_version"] = UNSIGNED
         conf = AioConfig(**config_kwargs)
@@ -419,7 +419,7 @@ class S3FileSystem(AsyncFileSystem):
                     f['Key'] = '/'.join([bucket, f['Key']])
                     f['name'] = f['Key']
             except ClientError as e:
-                raise translate_boto_error(e)
+                raise translate_boto_error(e) from e
 
             self.dircache[path] = files
             return files
@@ -445,7 +445,7 @@ class S3FileSystem(AsyncFileSystem):
                 self.invalidate_cache('')
                 self.invalidate_cache(bucket)
             except ClientError as e:
-                raise translate_boto_error(e)
+                raise translate_boto_error(e) from e
             except ParamValidationError as e:
                 raise ValueError('Bucket create failed %r: %s' % (bucket, e))
         else:
@@ -453,6 +453,9 @@ class S3FileSystem(AsyncFileSystem):
             await self._ls(bucket)
 
     mkdir = sync_wrapper(_mkdir)
+
+    def makedirs(self, path, exist_ok=False):
+        self.mkdir(path, create_parents=True)
 
     async def _rmdir(self, path):
         try:
@@ -537,7 +540,7 @@ class S3FileSystem(AsyncFileSystem):
         try:
             self.call_s3(self.s3.put_object, kwargs, Bucket=bucket, Key=key)
         except ClientError as ex:
-            raise translate_boto_error(ex)
+            raise translate_boto_error(ex) from ex
         self.invalidate_cache(self._parent(path))
 
     async def _cat_file(self, path, version_id=None):
@@ -713,7 +716,7 @@ class S3FileSystem(AsyncFileSystem):
         if should_fetch_from_s3:
             return sync(self.loop, self._info, path, bucket, key, kwargs, version_id)
         return super().info(path)
-    
+
     def checksum(self, path, refresh=False):
         """
         Unique value for current version of file
@@ -728,11 +731,11 @@ class S3FileSystem(AsyncFileSystem):
             path of file to get checksum for
         refresh : bool (=False)
             if False, look in local cache for file details first
-        
+
         """
 
         info = self.info(path, refresh=refresh)
-        
+
         if info["type"] != 'directory':
             return int(info["ETag"].strip('"'), 16)
         else:
@@ -1048,9 +1051,9 @@ class S3FileSystem(AsyncFileSystem):
                 Bucket=buc2, Key=key2, CopySource=copy_src
             )
         except ClientError as e:
-            raise translate_boto_error(e)
+            raise translate_boto_error(e) from e
         except ParamValidationError as e:
-            raise ValueError('Copy failed (%r -> %r): %s' % (path1, path2, e))
+            raise ValueError('Copy failed (%r -> %r): %s' % (path1, path2, e)) from e
         self.invalidate_cache(path2)
 
     async def _copy_managed(self, path1, path2, size, block=5 * 2**30, **kwargs):
