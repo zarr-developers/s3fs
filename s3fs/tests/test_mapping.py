@@ -1,5 +1,5 @@
 import pytest
-from s3fs.tests.test_s3fs import s3, test_bucket_name
+from s3fs.tests.test_s3fs import s3_base, s3, test_bucket_name
 from s3fs import S3Map, S3FileSystem
 
 root = test_bucket_name + '/mapping'

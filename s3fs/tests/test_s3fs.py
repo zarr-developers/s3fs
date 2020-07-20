@@ -52,7 +52,7 @@ port = 5555
 endpoint_uri = 'http://127.0.0.1:%s/' % port
 
 
-@pytest.yield_fixture
+@pytest.fixture()
 def s3_base():
     # writable local S3 system
     import shlex
