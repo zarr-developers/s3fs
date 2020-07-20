@@ -737,7 +737,7 @@ class S3FileSystem(AsyncFileSystem):
         info = self.info(path, refresh=refresh)
 
         if info["type"] != 'directory':
-            return int(info["ETag"].strip('"'), 16)
+            return int(info["ETag"].strip('"').split('-')[0], 16)
         else:
             return int(tokenize(info), 16)
 

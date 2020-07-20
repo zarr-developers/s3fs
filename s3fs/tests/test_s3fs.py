@@ -277,10 +277,39 @@ def test_checksum(s3):
     s3.ls(path1) # force caching
     sync(s3.loop, client.delete_object, Bucket=bucket, Key=o1)
     with pytest.raises(FileNotFoundError):
-         s3.checksum(o1, refresh=True)
+        s3.checksum(o1, refresh=True)
+    
+    # Test multipart upload
+    upload_id = sync(s3.loop, client.create_multipart_upload,
+        Bucket=bucket,
+        Key=o1,
+    )["UploadId"]
+    etag1 = sync(s3.loop, client.upload_part,
+        Bucket=bucket,
+        Key=o1,
+        UploadId=upload_id,
+        PartNumber=1,
+        Body="0" * (5 * 1024 * 1024),
+    )['ETag']
+    etag2 = sync(s3.loop, client.upload_part,
+        Bucket=bucket,
+        Key=o1,
+        UploadId=upload_id,
+        PartNumber=2,
+        Body="0",
+    )['ETag']
+    sync(s3.loop, client.complete_multipart_upload,
+        Bucket=bucket,
+        Key=o1,
+        UploadId=upload_id,
+        MultipartUpload={'Parts': [
+            {'PartNumber': 1, 'ETag': etag1},
+            {'PartNumber': 2, 'ETag': etag2},
+        ]},
+    )
+    s3.checksum(path1, refresh=True)
 
 
-# attrs should contain dashes, not underscores
 test_xattr_sample_metadata = {'test_xattr': '1'}
 
 
