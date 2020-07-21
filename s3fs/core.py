@@ -183,7 +183,7 @@ class S3FileSystem(AsyncFileSystem):
             self.connect()
             weakref.finalize(self, sync, self.loop, self._s3.close)
         else:
-            self._s3
+            self._s3 = None
         self._kwargs_helper = ParamKwargsHelper(self.s3)
 
     @property
