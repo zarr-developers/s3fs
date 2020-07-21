@@ -205,8 +205,8 @@ class S3FileSystem(AsyncFileSystem):
             try:
                 return await method(**additional_kwargs)
             except S3_RETRYABLE_ERRORS as e:
-                err - e
-                time.sleep(1.7**i * 0.1)
+                err = e
+                await asyncio.sleep(min(1.7**i * 0.1, 15))
             except Exception as e:
                 err = e
                 break
@@ -430,7 +430,6 @@ class S3FileSystem(AsyncFileSystem):
         bucket, key, _ = self.split_path(path)
         if not key or create_parents:
             # catch error if creating existing bucket?
-            # catch error if creating existing bucket?async def
             if acl and acl not in buck_acls:
                 raise ValueError('ACL not in %s', buck_acls)
             try:
@@ -1135,7 +1134,8 @@ class S3FileSystem(AsyncFileSystem):
         if len(pathlist) > 1000:
             raise ValueError("Max number of files to delete in one call is 1000")
         delete_keys = {'Objects': [{'Key': self.split_path(path)[1]} for path
-                                   in pathlist]}
+                                   in pathlist],
+                       "Quiet": True}
         for path in pathlist:
             self.invalidate_cache(self._parent(path))
         await self._call_s3(
