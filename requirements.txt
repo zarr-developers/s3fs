@@ -1,2 +1,2 @@
-aiobotocore
+aiobotocore>=1.0.1
 fsspec>=0.7.4
