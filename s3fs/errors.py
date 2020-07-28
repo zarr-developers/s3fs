@@ -133,6 +133,9 @@ def translate_boto_error(error, message=None, *args, **kwargs):
     An instantiated exception ready to be thrown. If the error code isn't
     recognized, an IOError with the original error message is returned.
     """
+    if not hasattr(error, "response"):
+        # non-http error:
+        return error
     code = error.response['Error'].get('Code')
     constructor = ERROR_CODE_TO_EXCEPTION.get(code)
     if not constructor:
