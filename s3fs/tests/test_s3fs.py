@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 import datetime
 from contextlib import contextmanager
-import errno
 import json
 from concurrent.futures import ProcessPoolExecutor
 import io
+import requests
 import time
 import sys
 import pytest
@@ -12,10 +12,9 @@ from itertools import chain
 import fsspec.core
 from s3fs.core import S3FileSystem
 from s3fs.utils import ignoring, SSEParams
-import moto
-import botocore
 from unittest import mock
 from botocore.exceptions import NoCredentialsError
+from fsspec.asyn import sync
 
 test_bucket_name = 'test'
 secure_bucket_name = 'test-secure'
@@ -49,77 +48,81 @@ b = test_bucket_name + '/tmp/test/b'
 c = test_bucket_name + '/tmp/test/c'
 d = test_bucket_name + '/tmp/test/d'
 py35 = sys.version_info[:2] == (3, 5)
+port = 5555
+endpoint_uri = 'http://127.0.0.1:%s/' % port
 
 
-@pytest.yield_fixture
-def s3():
+@pytest.fixture()
+def s3_base():
     # writable local S3 system
-    with moto.mock_s3():
-        from botocore.session import Session
-        session = Session()
-        client = session.create_client('s3')
-        client.create_bucket(Bucket=test_bucket_name, ACL='public-read')
+    import shlex
+    import subprocess
 
-        client.create_bucket(
-            Bucket=versioned_bucket_name, ACL='public-read')
-        client.put_bucket_versioning(
-            Bucket=versioned_bucket_name,
-            VersioningConfiguration={
-                'Status': 'Enabled'
-            }
-        )
+    proc = subprocess.Popen(shlex.split("moto_server s3 -p %s" % port))
 
-        # initialize secure bucket
-        client.create_bucket(
-            Bucket=secure_bucket_name, ACL='public-read')
-        policy = json.dumps({
-            "Version": "2012-10-17",
-            "Id": "PutObjPolicy",
-            "Statement": [
-                {
-                    "Sid": "DenyUnEncryptedObjectUploads",
-                    "Effect": "Deny",
-                    "Principal": "*",
-                    "Action": "s3:PutObject",
-                    "Resource": "arn:aws:s3:::{bucket_name}/*".format(
-                        bucket_name=secure_bucket_name),
-                    "Condition": {
-                        "StringNotEquals": {
-                            "s3:x-amz-server-side-encryption": "aws:kms"
-                        }
+    timeout = 5
+    while timeout > 0:
+        try:
+            r = requests.get(endpoint_uri)
+            if r.ok:
+                break
+        except:
+            pass
+        timeout -= 0.1
+        time.sleep(0.1)
+    yield
+    proc.terminate()
+    proc.wait()
+
+
+@pytest.fixture()
+def s3(s3_base):
+    from botocore.session import Session
+    # NB: we use the sync botocore client for setup
+    session = Session()
+    client = session.create_client('s3', endpoint_url=endpoint_uri)
+    client.create_bucket(Bucket=test_bucket_name, ACL='public-read')
+
+    client.create_bucket(
+        Bucket=versioned_bucket_name, ACL='public-read')
+    client.put_bucket_versioning(
+        Bucket=versioned_bucket_name,
+        VersioningConfiguration={
+            'Status': 'Enabled'
+        }
+    )
+
+    # initialize secure bucket
+    client.create_bucket(
+        Bucket=secure_bucket_name, ACL='public-read')
+    policy = json.dumps({
+        "Version": "2012-10-17",
+        "Id": "PutObjPolicy",
+        "Statement": [
+            {
+                "Sid": "DenyUnEncryptedObjectUploads",
+                "Effect": "Deny",
+                "Principal": "*",
+                "Action": "s3:PutObject",
+                "Resource": "arn:aws:s3:::{bucket_name}/*".format(
+                    bucket_name=secure_bucket_name),
+                "Condition": {
+                    "StringNotEquals": {
+                        "s3:x-amz-server-side-encryption": "aws:kms"
                     }
                 }
-            ]
-        })
-        client.put_bucket_policy(Bucket=secure_bucket_name, Policy=policy)
+            }
+        ]
+    })
+    client.put_bucket_policy(Bucket=secure_bucket_name, Policy=policy)
+    for flist in [files, csv_files, text_files, glob_files]:
+        for f, data in flist.items():
+            client.put_object(Bucket=test_bucket_name, Key=f, Body=data)
 
-        for k in [a, b, c, d]:
-            try:
-                client.delete_object(Bucket=test_bucket_name, Key=k)
-            except:
-                pass
-        for flist in [files, csv_files, text_files, glob_files]:
-            for f, data in flist.items():
-                client.put_object(Bucket=test_bucket_name, Key=f, Body=data)
-        S3FileSystem.clear_instance_cache()
-        s3 = S3FileSystem(anon=False)
-        s3.invalidate_cache()
-        yield s3
-        for flist in [files, csv_files, text_files, glob_files]:
-            for f, data in flist.items():
-                try:
-                    client.delete_object(
-                        Bucket=test_bucket_name, Key=f, Body=data)
-                    client.delete_object(
-                        Bucket=secure_bucket_name, Key=f, Body=data)
-                except:
-                    pass
-        for k in [a, b, c, d]:
-            try:
-                client.delete_object(Bucket=test_bucket_name, Key=k)
-                client.delete_object(Bucket=secure_bucket_name, Key=k)
-            except:
-                pass
+    S3FileSystem.clear_instance_cache()
+    s3 = S3FileSystem(anon=False, client_kwargs={'endpoint_url': endpoint_uri})
+    s3.invalidate_cache()
+    yield s3
 
 
 @contextmanager
@@ -145,7 +148,8 @@ def test_simple(s3):
 @pytest.mark.parametrize('default_cache_type', ['none', 'bytes', 'mmap'])
 def test_default_cache_type(s3, default_cache_type):
     data = b'a' * (10 * 2 ** 20)
-    s3 = S3FileSystem(anon=False, default_cache_type=default_cache_type)
+    s3 = S3FileSystem(anon=False, default_cache_type=default_cache_type,
+                      client_kwargs={'endpoint_url': endpoint_uri})
 
     with s3.open(a, 'wb') as f:
         f.write(data)
@@ -158,7 +162,7 @@ def test_default_cache_type(s3, default_cache_type):
 
 
 def test_ssl_off():
-    s3 = S3FileSystem(use_ssl=False)
+    s3 = S3FileSystem(use_ssl=False, client_kwargs={'endpoint_url': endpoint_uri})
     assert s3.s3.meta.endpoint_url.startswith('http://')
 
 
@@ -168,14 +172,15 @@ def test_client_kwargs():
 
 
 def test_config_kwargs():
-    s3 = S3FileSystem(config_kwargs={'signature_version': 's3v4'})
-    assert s3.connect(refresh=True).meta.config.signature_version == 's3v4'
+    s3 = S3FileSystem(config_kwargs={'signature_version': 's3v4'},
+                      client_kwargs={'endpoint_url': endpoint_uri})
+    assert s3.connect().meta.config.signature_version == 's3v4'
 
 
 def test_config_kwargs_class_attributes_default():
-    s3 = S3FileSystem()
-    assert s3.connect(refresh=True).meta.config.connect_timeout == 5
-    assert s3.connect(refresh=True).meta.config.read_timeout == 15
+    s3 = S3FileSystem(client_kwargs={'endpoint_url': endpoint_uri})
+    assert s3.connect().meta.config.connect_timeout == 5
+    assert s3.connect().meta.config.read_timeout == 15
 
 
 def test_config_kwargs_class_attributes_override():
@@ -183,24 +188,22 @@ def test_config_kwargs_class_attributes_override():
         config_kwargs={
             "connect_timeout": 60,
             "read_timeout": 120,
-        }
+        },
+        client_kwargs={'endpoint_url': endpoint_uri}
     )
-    assert s3.connect(refresh=True).meta.config.connect_timeout == 60
-    assert s3.connect(refresh=True).meta.config.read_timeout == 120
+    assert s3.connect().meta.config.connect_timeout == 60
+    assert s3.connect().meta.config.read_timeout == 120
 
 
 def test_idempotent_connect(s3):
-    con1 = s3.connect()
-    con2 = s3.connect(refresh=False)
-    con3 = s3.connect(refresh=True)
-    assert con1 is con2
-    assert con1 is not con3
+    first = s3.s3
+    assert s3.connect() is not first
 
 
 def test_multiple_objects(s3):
     s3.connect()
-    assert s3.ls('test')
-    s32 = S3FileSystem(anon=False)
+    s3.ls('test')
+    s32 = S3FileSystem(anon=False, client_kwargs={'endpoint_url': endpoint_uri})
     assert s32.session
     assert s3.ls('test') == s32.ls('test')
 
@@ -231,7 +234,7 @@ def test_info(s3):
 def test_info_cached(s3):
     path = test_bucket_name + '/tmp/'
     fqpath = 's3://' + path
-    s3.touch(path + '/test')
+    s3.touch(path + 'test')
     info = s3.info(fqpath)
     assert info == s3.info(fqpath)
     assert info == s3.info(path)
@@ -246,56 +249,56 @@ def test_checksum(s3):
     path1 = bucket + "/" + o1
     path2 = bucket + "/" + o2
 
-    client=s3.s3
+    client = s3.s3
 
     # init client and files
-    client.put_object(Bucket=bucket, Key=o1, Body="")
-    client.put_object(Bucket=bucket, Key=o2, Body="")
+    sync(s3.loop, client.put_object, Bucket=bucket, Key=o1, Body="")
+    sync(s3.loop, client.put_object, Bucket=bucket, Key=o2, Body="")
 
     # change one file, using cache
-    client.put_object(Bucket=bucket, Key=o1, Body="foo")
+    sync(s3.loop, client.put_object, Bucket=bucket, Key=o1, Body="foo")
     checksum = s3.checksum(path1)
     s3.ls(path1) # force caching
-    client.put_object(Bucket=bucket, Key=o1, Body="bar")
+    sync(s3.loop, client.put_object, Bucket=bucket, Key=o1, Body="bar")
     # refresh == False => checksum doesn't change
     assert checksum == s3.checksum(path1)
 
     # change one file, without cache
-    client.put_object(Bucket=bucket, Key=o1, Body="foo")
+    sync(s3.loop, client.put_object, Bucket=bucket, Key=o1, Body="foo")
     checksum = s3.checksum(path1, refresh=True)
     s3.ls(path1) # force caching
-    client.put_object(Bucket=bucket, Key=o1, Body="bar")
+    sync(s3.loop, client.put_object, Bucket=bucket, Key=o1, Body="bar")
     # refresh == True => checksum changes
     assert checksum != s3.checksum(path1, refresh=True)
 
 
     # Test for nonexistent file
-    client.put_object(Bucket=bucket, Key=o1, Body="bar")
+    sync(s3.loop, client.put_object, Bucket=bucket, Key=o1, Body="bar")
     s3.ls(path1) # force caching
-    client.delete_object(Bucket=bucket, Key=o1)
+    sync(s3.loop, client.delete_object, Bucket=bucket, Key=o1)
     with pytest.raises(FileNotFoundError):
-        checksum = s3.checksum(o1, refresh=True)
+        s3.checksum(o1, refresh=True)
     
     # Test multipart upload
-    upload_id = client.create_multipart_upload(
+    upload_id = sync(s3.loop, client.create_multipart_upload,
         Bucket=bucket,
         Key=o1,
     )["UploadId"]
-    etag1 = client.upload_part(
+    etag1 = sync(s3.loop, client.upload_part,
         Bucket=bucket,
         Key=o1,
         UploadId=upload_id,
         PartNumber=1,
         Body="0" * (5 * 1024 * 1024),
     )['ETag']
-    etag2 = client.upload_part(
+    etag2 = sync(s3.loop, client.upload_part,
         Bucket=bucket,
         Key=o1,
         UploadId=upload_id,
         PartNumber=2,
         Body="0",
     )['ETag']
-    client.complete_multipart_upload(
+    sync(s3.loop, client.complete_multipart_upload,
         Bucket=bucket,
         Key=o1,
         UploadId=upload_id,
@@ -305,7 +308,8 @@ def test_checksum(s3):
         ]},
     )
     s3.checksum(path1, refresh=True)
-        
+
+
 test_xattr_sample_metadata = {'test_xattr': '1'}
 
 
@@ -316,24 +320,26 @@ def test_xattr(s3):
     public_read_acl = {'Permission': 'READ', 'Grantee': {
         'URI': 'http://acs.amazonaws.com/groups/global/AllUsers', 'Type': 'Group'}}
 
-    s3.s3.put_object(Bucket=bucket, Key=key,
-                     ACL='public-read',
-                     Metadata=test_xattr_sample_metadata,
-                     Body=body)
+    sync(s3.loop, s3.s3.put_object, Bucket=bucket, Key=key,
+         ACL='public-read',
+         Metadata=test_xattr_sample_metadata,
+         Body=body)
 
     # save etag for later
     etag = s3.info(filename)['ETag']
-    assert public_read_acl in s3.s3.get_object_acl(
-        Bucket=bucket, Key=key)['Grants']
+    assert public_read_acl in sync(
+        s3.loop, s3.s3.get_object_acl,
+        Bucket=bucket, Key=key
+    )['Grants']
 
     assert s3.getxattr(
         filename, 'test_xattr') == test_xattr_sample_metadata['test_xattr']
-    assert s3.metadata(filename) == test_xattr_sample_metadata
+    assert s3.metadata(filename) == {'test-xattr': '1'}  # note _ became -
 
     s3file = s3.open(filename)
     assert s3file.getxattr(
         'test_xattr') == test_xattr_sample_metadata['test_xattr']
-    assert s3file.metadata() == test_xattr_sample_metadata
+    assert s3file.metadata() == {'test-xattr': '1'}  # note _ became -
 
     s3file.setxattr(test_xattr='2')
     assert s3file.getxattr('test_xattr') == '2'
@@ -342,7 +348,7 @@ def test_xattr(s3):
     assert s3.cat(filename) == body
 
     # check that ACL and ETag are preserved after updating metadata
-    assert public_read_acl in s3.s3.get_object_acl(
+    assert public_read_acl in sync(s3.loop, s3.s3.get_object_acl,
         Bucket=bucket, Key=key)['Grants']
     assert s3.info(filename)['ETag'] == etag
 
@@ -358,16 +364,16 @@ def test_delegate(s3):
     out = s3.get_delegated_s3pars()
     assert out
     assert out['token']
-    s32 = S3FileSystem(**out)
+    s32 = S3FileSystem(client_kwargs={'endpoint_url': endpoint_uri}, **out)
     assert not s32.anon
     assert out == s32.get_delegated_s3pars()
 
 
 def test_not_delegate():
-    s3 = S3FileSystem(anon=True)
+    s3 = S3FileSystem(anon=True, client_kwargs={'endpoint_url': endpoint_uri})
     out = s3.get_delegated_s3pars()
     assert out == {'anon': True}
-    s3 = S3FileSystem(anon=False)  # auto credentials
+    s3 = S3FileSystem(anon=False, client_kwargs={'endpoint_url': endpoint_uri})  # auto credentials
     out = s3.get_delegated_s3pars()
     assert out == {'anon': False}
 
@@ -404,7 +410,8 @@ def test_exists_versioned(s3, version_aware):
     """Test to ensure that a prefix exists when using a versioned bucket"""
     import uuid
     n = 3
-    s3 = S3FileSystem(anon=False, version_aware=version_aware)
+    s3 = S3FileSystem(anon=False, version_aware=version_aware,
+                      client_kwargs={'endpoint_url': endpoint_uri})
     segments = [versioned_bucket_name] + [str(uuid.uuid4()) for _ in range(n)]
     path = '/'.join(segments)
     for i in range(2, n+1):
@@ -478,8 +485,9 @@ def test_rm(s3):
     assert s3.exists(a)
     s3.rm(a)
     assert not s3.exists(a)
-    with pytest.raises(FileNotFoundError):
-        s3.rm(test_bucket_name + '/nonexistent')
+    # the API is OK with deleting non-files; maybe this is an effect of using bulk
+    # with pytest.raises(FileNotFoundError):
+    #    s3.rm(test_bucket_name + '/nonexistent')
     with pytest.raises(FileNotFoundError):
         s3.rm('nonexistent')
     s3.rm(test_bucket_name + '/nested', recursive=True)
@@ -505,22 +513,18 @@ def test_mkdir(s3):
 
 
 def test_mkdir_region_name(s3):
-    bucket = 'test1_bucket'
+    bucket = 'test2_bucket'
     s3.mkdir(bucket, region_name="eu-central-1")
     assert bucket in s3.ls('/')
 
 
-def test_mkdir_client_region_name():
-    bucket = 'test1_bucket'
-    try:
-        m = moto.mock_s3()
-        m.start()
-        s3 = S3FileSystem(anon=False, client_kwargs={"region_name":
-                                                         "eu-central-1"})
-        s3.mkdir(bucket)
-        assert bucket in s3.ls('/')
-    finally:
-        m.stop()
+def test_mkdir_client_region_name(s3):
+    bucket = 'test3_bucket'
+    s3 = S3FileSystem(anon=False,
+                      client_kwargs={"region_name": "eu-central-1",
+                                     'endpoint_url': endpoint_uri})
+    s3.mkdir(bucket)
+    assert bucket in s3.ls('/')
 
 
 def test_makedirs(s3):
@@ -532,17 +536,16 @@ def test_makedirs(s3):
 
 def test_bulk_delete(s3):
     with pytest.raises(FileNotFoundError):
-        s3.bulk_delete(['nonexistent/file'])
-    with pytest.raises(ValueError):
-        s3.bulk_delete(['bucket1/file', 'bucket2/file'])
+        s3.rm(['nonexistent/file'])
     filelist = s3.find(test_bucket_name+'/nested')
-    s3.bulk_delete(filelist)
+    s3.rm(filelist)
     assert not s3.exists(test_bucket_name + '/nested/nested2/file1')
 
 
-def test_anonymous_access():
+@pytest.mark.xfail(reason="anon user is still priviliged on moto")
+def test_anonymous_access(s3):
     with ignoring(NoCredentialsError):
-        s3 = S3FileSystem(anon=True)
+        s3 = S3FileSystem(anon=True, client_kwargs={'endpoint_url': endpoint_uri})
         assert s3.ls('') == []
         # TODO: public bucket doesn't work through moto
 
@@ -573,7 +576,7 @@ def test_s3_file_info(s3):
 def test_bucket_exists(s3):
     assert s3.exists(test_bucket_name)
     assert not s3.exists(test_bucket_name + 'x')
-    s3 = S3FileSystem(anon=True)
+    s3 = S3FileSystem(anon=True, client_kwargs={'endpoint_url': endpoint_uri})
     assert s3.exists(test_bucket_name)
     assert not s3.exists(test_bucket_name + 'x')
 
@@ -657,7 +660,6 @@ def test_read_keys_from_bucket(s3):
                 s3.cat('s3://' + '/'.join([test_bucket_name, k])))
 
 
-@pytest.mark.xfail(reason="misbehaves in modern versions of moto?")
 def test_url(s3):
     fn = test_bucket_name + '/nested/file1'
     url = s3.url(fn, expires=100)
@@ -717,12 +719,12 @@ def test_copy_managed(s3):
     fn = test_bucket_name + '/test/biggerfile'
     with s3.open(fn, 'wb') as f:
         f.write(data)
-    s3.copy_managed(fn, fn + '2', block=5 * 2 ** 20)
+    sync(s3.loop, s3._copy_managed, fn, fn + '2', size=len(data), block=5 * 2 ** 20)
     assert s3.cat(fn) == s3.cat(fn + '2')
     with pytest.raises(ValueError):
-        s3.copy_managed(fn, fn + '3', block=4 * 2 ** 20)
+        sync(s3.loop, s3._copy_managed, fn, fn + '3', size=len(data), block=4 * 2 ** 20)
     with pytest.raises(ValueError):
-        s3.copy_managed(fn, fn + '3', block=6 * 2 ** 30)
+        sync(s3.loop, s3._copy_managed, fn, fn + '3', size=len(data), block=6 * 2 ** 30)
 
 
 def test_move(s3):
@@ -745,6 +747,24 @@ def test_get_put(s3, tmpdir):
     assert s3.cat(test_bucket_name + '/temp') == data
 
 
+def test_get_put_big(s3, tmpdir):
+    test_file = str(tmpdir.join('test'))
+    data = b'1234567890A' * 2**20
+    open(test_file, 'wb').write(data)
+
+    s3.put(test_file, test_bucket_name + '/bigfile')
+    test_file = str(tmpdir.join('test2'))
+    s3.get(test_bucket_name + '/bigfile', test_file)
+    assert open(test_file, 'rb').read() == data
+
+
+@pytest.mark.parametrize("size", [2**10, 2**20, 10*2**20])
+def test_pipe_cat_big(s3, size):
+    data = b'1234567890A' * size
+    s3.pipe(test_bucket_name + '/bigfile', data)
+    assert s3.cat(test_bucket_name + '/bigfile') == data
+
+
 def test_errors(s3):
     with pytest.raises(FileNotFoundError):
         s3.open(test_bucket_name + '/tmp/test/shfoshf', 'rb')
@@ -753,8 +773,9 @@ def test_errors(s3):
     # with pytest.raises((IOError, OSError)):
     #    s3.touch('tmp/test/shfoshf/x')
 
-    with pytest.raises(FileNotFoundError):
-        s3.rm(test_bucket_name + '/tmp/test/shfoshf/x')
+    # Deleting nonexistent or zero paths is allowed for now
+    # with pytest.raises(FileNotFoundError):
+    #    s3.rm(test_bucket_name + '/tmp/test/shfoshf/x')
 
     with pytest.raises(FileNotFoundError):
         s3.mv(test_bucket_name + '/tmp/test/shfoshf/x', 'tmp/test/shfoshf/y')
@@ -870,16 +891,10 @@ def test_write_large(s3):
     payload_size = int(2.5 * 5 * mb)
     payload = b'0' * payload_size
 
-    with s3.open(test_bucket_name + '/test', 'wb') as fd, \
-         mock.patch.object(s3, '_call_s3', side_effect=s3._call_s3) as s3_mock:
+    with s3.open(test_bucket_name + '/test', 'wb') as fd:
         fd.write(payload)
 
-    upload_parts = s3_mock.mock_calls[1:]
-    upload_sizes = [len(upload_part[2]['Body']) for upload_part in upload_parts]
-    assert upload_sizes == [5 * mb, int(7.5 * mb)]
-
     assert s3.cat(test_bucket_name + '/test') == payload
-
     assert s3.info(test_bucket_name + '/test')['Size'] == payload_size
 
 
@@ -887,19 +902,11 @@ def test_write_limit(s3):
     "flush() respects part_max when processing large singular payload"
     mb = 2 ** 20
     block_size = 15 * mb
-    part_max = 28 * mb
     payload_size = 44 * mb
     payload = b'0' * payload_size
 
-    with s3.open(test_bucket_name + '/test', 'wb') as fd, \
-         mock.patch('s3fs.core.S3File.part_max', new=part_max), \
-         mock.patch.object(s3, '_call_s3', side_effect=s3._call_s3) as s3_mock:
-        fd.blocksize = block_size
+    with s3.open(test_bucket_name + '/test', 'wb', blocksize=block_size) as fd:
         fd.write(payload)
-
-    upload_parts = s3_mock.mock_calls[1:]
-    upload_sizes = [len(upload_part[2]['Body']) for upload_part in upload_parts]
-    assert upload_sizes == [block_size, int(14.5 * mb), int(14.5 * mb)]
 
     assert s3.cat(test_bucket_name + '/test') == payload
 
@@ -915,15 +922,13 @@ def test_write_small_secure(s3):
     with s3.open(secure_bucket_name + '/test', 'wb', writer_kwargs=sse_params) as f:
         f.write(b'hello')
     assert s3.cat(secure_bucket_name + '/test') == b'hello'
-    head = s3.s3.head_object(Bucket=secure_bucket_name, Key='test')
+    sync(s3.loop, s3.s3.head_object, Bucket=secure_bucket_name, Key='test')
 
 
 def test_write_large_secure(s3):
-    s3_mock = moto.mock_s3()
-    s3_mock.start()
-
     # build our own s3fs with the relevant additional kwarg
-    s3 = S3FileSystem(s3_additional_kwargs={'ServerSideEncryption': 'AES256'})
+    s3 = S3FileSystem(s3_additional_kwargs={'ServerSideEncryption': 'AES256'},
+                      client_kwargs={'endpoint_url': endpoint_uri})
     s3.mkdir('mybucket')
 
     with s3.open('mybucket/myfile', 'wb') as f:
@@ -1109,7 +1114,7 @@ def test_bigger_than_block_read(s3):
 
 def test_current(s3):
     s3._cache.clear()
-    s3 = S3FileSystem()
+    s3 = S3FileSystem(client_kwargs={'endpoint_url': endpoint_uri})
     assert s3.current() is s3
     assert S3FileSystem.current() is s3
 
@@ -1140,33 +1145,29 @@ def test_no_connection_sharing_among_processes(s3):
 @pytest.mark.xfail()
 def test_public_file(s3):
     # works on real s3, not on moto
-    try:
-        test_bucket_name = 's3fs_public_test'
-        other_bucket_name = 's3fs_private_test'
+    test_bucket_name = 's3fs_public_test'
+    other_bucket_name = 's3fs_private_test'
 
-        s3.touch(test_bucket_name)
-        s3.touch(test_bucket_name + '/afile')
-        s3.touch(other_bucket_name, acl='public-read')
-        s3.touch(other_bucket_name + '/afile', acl='public-read')
+    s3.touch(test_bucket_name)
+    s3.touch(test_bucket_name + '/afile')
+    s3.touch(other_bucket_name, acl='public-read')
+    s3.touch(other_bucket_name + '/afile', acl='public-read')
 
-        s = S3FileSystem(anon=True)
-        with pytest.raises(PermissionError):
-            s.ls(test_bucket_name)
-        s.ls(other_bucket_name)
+    s = S3FileSystem(anon=True, client_kwargs={'endpoint_url': endpoint_uri})
+    with pytest.raises(PermissionError):
+        s.ls(test_bucket_name)
+    s.ls(other_bucket_name)
 
-        s3.chmod(test_bucket_name, acl='public-read')
-        s3.chmod(other_bucket_name, acl='private')
-        with pytest.raises(PermissionError):
-            s.ls(other_bucket_name, refresh=True)
-        assert s.ls(test_bucket_name, refresh=True)
+    s3.chmod(test_bucket_name, acl='public-read')
+    s3.chmod(other_bucket_name, acl='private')
+    with pytest.raises(PermissionError):
+        s.ls(other_bucket_name, refresh=True)
+    assert s.ls(test_bucket_name, refresh=True)
 
-        # public file in private bucket
-        with s3.open(other_bucket_name + '/see_me', 'wb', acl='public-read') as f:
-            f.write(b'hello')
-        assert s.cat(other_bucket_name + '/see_me') == b'hello'
-    finally:
-        s3.rm(test_bucket_name, recursive=True)
-        s3.rm(other_bucket_name, recursive=True)
+    # public file in private bucket
+    with s3.open(other_bucket_name + '/see_me', 'wb', acl='public-read') as f:
+        f.write(b'hello')
+    assert s.cat(other_bucket_name + '/see_me') == b'hello'
 
 
 def test_upload_with_s3fs_prefix(s3):
@@ -1194,7 +1195,8 @@ def test_multipart_upload_blocksize(s3):
 
 
 def test_default_pars(s3):
-    s3 = S3FileSystem(default_block_size=20, default_fill_cache=False)
+    s3 = S3FileSystem(default_block_size=20, default_fill_cache=False,
+                      client_kwargs={'endpoint_url': endpoint_uri})
     fn = test_bucket_name + '/' + list(files)[0]
     with s3.open(fn) as f:
         assert f.blocksize == 20
@@ -1221,7 +1223,8 @@ def test_tags(s3):
 @pytest.mark.skipif(py35, reason='no versions on old moto for py36')
 def test_versions(s3):
     versioned_file = versioned_bucket_name + '/versioned_file'
-    s3 = S3FileSystem(anon=False, version_aware=True)
+    s3 = S3FileSystem(anon=False, version_aware=True,
+                      client_kwargs={'endpoint_url': endpoint_uri})
     with s3.open(versioned_file, 'wb') as fo:
         fo.write(b'1')
     with s3.open(versioned_file, 'wb') as fo:
@@ -1244,7 +1247,8 @@ def test_versions(s3):
 def test_list_versions_many(s3):
     # moto doesn't actually behave in the same way that s3 does here so this doesn't test
     # anything really in moto 1.2
-    s3 = S3FileSystem(anon=False, version_aware=True)
+    s3 = S3FileSystem(anon=False, version_aware=True,
+                      client_kwargs={'endpoint_url': endpoint_uri})
     versioned_file = versioned_bucket_name + '/versioned_file2'
     for i in range(1200):
         with s3.open(versioned_file, 'wb') as fo:
@@ -1255,7 +1259,8 @@ def test_list_versions_many(s3):
 
 def test_fsspec_versions_multiple(s3):
     """Test that the standard fsspec.core.get_fs_token_paths behaves as expected for versionId urls"""
-    s3 = S3FileSystem(anon=False, version_aware=True)
+    s3 = S3FileSystem(anon=False, version_aware=True,
+                      client_kwargs={'endpoint_url': endpoint_uri})
     versioned_file = versioned_bucket_name + '/versioned_file3'
     version_lookup = {}
     for i in range(20):
@@ -1265,7 +1270,10 @@ def test_fsspec_versions_multiple(s3):
         version_lookup[fo.version_id] = contents
     urls = ["s3://{}?versionId={}".format(versioned_file, version)
             for version in version_lookup.keys()]
-    fs, token, paths = fsspec.core.get_fs_token_paths(urls)
+    fs, token, paths = fsspec.core.get_fs_token_paths(
+        urls,
+        storage_options=dict(client_kwargs={'endpoint_url': endpoint_uri})
+    )
     assert isinstance(fs, S3FileSystem)
     assert fs.version_aware
     for path in paths:
@@ -1277,7 +1285,7 @@ def test_fsspec_versions_multiple(s3):
 @pytest.mark.skipif(py35, reason='no versions on old moto for py36')
 def test_versioned_file_fullpath(s3):
     versioned_file = versioned_bucket_name + '/versioned_file_fullpath'
-    s3 = S3FileSystem(anon=False, version_aware=True)
+    s3 = S3FileSystem(anon=False, version_aware=True, client_kwargs={'endpoint_url': endpoint_uri})
     with s3.open(versioned_file, 'wb') as fo:
         fo.write(b'1')
     # moto doesn't correctly return a versionId for a multipart upload. So we resort to this.
@@ -1298,7 +1306,8 @@ def test_versioned_file_fullpath(s3):
 
 def test_versions_unaware(s3):
     versioned_file = versioned_bucket_name + '/versioned_file3'
-    s3 = S3FileSystem(anon=False, version_aware=False)
+    s3 = S3FileSystem(anon=False, version_aware=False,
+                      client_kwargs={'endpoint_url': endpoint_uri})
     with s3.open(versioned_file, 'wb') as fo:
         fo.write(b'1')
     with s3.open(versioned_file, 'wb') as fo:
@@ -1371,17 +1380,18 @@ def test_change_defaults_only_subsequent():
     try:
         S3FileSystem.cachable = False  # don't reuse instances with same pars
 
-        fs_default = S3FileSystem()
+        fs_default = S3FileSystem(client_kwargs={'endpoint_url': endpoint_uri})
         assert fs_default.default_block_size == 5 * (1024 ** 2)
 
-        fs_overridden = S3FileSystem(default_block_size=64 * (1024 ** 2))
+        fs_overridden = S3FileSystem(default_block_size=64 * (1024 ** 2),
+                                     client_kwargs={'endpoint_url': endpoint_uri})
         assert fs_overridden.default_block_size == 64 * (1024 ** 2)
 
         # Suppose I want all subsequent file systems to have a block size of 1 GiB
         # instead of 5 MiB:
         S3FileSystem.default_block_size = 1024 ** 3
 
-        fs_big = S3FileSystem()
+        fs_big = S3FileSystem(client_kwargs={'endpoint_url': endpoint_uri})
         assert fs_big.default_block_size == 1024 ** 3
 
         # Test the other file systems created to see if their block sizes changed
@@ -1390,36 +1400,6 @@ def test_change_defaults_only_subsequent():
     finally:
         S3FileSystem.default_block_size = 5 * (1024 ** 2)
         S3FileSystem.cachable = True
-
-
-def test_passed_in_session_set_correctly(s3):
-    session = botocore.session.Session()
-    s3 = S3FileSystem(session=session)
-    assert s3.passed_in_session is session
-    client = s3.connect()
-    assert s3.session is session
-
-
-def test_without_passed_in_session_set_unique(s3):
-    session = botocore.session.Session()
-    s3 = S3FileSystem()
-    assert s3.passed_in_session is None
-    client = s3.connect()
-    assert s3.session is not session
-
-
-def test_pickle_without_passed_in_session(s3):
-    import pickle
-    s3 = S3FileSystem()
-    pickle.dumps(s3)
-
-
-def test_pickle_with_passed_in_session(s3):
-    import pickle
-    session = botocore.session.Session()
-    s3 = S3FileSystem(session=session)
-    with pytest.raises((AttributeError, NotImplementedError, TypeError, pickle.PicklingError)):
-        pickle.dumps(s3)
 
 
 def test_cache_after_copy(s3):
@@ -1434,7 +1414,7 @@ def test_autocommit(s3):
     auto_file = test_bucket_name + '/auto_file'
     committed_file = test_bucket_name + '/commit_file'
     aborted_file = test_bucket_name + '/aborted_file'
-    s3 = S3FileSystem(anon=False, version_aware=True)
+    s3 = S3FileSystem(anon=False, version_aware=True, client_kwargs={'endpoint_url': endpoint_uri})
 
     def write_and_flush(path, autocommit):
         with s3.open(path, 'wb', autocommit=autocommit) as fo:
@@ -1513,11 +1493,11 @@ def test_seek_reads(s3):
         assert len(d3) == size
 
 
-def test_connect_many():
+def test_connect_many(s3):
     from multiprocessing.pool import ThreadPool
 
     def task(i):
-        S3FileSystem(anon=False).ls("")
+        S3FileSystem(anon=False, client_kwargs={'endpoint_url': endpoint_uri}).ls("")
         return True
 
     pool = ThreadPool(processes=20)
@@ -1527,40 +1507,43 @@ def test_connect_many():
     pool.join()
 
 
-def test_requester_pays():
+def test_requester_pays(s3):
     fn = test_bucket_name + "/myfile"
-    with moto.mock_s3():
-        s3 = S3FileSystem(requester_pays=True)
-        assert s3.req_kw["RequestPayer"] == "requester"
-        s3.mkdir(test_bucket_name)
-        s3.touch(fn)
-        with s3.open(fn, "rb") as f:
-            assert f.req_kw["RequestPayer"] == "requester"
+    s3 = S3FileSystem(requester_pays=True, client_kwargs={'endpoint_url': endpoint_uri})
+    assert s3.req_kw["RequestPayer"] == "requester"
+    s3.mkdir(test_bucket_name)
+    s3.touch(fn)
+    with s3.open(fn, "rb") as f:
+        assert f.req_kw["RequestPayer"] == "requester"
 
 
 def test_credentials():
-    s3 = S3FileSystem(key='foo', secret='foo')
+    s3 = S3FileSystem(key='foo', secret='foo', client_kwargs={'endpoint_url': endpoint_uri})
     assert s3.s3._request_signer._credentials.access_key == 'foo'
     assert s3.s3._request_signer._credentials.secret_key == 'foo'
     s3 = S3FileSystem(client_kwargs={'aws_access_key_id': 'bar',
-                                     'aws_secret_access_key': 'bar'})
+                                     'aws_secret_access_key': 'bar',
+                                     'endpoint_url': endpoint_uri})
     assert s3.s3._request_signer._credentials.access_key == 'bar'
     assert s3.s3._request_signer._credentials.secret_key == 'bar'
     s3 = S3FileSystem(key='foo',
-                      client_kwargs={'aws_secret_access_key': 'bar'})
+                      client_kwargs={'aws_secret_access_key': 'bar',
+                                     'endpoint_url': endpoint_uri})
     assert s3.s3._request_signer._credentials.access_key == 'foo'
     assert s3.s3._request_signer._credentials.secret_key == 'bar'
     s3 = S3FileSystem(key='foobar',
                       secret='foobar',
                       client_kwargs={'aws_access_key_id': 'foobar',
-                                     'aws_secret_access_key': 'foobar'})
+                                     'aws_secret_access_key': 'foobar',
+                                     'endpoint_url': endpoint_uri})
     assert s3.s3._request_signer._credentials.access_key == 'foobar'
     assert s3.s3._request_signer._credentials.secret_key == 'foobar'
     with pytest.raises(TypeError) as excinfo:
         s3 = S3FileSystem(key='foo',
                           secret='foo',
                           client_kwargs={'aws_access_key_id': 'bar',
-                                         'aws_secret_access_key': 'bar'})
+                                         'aws_secret_access_key': 'bar',
+                                         'endpoint_url': endpoint_uri})
         assert 'multiple values for keyword argument' in str(excinfo.value)
 
 
