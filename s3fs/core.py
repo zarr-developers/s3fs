@@ -166,6 +166,7 @@ class S3FileSystem(AsyncFileSystem):
         self.secret = secret
         self.token = token
         self.kwargs = kwargs
+        self.session = session
         super_kwargs = {k: kwargs.pop(k)
                         for k in ['use_listings_cache', 'listings_expiry_time', 'max_paths']
                         if k in kwargs}  # passed to fsspec superclass
