@@ -119,8 +119,9 @@ class S3FileSystem(AsyncFileSystem):
         objects.
     config_kwargs : dict of parameters passed to ``botocore.client.Config``
     kwargs : other parameters for core session
-    session : botocore Session object to be used for all connections.
+    session : aiobotocore AioSession object to be used for all connections.
          This session will be used inplace of creating a new session inside S3FileSystem.
+         For example: aiobotocore.AioSession(profile='test_user')
 
     The following parameters are passed on to fsspec:
 
@@ -165,6 +166,7 @@ class S3FileSystem(AsyncFileSystem):
         self.secret = secret
         self.token = token
         self.kwargs = kwargs
+        self.session = session
         super_kwargs = {k: kwargs.pop(k)
                         for k in ['use_listings_cache', 'listings_expiry_time', 'max_paths']
                         if k in kwargs}  # passed to fsspec superclass
@@ -299,7 +301,8 @@ class S3FileSystem(AsyncFileSystem):
                              in client_kwargs.items() if key not in drop_keys}
             config_kwargs["signature_version"] = UNSIGNED
         conf = AioConfig(**config_kwargs)
-        self.session = aiobotocore.get_session(**self.kwargs)
+        if self.session is None:
+            self.session = aiobotocore.get_session(**self.kwargs)
         s3creator = self.session.create_client('s3', config=conf, **init_kwargs, **client_kwargs)
         self._s3 = await s3creator.__aenter__()
         return self._s3
