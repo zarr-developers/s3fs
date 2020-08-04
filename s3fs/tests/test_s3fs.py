@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import asyncio
 import datetime
 from contextlib import contextmanager
 import json
@@ -1563,3 +1564,25 @@ def test_modified(s3):
     # Test bucket
     with pytest.raises(IsADirectoryError):
         modified = s3.modified(path=test_bucket_name)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 7), reason="no asyncio.run in py36")
+def test_async_s3(s3):
+    async def _():
+        s3 = S3FileSystem(anon=False,
+                          asynchronous=True,
+                          client_kwargs={"region_name": "eu-central-1",
+                                         "endpoint_url": endpoint_uri})
+
+        fn = test_bucket_name + "/nested/file1"
+        data = b"hello\n"
+
+        # Fails because client creation has not yet been awaited
+        with pytest.raises(RuntimeError):
+            await s3._cat_file(fn)
+
+        await s3.connect()  # creates client
+
+        assert await s3._cat_file(fn) == data
+
+    asyncio.run(_())
