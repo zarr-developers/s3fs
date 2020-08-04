@@ -186,7 +186,6 @@ class S3FileSystem(AsyncFileSystem):
             weakref.finalize(self, sync, self.loop, self._s3.close)
         else:
             self._s3 = None
-        self._kwargs_helper = ParamKwargsHelper(self.s3)
 
     @property
     def s3(self):
@@ -305,6 +304,7 @@ class S3FileSystem(AsyncFileSystem):
             self.session = aiobotocore.get_session(**self.kwargs)
         s3creator = self.session.create_client('s3', config=conf, **init_kwargs, **client_kwargs)
         self._s3 = await s3creator.__aenter__()
+        self._kwargs_helper = ParamKwargsHelper(self.s3)
         return self._s3
 
     connect = sync_wrapper(_connect)
