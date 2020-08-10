@@ -1,6 +1,12 @@
 Changelog
 =========
 
+Version 0.5.0
+-------------
+
+- Asynchronous filesystem based on ``aiobotocore``
+
+
 Version 0.4.0
 -------------
 
