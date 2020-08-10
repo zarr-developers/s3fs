@@ -66,6 +66,55 @@ smoothly with other projects that consume the file interface like ``gzip`` or
    ...     g = gzip.GzipFile(fileobj=f)  # Decompress data with gzip
    ...     df = pd.read_csv(g)           # Read CSV file with Pandas
 
+Integration
+-----------
+
+The libraries ``intake``, ``pandas`` and ``dask`` accept URLs with the prefix
+"s3://", and will use s3fs to complete the IO operation in question. The
+IO functions take an argument ``storage_options``, which will be passed
+to ``S3File3System``, for example:
+
+.. code-block:: python
+
+   df = pd.read_excel("s3://bucket/path/file.xls",
+                      storage_options={"anon": True})
+
+This gives the chance to pass any credentials or other necessary
+arguments needed to s3fs.
+
+
+Async
+-----
+
+``s3fs`` is implemented using ``aobotocore``, and offers async functionality.
+A number of methods of ``S3FileSystem`` are ``async``, for for each of these,
+there is also a synchronous version with the same name and lack of a `_`
+prefix.
+
+If you wish to call ``s3fs`` from async code, then you should pass
+``asynchronous=False, loop=`` to the constructor (the latter is optional,
+if you wish to use both async and sync methods). You must also explicitly
+await the client creation before making any S3 call.
+
+.. code-block:: python
+
+    loop = ...  # however you create your loop
+
+    async def run_program(loop):
+        s3 = S3FileSystem(..., asynchronous=True, loop=loop)
+        await s3._connect()
+        ...  # perform work
+
+    asyncio.run(run_program(loop))  # or call from your async code
+
+Concurrent async operations are also used internally for bulk operations
+such as ``pipe/cat``, ``get/put``, ``cp/mv/rm``. The async calls are
+hidden behind a synchronisation layer, so are designed to be called
+from normal code. If you are *not*
+using async-style programming, you do not need to know about how this
+works, but you might find the implementation interesting.
+
+
 Limitations
 -----------
 
