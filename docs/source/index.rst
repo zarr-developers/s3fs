@@ -69,7 +69,7 @@ smoothly with other projects that consume the file interface like ``gzip`` or
 Integration
 -----------
 
-The libraries ``pandas`` and ``dask`` accept URLs with the prefix
+The libraries ``intake``, ``pandas`` and ``dask`` accept URLs with the prefix
 "s3://", and will use s3fs to complete the IO operation in question. The
 IO functions take an argument ``storage_options``, which will be passed
 to ``S3File3System``, for example:
