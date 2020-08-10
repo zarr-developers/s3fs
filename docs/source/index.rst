@@ -86,9 +86,9 @@ arguments needed to s3fs.
 Async
 -----
 
-``s3fs`` is implemented using ``aobotocore``, and offers async functionality.
+``s3fs`` is implemented using ``aiobotocore``, and offers async functionality.
 A number of methods of ``S3FileSystem`` are ``async``, for for each of these,
-there is also a synchronous version with the same name and lack of a `_`
+there is also a synchronous version with the same name and lack of a ``_``
 prefix.
 
 If you wish to call ``s3fs`` from async code, then you should pass
