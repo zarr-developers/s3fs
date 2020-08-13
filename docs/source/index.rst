@@ -92,7 +92,7 @@ there is also a synchronous version with the same name and lack of a ``_``
 prefix.
 
 If you wish to call ``s3fs`` from async code, then you should pass
-``asynchronous=False, loop=`` to the constructor (the latter is optional,
+``asynchronous=True, loop=`` to the constructor (the latter is optional,
 if you wish to use both async and sync methods). You must also explicitly
 await the client creation before making any S3 call.
 
