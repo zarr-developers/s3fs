@@ -1209,13 +1209,9 @@ class S3FileSystem(AsyncFileSystem):
             # This path is a bucket or folder, which do not currently have a modified date
             raise IsADirectoryError
         return info['LastModified'].replace(tzinfo=None)
-    def sign(self, path, expiration=100):
-        import boto3
-        client = boto3.client('s3')
-        return client.generate_presigned_url('s3',
-                                             Params={'Bucket': host,
-                                                     'Key': path.partition(host)[-1]},
-                                             ExpiresIn=datetime.timedelta(minutes=5).seconds)
+
+    def sign(self, path, expiration=100, **kwargs):
+        return self.url(path, expires=expiration, **kwargs)
 
 
 class S3File(AbstractBufferedFile):
