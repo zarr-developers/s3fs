@@ -64,7 +64,6 @@ def test_complex_keys(s3):
 
     d['x', 1, 2] = b'hello world'
     assert d['x', 1, 2] == b'hello world'
-    print(list(d))
 
     assert ('x', 1, 2) in d
 
