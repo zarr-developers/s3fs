@@ -431,7 +431,7 @@ class S3FileSystem(AsyncFileSystem):
     async def _mkdir(self, path, acl="", create_parents=True, **kwargs):
         path = self._strip_protocol(path).rstrip('/')
         bucket, key, _ = self.split_path(path)
-        if not key or create_parents:
+        if not key or (create_parents and not await self.exists(bucket)):
             # catch error if creating existing bucket?
             if acl and acl not in buck_acls:
                 raise ValueError('ACL not in %s', buck_acls)
@@ -518,19 +518,32 @@ class S3FileSystem(AsyncFileSystem):
 
     ls = sync_wrapper(_ls)
 
-    def exists(self, path):
+    async def _exists(self, path):
         if path in ['', '/']:
             # the root always exists, even if anon
             return True
         bucket, key, version_id = self.split_path(path)
         if key:
-            return super().exists(path)
-        else:
             try:
-                self.ls(path)
+                if self._ls_from_cache(path):
+                    return True
+            except FileNotFoundError:
+                return False
+            try:
+                await self._info(path, bucket, key, version_id=version_id)
                 return True
             except FileNotFoundError:
                 return False
+        elif self.dircache.get(bucket, False):
+            return True
+        else:
+            try:
+                await self.s3.list_objects_v2(MaxKeys=1, Bucket=bucket, **self.req_kw)
+                return True
+            except Exception:
+                return False
+
+    exists = sync_wrapper(_exists)
 
     def touch(self, path, truncate=True, data=None, **kwargs):
         """Create empty file or truncate"""
@@ -654,7 +667,9 @@ class S3FileSystem(AsyncFileSystem):
                     break
                 f0.write(chunk)
 
-    async def _info(self, path, bucket, key, kwargs={}, version_id=None):
+    async def _info(self, path, bucket=None, key=None, kwargs={}, version_id=None):
+        if bucket is None:
+            bucket, key, version_id = self.split_path(path)
         try:
             out = await self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
                                       Key=key, **version_id_kw(version_id), **self.req_kw)

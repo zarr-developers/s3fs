@@ -1586,3 +1586,12 @@ def test_async_s3(s3):
         assert await s3._cat_file(fn) == data
 
     asyncio.run(_())
+
+
+def test_via_fsspec(s3):
+    import fsspec
+    s3.mkdir('mine')
+    with fsspec.open('mine/oi', "wb") as f:
+        f.write(b"hello")
+    with fsspec.open("mine/oi", 'rb') as f:
+        assert f.read() == b"hello"
