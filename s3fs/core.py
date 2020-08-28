@@ -211,8 +211,7 @@ class S3FileSystem(AsyncFileSystem):
             except Exception as e:
                 err = e
                 break
-        while "'coroutine'" in str(err):
-            print("COROUTINE!")
+        if "'coroutine'" in str(err):
             # aiobotocore internal error - fetch original botocore error
             tb = err.__traceback__
             while tb.tb_next:
