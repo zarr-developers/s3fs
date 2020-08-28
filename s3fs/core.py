@@ -211,7 +211,17 @@ class S3FileSystem(AsyncFileSystem):
             except Exception as e:
                 err = e
                 break
-        raise translate_boto_error(err)
+        while "'coroutine'" in str(err):
+            print("COROUTINE!")
+            # aiobotocore internal error - fetch original botocore error
+            tb = err.__traceback__
+            while tb.tb_next:
+                tb = tb.tb_next
+            try:
+                await tb.tb_frame.f_locals['response']
+            except Exception as e:
+                err = e
+        raise translate_boto_error(err) from err
 
     call_s3 = sync_wrapper(_call_s3)
 
@@ -301,7 +311,7 @@ class S3FileSystem(AsyncFileSystem):
             config_kwargs["signature_version"] = UNSIGNED
         conf = AioConfig(**config_kwargs)
         if self.session is None:
-            self.session = aiobotocore.get_session(**self.kwargs)
+            self.session = aiobotocore.AioSession(**self.kwargs)
         s3creator = self.session.create_client('s3', config=conf, **init_kwargs, **client_kwargs)
         self._s3 = await s3creator.__aenter__()
         self._kwargs_helper = ParamKwargsHelper(self.s3)
