@@ -1563,7 +1563,7 @@ def test_modified(s3):
 
     # Test bucket
     with pytest.raises(IsADirectoryError):
-        modified = s3.modified(path=test_bucket_name)
+        s3.modified(path=test_bucket_name)
 
 
 @pytest.mark.skipif(sys.version_info < (3, 7), reason="no asyncio.run in py36")
@@ -1584,6 +1584,8 @@ def test_async_s3(s3):
         await s3.connect()  # creates client
 
         assert await s3._cat_file(fn) == data
+
+        await s3._s3.close()
 
     asyncio.run(_())
 
