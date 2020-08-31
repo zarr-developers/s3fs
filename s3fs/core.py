@@ -206,9 +206,11 @@ class S3FileSystem(AsyncFileSystem):
             try:
                 return await method(**additional_kwargs)
             except S3_RETRYABLE_ERRORS as e:
+                logger.debug("Retryable error: %s" % e)
                 err = e
                 await asyncio.sleep(min(1.7**i * 0.1, 15))
             except Exception as e:
+                logger.debug("Nonretryable error: %s" % e)
                 err = e
                 break
         if "'coroutine'" in str(err):
