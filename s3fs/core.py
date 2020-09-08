@@ -446,7 +446,10 @@ class S3FileSystem(AsyncFileSystem):
             raise ValueError("Cannot traverse all of S3")
         out = await self._lsdir(path, delimiter="")
         if not out:
-            out = [await self._info(path)]
+            try:
+                out = [await self._info(path)]
+            except FileNotFoundError:
+                out = []
         if detail:
             return {o['name']: o for o in out}
         return [o['name'] for o in out]
