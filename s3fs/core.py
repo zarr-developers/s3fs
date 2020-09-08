@@ -404,17 +404,17 @@ class S3FileSystem(AsyncFileSystem):
                       s3_additional_kwargs=kw, cache_type=cache_type,
                       autocommit=autocommit, requester_pays=requester_pays)
 
-    async def _lsdir(self, path, refresh=False, max_items=None):
+    async def _lsdir(self, path, refresh=False, max_items=None, delimiter="/"):
         bucket, prefix, _ = self.split_path(path)
         prefix = prefix + '/' if prefix else ""
-        if path not in self.dircache or refresh:
+        if path not in self.dircache or refresh or delimiter is None:
             try:
                 logger.debug("Get directory listing page for %s" % path)
                 pag = self.s3.get_paginator('list_objects_v2')
                 config = {}
                 if max_items is not None:
                     config.update(MaxItems=max_items, PageSize=2 * max_items)
-                it = pag.paginate(Bucket=bucket, Prefix=prefix, Delimiter='/',
+                it = pag.paginate(Bucket=bucket, Prefix=prefix, Delimiter=delimiter,
                                   PaginationConfig=config, **self.req_kw)
                 files = []
                 dircache = []
@@ -435,9 +435,26 @@ class S3FileSystem(AsyncFileSystem):
             except ClientError as e:
                 raise translate_boto_error(e) from e
 
-            self.dircache[path] = files
+            if delimiter:
+                self.dircache[path] = files
             return files
         return self.dircache[path]
+
+    async def _find(self, path, maxdepth=None, withdirs=None, detail=False):
+        bucket, key, _ = self.split_path(path)
+        if not bucket:
+            raise ValueError("Cannot traverse all of S3")
+        out = await self._lsdir(path, delimiter="")
+        if not out and key:
+            try:
+                out = [await self._info(path)]
+            except FileNotFoundError:
+                out = []
+        if detail:
+            return {o['name']: o for o in out}
+        return [o['name'] for o in out]
+
+    find = sync_wrapper(_find)
 
     async def _mkdir(self, path, acl="", create_parents=True, **kwargs):
         path = self._strip_protocol(path).rstrip('/')
@@ -626,6 +643,9 @@ class S3FileSystem(AsyncFileSystem):
 
     async def _put_file(self, lpath, rpath, chunksize=50*2**20, **kwargs):
         bucket, key, _ = self.split_path(rpath)
+        if os.path.isdir(lpath) and key:
+            # don't make remote "directory"
+            return
         size = os.path.getsize(lpath)
         with open(lpath, 'rb') as f0:
             if size < 5 * 2**20:
