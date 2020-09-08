@@ -441,11 +441,11 @@ class S3FileSystem(AsyncFileSystem):
         return self.dircache[path]
 
     async def _find(self, path, maxdepth=None, withdirs=None, detail=False):
-        bucket, _, _ = self.split_path(path)
+        bucket, key, _ = self.split_path(path)
         if not bucket:
             raise ValueError("Cannot traverse all of S3")
         out = await self._lsdir(path, delimiter="")
-        if not out:
+        if not out and key:
             try:
                 out = [await self._info(path)]
             except FileNotFoundError:
