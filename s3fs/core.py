@@ -9,7 +9,7 @@ import weakref
 
 from fsspec.spec import AbstractBufferedFile
 from fsspec.utils import infer_storage_options, tokenize
-from fsspec.asyn import AsyncFileSystem, sync, sync_wrapper
+from fsspec.asyn import AsyncFileSystem, sync, sync_wrapper, maybe_sync
 
 import aiobotocore
 import botocore
@@ -767,7 +767,7 @@ class S3FileSystem(AsyncFileSystem):
         should_fetch_from_s3 = (key and self._ls_from_cache(path) is None) or refresh
 
         if should_fetch_from_s3:
-            return sync(self.loop, self._info, path, bucket, key, kwargs, version_id)
+            return maybe_sync(self._info, self, path, bucket, key, kwargs, version_id)
         return super().info(path)
 
     def checksum(self, path, refresh=False):
@@ -1541,4 +1541,4 @@ def _fetch_range(fs, bucket, key, version_id, start, end,
                       Range='bytes=%i-%i' % (start, end - 1),
                       **version_id_kw(version_id),
                       **req_kw)
-    return sync(fs.loop, resp['Body'].read)
+    return maybe_sync(resp['Body'].read, fs)

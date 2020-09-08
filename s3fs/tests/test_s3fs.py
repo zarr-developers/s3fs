@@ -1571,6 +1571,7 @@ def test_async_s3(s3):
     async def _():
         s3 = S3FileSystem(anon=False,
                           asynchronous=True,
+                          loop=asyncio.get_running_loop(),
                           client_kwargs={"region_name": "eu-central-1",
                                          "endpoint_url": endpoint_uri})
 
@@ -1581,9 +1582,12 @@ def test_async_s3(s3):
         with pytest.raises(RuntimeError):
             await s3._cat_file(fn)
 
-        await s3.connect()  # creates client
+        s3.connect()  # creates client
 
         assert await s3._cat_file(fn) == data
+
+        with s3.open(fn, 'rb') as f:
+            assert f.read() == data
 
         await s3._s3.close()
 
