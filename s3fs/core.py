@@ -443,7 +443,6 @@ class S3FileSystem(AsyncFileSystem):
         path = self._strip_protocol(path).rstrip('/')
         bucket, key, _ = self.split_path(path)
         if not key or (create_parents and not await self.exists(bucket)):
-            # catch error if creating existing bucket?
             if acl and acl not in buck_acls:
                 raise ValueError('ACL not in %s', buck_acls)
             try:
@@ -468,7 +467,13 @@ class S3FileSystem(AsyncFileSystem):
     mkdir = sync_wrapper(_mkdir)
 
     def makedirs(self, path, exist_ok=False):
-        self.mkdir(path, create_parents=True)
+        try:
+            self.mkdir(path, create_parents=True)
+        except FileExistsError:
+            if exist_ok:
+                pass
+            else:
+                raise
 
     async def _rmdir(self, path):
         try:
