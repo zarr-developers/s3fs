@@ -1261,6 +1261,9 @@ class S3FileSystem(AsyncFileSystem):
             raise IsADirectoryError
         return info['LastModified'].replace(tzinfo=None)
 
+    def sign(self, path, expiration=100, **kwargs):
+        return self.url(path, expires=expiration, **kwargs)
+
 
 class S3File(AbstractBufferedFile):
     """
