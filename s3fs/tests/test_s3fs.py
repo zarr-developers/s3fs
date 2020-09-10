@@ -1601,3 +1601,11 @@ def test_via_fsspec(s3):
         f.write(b"hello")
     with fsspec.open("mine/oi", 'rb') as f:
         assert f.read() == b"hello"
+
+
+def test_repeat_exists(s3):
+    fn = "s3://" + test_bucket_name + "/file1"
+    s3.touch(fn)
+
+    assert s3.exists(fn)
+    assert s3.exists(fn)
