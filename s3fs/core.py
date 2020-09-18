@@ -691,6 +691,8 @@ class S3FileSystem(AsyncFileSystem):
 
     async def _get_file(self, rpath, lpath, version_id=None):
         bucket, key, vers = self.split_path(rpath)
+        if os.path.isdir(lpath):
+            return
         resp = await self._call_s3(
             self.s3.get_object, Bucket=bucket, Key=key,
             **version_id_kw(version_id or vers),

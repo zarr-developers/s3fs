@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import json
 from concurrent.futures import ProcessPoolExecutor
 import io
+import os
 import requests
 import time
 import sys
@@ -13,7 +14,6 @@ from itertools import chain
 import fsspec.core
 from s3fs.core import S3FileSystem
 from s3fs.utils import ignoring, SSEParams
-from unittest import mock
 from botocore.exceptions import NoCredentialsError
 from fsspec.asyn import sync
 
@@ -1473,6 +1473,31 @@ def test_touch(s3):
     with pytest.raises(ValueError):
         s3.touch(fn, truncate=False)
     assert s3.size(fn) == 4
+
+
+def test_cat_missing(s3):
+    fn0 = test_bucket_name + "/file0"
+    fn1 = test_bucket_name + "/file1"
+    s3.touch(fn0)
+    with pytest.raises(FileNotFoundError):
+        s3.cat([fn0, fn1], on_error="raise")
+    out = s3.cat([fn0, fn1], on_error='omit')
+    assert list(out) == [fn0]
+    out = s3.cat([fn0, fn1], on_error='return')
+    assert fn1 in out
+    assert isinstance(out[fn1], FileNotFoundError)
+
+
+def test_get_directories(s3, tmpdir):
+    s3.touch(test_bucket_name + "/dir/dirkey/key0")
+    s3.touch(test_bucket_name + "/dir/dirkey/key1")
+    s3.touch(test_bucket_name + "/dir/dirkey")
+    s3.touch(test_bucket_name + "/dir/dir/key")
+    d = str(tmpdir)
+    s3.get(test_bucket_name + "/dir", d, recursive=True)
+    assert {'dirkey', 'dir'} == set(os.listdir(d))
+    assert ['key'] == os.listdir(os.path.join(d, 'dir'))
+    assert {'key0', 'key1'} == set(os.listdir(os.path.join(d, 'dirkey')))
 
 
 def test_seek_reads(s3):
