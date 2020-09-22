@@ -450,6 +450,22 @@ class S3FileSystem(AsyncFileSystem):
                 out = [await self._info(path)]
             except FileNotFoundError:
                 out = []
+        if withdirs:
+            dirs = []
+            sdirs = set()
+            for o in out:
+                par = self._parent(o['name'])
+                if par not in sdirs:
+                    sdirs.add(par)
+                    dirs.append(
+                        {'Key': self.split_path(par)[1], 'Size': 0, "name": par,
+                         'StorageClass': "DIRECTORY",
+                         'type': 'directory', 'size': 0}
+                    )
+                    self.dircache[par] = []
+                self.dircache[par].append(o)
+
+            out = sorted(out + dirs, key=lambda x: x["name"])
         if detail:
             return {o['name']: o for o in out}
         return [o['name'] for o in out]
