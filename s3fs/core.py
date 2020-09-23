@@ -407,7 +407,7 @@ class S3FileSystem(AsyncFileSystem):
     async def _lsdir(self, path, refresh=False, max_items=None, delimiter="/"):
         bucket, prefix, _ = self.split_path(path)
         prefix = prefix + '/' if prefix else ""
-        if path not in self.dircache or refresh or delimiter is None:
+        if path not in self.dircache or refresh or not delimiter:
             try:
                 logger.debug("Get directory listing page for %s" % path)
                 pag = self.s3.get_paginator('list_objects_v2')
@@ -444,27 +444,36 @@ class S3FileSystem(AsyncFileSystem):
         bucket, key, _ = self.split_path(path)
         if not bucket:
             raise ValueError("Cannot traverse all of S3")
+        # TODO: implement find from dircache, if all listings are present
+        # if refresh is False:
+        #     out = incomplete_tree_dirs(self.dircache, path)
+        #     if len(out) == 1:
+        #         await self._find(out[0])
+        #         return super().find(path)
+        #     elif len(out) == 0:
+        #         return super().find(path)
+        #     # else: we refresh anyway, having at least two missing trees
         out = await self._lsdir(path, delimiter="")
         if not out and key:
             try:
                 out = [await self._info(path)]
             except FileNotFoundError:
                 out = []
-        if withdirs:
-            dirs = []
-            sdirs = set()
-            for o in out:
-                par = self._parent(o['name'])
-                if par not in sdirs:
-                    sdirs.add(par)
-                    dirs.append(
-                        {'Key': self.split_path(par)[1], 'Size': 0, "name": par,
-                         'StorageClass': "DIRECTORY",
-                         'type': 'directory', 'size': 0}
-                    )
-                    self.dircache[par] = []
-                self.dircache[par].append(o)
+        dirs = []
+        sdirs = set()
+        for o in out:
+            par = self._parent(o['name'])
+            if par not in sdirs:
+                sdirs.add(par)
+                dirs.append(
+                    {'Key': self.split_path(par)[1], 'Size': 0, "name": par,
+                     'StorageClass': "DIRECTORY",
+                     'type': 'directory', 'size': 0}
+                )
+                self.dircache[par] = []
+            self.dircache[par].append(o)
 
+        if withdirs:
             out = sorted(out + dirs, key=lambda x: x["name"])
         if detail:
             return {o['name']: o for o in out}
