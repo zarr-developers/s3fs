@@ -1136,8 +1136,13 @@ def _get_s3_id(s3):
     return id(s3.s3)
 
 
-def test_no_connection_sharing_among_processes(s3):
-    executor = ProcessPoolExecutor()
+@pytest.mark.skipif(sys.version_info[:2] < (3, 7),
+                    reason="ctx method only >py37")
+@pytest.mark.parametrize("method", ["spawn", "forkserver"])
+def test_no_connection_sharing_among_processes(s3, method):
+    import multiprocessing as mp
+    ctx = mp.get_context(method)
+    executor = ProcessPoolExecutor(mp_context=ctx)
     conn_id = executor.submit(_get_s3_id, s3).result()
     assert id(s3.connect()) != conn_id, \
         "Processes should not share S3 connections."
