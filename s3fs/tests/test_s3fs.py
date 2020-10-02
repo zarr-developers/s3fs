@@ -1646,10 +1646,36 @@ def test_with_xzarr(s3):
     xr = pytest.importorskip("xarray")
     name = "sample"
 
-    nana = xr.DataArray(da.zeros((1023, 1023, 3)))
+    nana = xr.DataArray(da.random.random((1024, 1024, 10, 4, 1)))
 
     s3_path = f"{test_bucket_name}/{name}"
     s3store = s3.get_mapper(s3_path)
 
-    print("Storing")
+    s3.ls("")
     nana.to_dataset().to_zarr(store=s3store, mode="w", consolidated=True, compute=True)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 7), reason="no asyncio.run in py36")
+def test_async_close():
+    async def _():
+        loop = asyncio.get_event_loop()
+        s3 = S3FileSystem(anon=False,
+                          asynchronous=True,
+                          loop=loop,
+                          client_kwargs={"region_name": "eu-west-1"})
+        await s3._connect()
+
+        fn = test_bucket_name + "/afile"
+
+        async def async_wrapper():
+            coros = [asyncio.ensure_future(s3._get_file(fn, '/nonexistent/a/b/c'), loop=loop) for _ in range(3)]
+            completed, pending = await asyncio.wait(coros)
+            for future in completed:
+                with pytest.raises(OSError):
+                    future.result()
+
+        await asyncio.gather(*[async_wrapper() for __ in range(5)])
+
+        await s3._s3.close()
+
+    asyncio.run(_())

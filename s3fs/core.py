@@ -724,13 +724,16 @@ class S3FileSystem(AsyncFileSystem):
             self.s3.get_object, Bucket=bucket, Key=key,
             **version_id_kw(version_id or vers),
         )
-        with open(lpath, "wb") as f0:
-            body = resp['Body']
-            while True:
-                chunk = await body.read(2**16)
-                if not chunk:
-                    break
-                f0.write(chunk)
+        body = resp['Body']
+        try:
+            with open(lpath, "wb") as f0:
+                while True:
+                    chunk = await body.read(2**16)
+                    if not chunk:
+                        break
+                    f0.write(chunk)
+        finally:
+            body.close()
 
     async def _info(self, path, bucket=None, key=None, kwargs={}, version_id=None):
         if bucket is None:
