@@ -204,7 +204,9 @@ class S3FileSystem(AsyncFileSystem):
                                                        **kwargs)
         for i in range(self.retries):
             try:
-                return await method(**additional_kwargs)
+                out = await method(**additional_kwargs)
+                locals().pop("err", None)  # break cycle following retry
+                return out
             except S3_RETRYABLE_ERRORS as e:
                 logger.debug("Retryable error: %s" % e)
                 err = e

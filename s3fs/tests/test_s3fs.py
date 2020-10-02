@@ -1639,3 +1639,17 @@ def test_repeat_exists(s3):
 
     assert s3.exists(fn)
     assert s3.exists(fn)
+
+
+def test_with_xzarr(s3):
+    da = pytest.importorskip("dask.array")
+    xr = pytest.importorskip("xarray")
+    name = "sample"
+
+    nana = xr.DataArray(da.zeros((1023, 1023, 3)))
+
+    s3_path = f"{test_bucket_name}/{name}"
+    s3store = s3.get_mapper(s3_path)
+
+    print("Storing")
+    nana.to_dataset().to_zarr(store=s3store, mode="w", consolidated=True, compute=True)
