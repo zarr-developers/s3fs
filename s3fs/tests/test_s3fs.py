@@ -1646,7 +1646,7 @@ def test_with_xzarr(s3):
     xr = pytest.importorskip("xarray")
     name = "sample"
 
-    nana = xr.DataArray(da.random.random((1024, 1024, 10, 4, 1)))
+    nana = xr.DataArray(da.random.random((1024, 1024, 10, 9, 1)))
 
     s3_path = f"{test_bucket_name}/{name}"
     s3store = s3.get_mapper(s3_path)

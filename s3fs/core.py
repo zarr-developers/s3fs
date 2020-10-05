@@ -486,7 +486,7 @@ class S3FileSystem(AsyncFileSystem):
     async def _mkdir(self, path, acl="", create_parents=True, **kwargs):
         path = self._strip_protocol(path).rstrip('/')
         bucket, key, _ = self.split_path(path)
-        if not key or (create_parents and not self.exists(bucket)):
+        if not key or (create_parents and not await self._exists(bucket)):
             if acl and acl not in buck_acls:
                 raise ValueError('ACL not in %s', buck_acls)
             try:
@@ -595,6 +595,8 @@ class S3FileSystem(AsyncFileSystem):
             except FileNotFoundError:
                 return False
         elif self.dircache.get(bucket, False):
+            return True
+        elif self._ls_from_cache(bucket):
             return True
         else:
             try:
