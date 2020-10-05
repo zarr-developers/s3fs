@@ -887,7 +887,8 @@ class S3FileSystem(AsyncFileSystem):
             out = self.call_s3(self.s3.list_object_versions, kwargs,
                                Bucket=bucket, Prefix=key, **self.req_kw)
             versions.extend(out['Versions'])
-            kwargs['VersionIdMarker'] = out.get('NextVersionIdMarker', '')
+            kwargs.update({'VersionIdMarker': out.get('NextVersionIdMarker', ''),
+                           'KeyMarker': out.get('NextKeyMarker', '')})
         return versions
 
     _metadata_cache = {}
