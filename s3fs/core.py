@@ -596,9 +596,13 @@ class S3FileSystem(AsyncFileSystem):
                 return False
         elif self.dircache.get(bucket, False):
             return True
-        elif self._ls_from_cache(bucket):
-            return True
         else:
+            try:
+                if self._ls_from_cache(bucket):
+                    return True
+            except FileNotFoundError:
+                # might still be a bucket we can access but don't own
+                pass
             try:
                 await self.s3.list_objects_v2(MaxKeys=1, Bucket=bucket, **self.req_kw)
                 return True
