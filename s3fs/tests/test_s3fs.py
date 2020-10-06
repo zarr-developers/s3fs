@@ -1641,6 +1641,20 @@ def test_repeat_exists(s3):
     assert s3.exists(fn)
 
 
+def test_with_xzarr(s3):
+    da = pytest.importorskip("dask.array")
+    xr = pytest.importorskip("xarray")
+    name = "sample"
+
+    nana = xr.DataArray(da.random.random((1024, 1024, 10, 9, 1)))
+
+    s3_path = f"{test_bucket_name}/{name}"
+    s3store = s3.get_mapper(s3_path)
+
+    s3.ls("")
+    nana.to_dataset().to_zarr(store=s3store, mode="w", consolidated=True, compute=True)
+
+
 @pytest.mark.skipif(sys.version_info < (3, 7), reason="no asyncio.run in py36")
 def test_async_close():
     async def _():

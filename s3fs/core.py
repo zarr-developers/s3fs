@@ -204,7 +204,9 @@ class S3FileSystem(AsyncFileSystem):
                                                        **kwargs)
         for i in range(self.retries):
             try:
-                return await method(**additional_kwargs)
+                out = await method(**additional_kwargs)
+                locals().pop("err", None)  # break cycle following retry
+                return out
             except S3_RETRYABLE_ERRORS as e:
                 logger.debug("Retryable error: %s" % e)
                 err = e
@@ -484,7 +486,7 @@ class S3FileSystem(AsyncFileSystem):
     async def _mkdir(self, path, acl="", create_parents=True, **kwargs):
         path = self._strip_protocol(path).rstrip('/')
         bucket, key, _ = self.split_path(path)
-        if not key or (create_parents and not self.exists(bucket)):
+        if not key or (create_parents and not await self._exists(bucket)):
             if acl and acl not in buck_acls:
                 raise ValueError('ACL not in %s', buck_acls)
             try:
@@ -595,6 +597,12 @@ class S3FileSystem(AsyncFileSystem):
         elif self.dircache.get(bucket, False):
             return True
         else:
+            try:
+                if self._ls_from_cache(bucket):
+                    return True
+            except FileNotFoundError:
+                # might still be a bucket we can access but don't own
+                pass
             try:
                 await self.s3.list_objects_v2(MaxKeys=1, Bucket=bucket, **self.req_kw)
                 return True
