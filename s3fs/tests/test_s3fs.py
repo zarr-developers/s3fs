@@ -1661,20 +1661,20 @@ def test_async_close():
         loop = asyncio.get_event_loop()
         s3 = S3FileSystem(anon=False,
                           asynchronous=True,
-                          loop=loop,
-                          client_kwargs={"region_name": "eu-west-1"})
+                          loop=loop)
         await s3._connect()
 
         fn = test_bucket_name + "/afile"
 
         async def async_wrapper():
-            coros = [asyncio.ensure_future(s3._get_file(fn, '/nonexistent/a/b/c'), loop=loop) for _ in range(3)]
+            coros = [asyncio.ensure_future(s3._get_file(fn, '/nonexistent/a/b/c'), loop=loop)
+                     for _ in range(3)]
             completed, pending = await asyncio.wait(coros)
             for future in completed:
                 with pytest.raises(OSError):
                     future.result()
 
-        await asyncio.gather(*[async_wrapper() for __ in range(5)])
+        await asyncio.gather(*[async_wrapper() for __ in range(2)])
 
         await s3._s3.close()
 
