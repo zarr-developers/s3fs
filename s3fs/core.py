@@ -3,7 +3,6 @@ import asyncio
 import logging
 import os
 import socket
-import time
 from typing import Tuple, Optional
 import weakref
 
@@ -446,6 +445,9 @@ class S3FileSystem(AsyncFileSystem):
         bucket, key, _ = self.split_path(path)
         if not bucket:
             raise ValueError("Cannot traverse all of S3")
+        if maxdepth:
+            return super().find(bucket + "/" + key, maxdepth=maxdepth, withdirs=withdirs,
+                                detail=detail)
         # TODO: implement find from dircache, if all listings are present
         # if refresh is False:
         #     out = incomplete_tree_dirs(self.dircache, path)
@@ -481,7 +483,7 @@ class S3FileSystem(AsyncFileSystem):
             return {o['name']: o for o in out}
         return [o['name'] for o in out]
 
-    find = sync_wrapper(_find)
+    #find = sync_wrapper(_find)
 
     async def _mkdir(self, path, acl="", create_parents=True, **kwargs):
         path = self._strip_protocol(path).rstrip('/')

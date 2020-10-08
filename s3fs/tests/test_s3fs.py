@@ -1689,5 +1689,5 @@ def test_shallow_find(s3):
     ``ls``, without returning subdirectories.  See also issue 378.
     """
 
-    assert s3.ls(test_bucket_name) == s3.find(test_bucket_name, maxdepth=1)
+    assert s3.ls(test_bucket_name) == s3.find(test_bucket_name, maxdepth=1, withdirs=True)
     assert s3.ls(test_bucket_name) == s3.glob(test_bucket_name + "/*")
