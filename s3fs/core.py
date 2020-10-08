@@ -203,9 +203,7 @@ class S3FileSystem(AsyncFileSystem):
                                                        **kwargs)
         for i in range(self.retries):
             try:
-                out = await method(**additional_kwargs)
-                locals().pop("err", None)  # break cycle following retry
-                return out
+                return await method(**additional_kwargs)
             except S3_RETRYABLE_ERRORS as e:
                 logger.debug("Retryable error: %s" % e)
                 err = e
@@ -483,7 +481,7 @@ class S3FileSystem(AsyncFileSystem):
             return {o['name']: o for o in out}
         return [o['name'] for o in out]
 
-    #find = sync_wrapper(_find)
+    find = sync_wrapper(_find)
 
     async def _mkdir(self, path, acl="", create_parents=True, **kwargs):
         path = self._strip_protocol(path).rstrip('/')
@@ -857,7 +855,7 @@ class S3FileSystem(AsyncFileSystem):
             return False
 
         # This only returns things within the path and NOT the path object itself
-        return bool(sync(self.loop, self._lsdir, path))
+        return bool(maybe_sync(self._lsdir, self, path))
 
     def ls(self, path, detail=False, refresh=False, **kwargs):
         """ List single "directory" with or without details
@@ -875,9 +873,9 @@ class S3FileSystem(AsyncFileSystem):
             additional arguments passed on
         """
         path = self._strip_protocol(path).rstrip('/')
-        files = sync(self.loop, self._ls, path, refresh=refresh)
+        files = maybe_sync(self._ls, self, path, refresh=refresh)
         if not files:
-            files = sync(self.loop, self._ls, self._parent(path), refresh=refresh)
+            files = maybe_sync(self._ls, self, self._parent(path), refresh=refresh)
             files = [o for o in files if o['name'].rstrip('/') == path
                      and o['type'] != 'directory']
         if detail:
@@ -1082,7 +1080,7 @@ class S3FileSystem(AsyncFileSystem):
             the number of seconds this signature will be good for.
         """
         bucket, key, version_id = self.split_path(path)
-        return sync(self.loop, self.s3.generate_presigned_url,
+        return maybe_sync(self.s3.generate_presigned_url, self,
             ClientMethod='get_object',
             Params=dict(Bucket=bucket, Key=key, **version_id_kw(version_id), **kwargs),
             ExpiresIn=expires)
@@ -1276,7 +1274,7 @@ class S3FileSystem(AsyncFileSystem):
             bucket, key, _ = self.split_path(path)
             if not key and self.is_bucket_versioned(bucket):
                 # special path to completely remove versioned bucket
-                sync(self.loop, self._rm_versioned_bucket_contents, bucket)
+                maybe_sync(self._rm_versioned_bucket_contents, self, bucket)
         super().rm(path, recursive=recursive, **kwargs)
 
     def invalidate_cache(self, path=None):
