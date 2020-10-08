@@ -1679,3 +1679,15 @@ def test_async_close():
         await s3._s3.close()
 
     asyncio.run(_())
+
+
+def test_shallow_find(s3):
+    """Test that find method respects maxdepth.
+
+    Verify that the ``find`` method respects the ``maxdepth`` parameter.  With
+    ``maxdepth=1``, the results of ``find`` should be the same as those of
+    ``ls``, without returning subdirectories.  See also issue 378.
+    """
+
+    assert s3.ls(test_bucket_name) == s3.find(test_bucket_name, maxdepth=1)
+    assert s3.ls(test_bucket_name) == s3.glob(test_bucket_name + "/*")
