@@ -1377,8 +1377,8 @@ class S3File(AbstractBufferedFile):
                 # In this case we have not managed to get the VersionId out of details and
                 # we should invalidate the cache and perform a full head_object since it
                 # has likely been partially populated by ls.
-                self.fs.invalidate_cache(self.path)
-                self.details = s3.info(self.path)
+                s3.invalidate_cache(path)
+                self.details = s3.info(path)
                 self.version_id = self.details.get('VersionId')
         super().__init__(s3, path, mode, block_size, autocommit=autocommit,
                          cache_type=cache_type)
