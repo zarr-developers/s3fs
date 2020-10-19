@@ -1365,26 +1365,24 @@ class S3File(AbstractBufferedFile):
         self.fill_cache = fill_cache
         self.s3_additional_kwargs = s3_additional_kwargs or {}
         self.req_kw = {'RequestPayer': 'requester'} if requester_pays else {}
-        super().__init__(s3, path, mode, block_size, autocommit=autocommit,
-                         cache_type=cache_type)
-        self.s3 = self.fs  # compatibility
-        if self.writable():
+        if 'r' not in mode:
             if block_size < 5 * 2 ** 20:
                 raise ValueError('Block size must be >=5MB')
         else:
-            if version_id and self.fs.version_aware:
+            if version_id and s3.version_aware:
                 self.version_id = version_id
-                self.details = self.fs.info(self.path, version_id=version_id)
+                self.details = s3.info(path, version_id=version_id)
                 self.size = self.details['size']
-            elif self.fs.version_aware:
-                self.version_id = self.details.get('VersionId')
+            elif s3.version_aware:
                 # In this case we have not managed to get the VersionId out of details and
                 # we should invalidate the cache and perform a full head_object since it
                 # has likely been partially populated by ls.
-                if self.version_id is None:
-                    self.fs.invalidate_cache(self.path)
-                    self.details = self.fs.info(self.path)
-                    self.version_id = self.details.get('VersionId')
+                self.fs.invalidate_cache(self.path)
+                self.details = s3.info(self.path)
+                self.version_id = self.details.get('VersionId')
+        super().__init__(s3, path, mode, block_size, autocommit=autocommit,
+                         cache_type=cache_type)
+        self.s3 = self.fs  # compatibility
 
         # when not using autocommit we want to have transactional state to manage
         self.append_block = False
