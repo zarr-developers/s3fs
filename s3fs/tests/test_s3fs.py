@@ -1691,3 +1691,25 @@ def test_shallow_find(s3):
 
     assert s3.ls(test_bucket_name) == s3.find(test_bucket_name, maxdepth=1, withdirs=True)
     assert s3.ls(test_bucket_name) == s3.glob(test_bucket_name + "/*")
+
+
+def test_version_sizes(s3):
+    # protect against caching of incorrect version details
+    s3 = S3FileSystem(anon=False, version_aware=True,
+                      client_kwargs={'endpoint_url': endpoint_uri})
+    import gzip
+    path = f"s3://{versioned_bucket_name}/test.txt.gz"
+    versions = [
+        s3.pipe_file(path, gzip.compress(text))
+        for text in (
+            b'good morning!',
+            b'hello!',
+            b'hi!',
+            b'hello!',
+        )
+    ]
+    for version in versions:
+        version_id = version['VersionId']
+        with s3.open(path, version_id=version_id) as f:
+            with gzip.open(f) as zfp:
+                zfp.read()
