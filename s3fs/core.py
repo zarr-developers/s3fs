@@ -21,13 +21,18 @@ from s3fs.utils import ParamKwargsHelper, _get_brange
 
 logger = logging.getLogger('s3fs')
 
-if "S3FS_LOGGING_LEVEL" in os.environ:
+
+def setup_logging(level=None):
     handle = logging.StreamHandler()
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s '
                                   '- %(message)s')
     handle.setFormatter(formatter)
     logger.addHandler(handle)
-    logger.setLevel(os.environ["S3FS_LOGGING_LEVEL"])
+    logger.setLevel(level or os.environ["S3FS_LOGGING_LEVEL"])
+
+
+if "S3FS_LOGGING_LEVEL" in os.environ:
+    setup_logging()
 
 S3_RETRYABLE_ERRORS = (
     socket.timeout,
@@ -624,11 +629,17 @@ class S3FileSystem(AsyncFileSystem):
             raise translate_boto_error(ex) from ex
         self.invalidate_cache(self._parent(path))
 
-    async def _cat_file(self, path, version_id=None):
+    async def _cat_file(self, path, version_id=None, start=None, end=None):
         bucket, key, vers = self.split_path(path)
+        if (start is None) ^ (end is None):
+            raise ValueError("Give start and end or neither")
+        if start:
+            head = {"Range": "bytes=%i-%i" % (start, end - 1)}
+        else:
+            head = {}
         resp = await self._call_s3(
             self.s3.get_object, Bucket=bucket, Key=key,
-            **version_id_kw(version_id or vers),
+            **version_id_kw(version_id or vers), **head, **self.req_kw,
         )
         data = await resp['Body'].read()
         resp['Body'].close()
@@ -728,7 +739,7 @@ class S3FileSystem(AsyncFileSystem):
             return
         resp = await self._call_s3(
             self.s3.get_object, Bucket=bucket, Key=key,
-            **version_id_kw(version_id or vers),
+            **version_id_kw(version_id or vers), **self.req_kw
         )
         body = resp['Body']
         try:
