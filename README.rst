@@ -10,8 +10,8 @@ View the documentation_ for s3fs.
 .. _documentation: http://s3fs.readthedocs.io/en/latest/
 .. _botocore: https://botocore.readthedocs.io/en/latest/
 
-.. |Build Status| image:: https://travis-ci.org/dask/s3fs.svg?branch=master
-    :target: https://travis-ci.org/dask/s3fs
+.. |Build Status| image:: https://github.com/dask/s3fs/workflows/CI/badge.svg
+    :target: https://github.com/dask/s3fs/actions
     :alt: Build Status
 .. |Doc Status| image:: https://readthedocs.org/projects/s3fs/badge/?version=latest
     :target: https://s3fs.readthedocs.io/en/latest/?badge=latest
