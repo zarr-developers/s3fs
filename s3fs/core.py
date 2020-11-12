@@ -14,18 +14,19 @@ import aiobotocore
 import botocore
 import aiobotocore.session
 from aiobotocore.config import AioConfig
-from botocore.exceptions import ClientError, ParamValidationError, BotoCoreError
+from botocore.exceptions import ClientError, ParamValidationError
 
 from s3fs.errors import translate_boto_error
 from s3fs.utils import ParamKwargsHelper, _get_brange
 
-logger = logging.getLogger('s3fs')
+logger = logging.getLogger("s3fs")
 
 
 def setup_logging(level=None):
     handle = logging.StreamHandler()
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s '
-                                  '- %(message)s')
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s " "- %(message)s"
+    )
     handle.setFormatter(formatter)
     logger.addHandler(handle)
     logger.setLevel(level or os.environ["S3FS_LOGGING_LEVEL"])
@@ -34,18 +35,21 @@ def setup_logging(level=None):
 if "S3FS_LOGGING_LEVEL" in os.environ:
     setup_logging()
 
-S3_RETRYABLE_ERRORS = (
-    socket.timeout,
-)
+S3_RETRYABLE_ERRORS = (socket.timeout,)
 
-_VALID_FILE_MODES = {'r', 'w', 'a', 'rb', 'wb', 'ab'}
+_VALID_FILE_MODES = {"r", "w", "a", "rb", "wb", "ab"}
 
 
-key_acls = {'private', 'public-read', 'public-read-write',
-            'authenticated-read', 'aws-exec-read', 'bucket-owner-read',
-            'bucket-owner-full-control'}
-buck_acls = {'private', 'public-read', 'public-read-write',
-             'authenticated-read'}
+key_acls = {
+    "private",
+    "public-read",
+    "public-read-write",
+    "authenticated-read",
+    "aws-exec-read",
+    "bucket-owner-read",
+    "bucket-owner-full-control",
+}
+buck_acls = {"private", "public-read", "public-read-write", "authenticated-read"}
 
 
 def version_id_kw(version_id):
@@ -55,7 +59,7 @@ def version_id_kw(version_id):
     that problem.
     """
     if version_id:
-        return {'VersionId': version_id}
+        return {"VersionId": version_id}
     else:
         return {}
 
@@ -68,7 +72,8 @@ def _coalesce_version_id(*args):
     if len(version_ids) > 1:
         raise ValueError(
             "Cannot coalesce version_ids where more than one are defined,"
-            " {}".format(version_ids))
+            " {}".format(version_ids)
+        )
     elif len(version_ids) == 0:
         return None
     else:
@@ -142,24 +147,41 @@ class S3FileSystem(AsyncFileSystem):
     ...     print(f.read())  # doctest: +SKIP
     b'Hello, world!'
     """
+
     root_marker = ""
     connect_timeout = 5
     retries = 5
     read_timeout = 15
-    default_block_size = 5 * 2**20
-    protocol = ['s3', 's3a']
-    _extra_tokenize_attributes = ('default_block_size',)
+    default_block_size = 5 * 2 ** 20
+    protocol = ["s3", "s3a"]
+    _extra_tokenize_attributes = ("default_block_size",)
 
-    def __init__(self, anon=False, key=None, secret=None, token=None,
-                 use_ssl=True, client_kwargs=None, requester_pays=False,
-                 default_block_size=None, default_fill_cache=True,
-                 default_cache_type='bytes', version_aware=False, config_kwargs=None,
-                 s3_additional_kwargs=None, session=None, username=None,
-                 password=None, asynchronous=False, loop=None, **kwargs):
+    def __init__(
+        self,
+        anon=False,
+        key=None,
+        secret=None,
+        token=None,
+        use_ssl=True,
+        client_kwargs=None,
+        requester_pays=False,
+        default_block_size=None,
+        default_fill_cache=True,
+        default_cache_type="bytes",
+        version_aware=False,
+        config_kwargs=None,
+        s3_additional_kwargs=None,
+        session=None,
+        username=None,
+        password=None,
+        asynchronous=False,
+        loop=None,
+        **kwargs
+    ):
         if key and username:
-            raise KeyError('Supply either key or username, not both')
+            raise KeyError("Supply either key or username, not both")
         if secret and password:
-            raise KeyError('Supply secret or password, not both')
+            raise KeyError("Supply secret or password, not both")
         if username:
             key = username
         if password:
@@ -171,9 +193,11 @@ class S3FileSystem(AsyncFileSystem):
         self.token = token
         self.kwargs = kwargs
         self.session = session
-        super_kwargs = {k: kwargs.pop(k)
-                        for k in ['use_listings_cache', 'listings_expiry_time', 'max_paths']
-                        if k in kwargs}  # passed to fsspec superclass
+        super_kwargs = {
+            k: kwargs.pop(k)
+            for k in ["use_listings_cache", "listings_expiry_time", "max_paths"]
+            if k in kwargs
+        }  # passed to fsspec superclass
         super().__init__(loop=loop, asynchronous=asynchronous, **super_kwargs)
 
         self.default_block_size = default_block_size or self.default_block_size
@@ -182,7 +206,7 @@ class S3FileSystem(AsyncFileSystem):
         self.version_aware = version_aware
         self.client_kwargs = client_kwargs or {}
         self.config_kwargs = config_kwargs or {}
-        self.req_kw = {'RequestPayer': 'requester'} if requester_pays else {}
+        self.req_kw = {"RequestPayer": "requester"} if requester_pays else {}
         self.s3_additional_kwargs = s3_additional_kwargs or {}
         self.use_ssl = use_ssl
         if not asynchronous:
@@ -202,17 +226,16 @@ class S3FileSystem(AsyncFileSystem):
 
     async def _call_s3(self, method, *akwarglist, **kwargs):
         kw2 = kwargs.copy()
-        kw2.pop('Body', None)
+        kw2.pop("Body", None)
         logger.debug("CALL: %s - %s - %s" % (method.__name__, akwarglist, kw2))
-        additional_kwargs = self._get_s3_method_kwargs(method, *akwarglist,
-                                                       **kwargs)
+        additional_kwargs = self._get_s3_method_kwargs(method, *akwarglist, **kwargs)
         for i in range(self.retries):
             try:
                 return await method(**additional_kwargs)
             except S3_RETRYABLE_ERRORS as e:
                 logger.debug("Retryable error: %s" % e)
                 err = e
-                await asyncio.sleep(min(1.7**i * 0.1, 15))
+                await asyncio.sleep(min(1.7 ** i * 0.1, 15))
             except Exception as e:
                 logger.debug("Nonretryable error: %s" % e)
                 err = e
@@ -223,7 +246,7 @@ class S3FileSystem(AsyncFileSystem):
             while tb.tb_next:
                 tb = tb.tb_next
             try:
-                await tb.tb_frame.f_locals['response']
+                await tb.tb_frame.f_locals["response"]
             except Exception as e:
                 err = e
         raise translate_boto_error(err) from err
@@ -250,9 +273,10 @@ class S3FileSystem(AsyncFileSystem):
         out = {}
         if url_query is not None:
             from urllib.parse import parse_qs
+
             parsed = parse_qs(url_query)
-            if 'versionId' in parsed:
-                out['version_aware'] = True
+            if "versionId" in parsed:
+                out["version_aware"] = True
         return out
 
     def split_path(self, path) -> Tuple[str, str, Optional[str]]:
@@ -273,20 +297,24 @@ class S3FileSystem(AsyncFileSystem):
         ['mybucket', 'path/to/versioned_file', 'some_version_id']
         """
         path = self._strip_protocol(path)
-        path = path.lstrip('/')
-        if '/' not in path:
+        path = path.lstrip("/")
+        if "/" not in path:
             return path, "", None
         else:
-            bucket, keypart = path.split('/', 1)
-            key, _, version_id = keypart.partition('?versionId=')
-            return bucket, key, version_id if self.version_aware and version_id else None
+            bucket, keypart = path.split("/", 1)
+            key, _, version_id = keypart.partition("?versionId=")
+            return (
+                bucket,
+                key,
+                version_id if self.version_aware and version_id else None,
+            )
 
     def _prepare_config_kwargs(self):
         config_kwargs = self.config_kwargs.copy()
         if "connect_timeout" not in config_kwargs.keys():
-            config_kwargs['connect_timeout'] = self.connect_timeout
+            config_kwargs["connect_timeout"] = self.connect_timeout
         if "read_timeout" not in config_kwargs.keys():
-            config_kwargs['read_timeout'] = self.read_timeout
+            config_kwargs["read_timeout"] = self.read_timeout
         return config_kwargs
 
     async def _connect(self, kwargs={}):
@@ -296,28 +324,42 @@ class S3FileSystem(AsyncFileSystem):
         logger.debug("Setting up s3fs instance")
 
         client_kwargs = self.client_kwargs.copy()
-        init_kwargs = dict(aws_access_key_id=self.key,
-                           aws_secret_access_key=self.secret,
-                           aws_session_token=self.token)
-        init_kwargs = {key: value for key, value in init_kwargs.items()
-                       if value is not None and value != client_kwargs.get(key)}
+        init_kwargs = dict(
+            aws_access_key_id=self.key,
+            aws_secret_access_key=self.secret,
+            aws_session_token=self.token,
+        )
+        init_kwargs = {
+            key: value
+            for key, value in init_kwargs.items()
+            if value is not None and value != client_kwargs.get(key)
+        }
         if "use_ssl" not in client_kwargs.keys():
             init_kwargs["use_ssl"] = self.use_ssl
         config_kwargs = self._prepare_config_kwargs()
         if self.anon:
             from botocore import UNSIGNED
-            drop_keys = {"aws_access_key_id",
-                         "aws_secret_access_key",
-                         "aws_session_token"}
-            init_kwargs = {key: value for key, value
-                           in init_kwargs.items() if key not in drop_keys}
-            client_kwargs = {key: value for key, value
-                             in client_kwargs.items() if key not in drop_keys}
+
+            drop_keys = {
+                "aws_access_key_id",
+                "aws_secret_access_key",
+                "aws_session_token",
+            }
+            init_kwargs = {
+                key: value for key, value in init_kwargs.items() if key not in drop_keys
+            }
+            client_kwargs = {
+                key: value
+                for key, value in client_kwargs.items()
+                if key not in drop_keys
+            }
             config_kwargs["signature_version"] = UNSIGNED
         conf = AioConfig(**config_kwargs)
         if self.session is None:
             self.session = aiobotocore.AioSession(**self.kwargs)
-        s3creator = self.session.create_client('s3', config=conf, **init_kwargs, **client_kwargs)
+        s3creator = self.session.create_client(
+            "s3", config=conf, **init_kwargs, **client_kwargs
+        )
         self._s3 = await s3creator.__aenter__()
         self._kwargs_helper = ParamKwargsHelper(self.s3)
         return self._s3
@@ -338,20 +380,39 @@ class S3FileSystem(AsyncFileSystem):
         dict of parameters
         """
         if self.anon:
-            return {'anon': True}
+            return {"anon": True}
         if self.token:  # already has temporary cred
-            return {'key': self.key, 'secret': self.secret, 'token': self.token,
-                    'anon': False}
+            return {
+                "key": self.key,
+                "secret": self.secret,
+                "token": self.token,
+                "anon": False,
+            }
         if self.key is None or self.secret is None:  # automatic credentials
-            return {'anon': False}
-        sts = self.session.create_client('sts')
-        cred = sts.get_session_token(DurationSeconds=exp)['Credentials']
-        return {'key': cred['AccessKeyId'], 'secret': cred['SecretAccessKey'],
-                'token': cred['SessionToken'], 'anon': False}
+            return {"anon": False}
+        sts = self.session.create_client("sts")
+        cred = sts.get_session_token(DurationSeconds=exp)["Credentials"]
+        return {
+            "key": cred["AccessKeyId"],
+            "secret": cred["SecretAccessKey"],
+            "token": cred["SessionToken"],
+            "anon": False,
+        }
 
-    def _open(self, path, mode='rb', block_size=None, acl='', version_id=None,
-              fill_cache=None, cache_type=None, autocommit=True, requester_pays=None, **kwargs):
-        """ Open a file for reading or writing
+    def _open(
+        self,
+        path,
+        mode="rb",
+        block_size=None,
+        acl="",
+        version_id=None,
+        fill_cache=None,
+        cache_type=None,
+        autocommit=True,
+        requester_pays=None,
+        **kwargs
+    ):
+        """Open a file for reading or writing
 
         Parameters
         ----------
@@ -393,49 +454,73 @@ class S3FileSystem(AsyncFileSystem):
         if requester_pays is None:
             requester_pays = bool(self.req_kw)
 
-        acl = acl or self.s3_additional_kwargs.get('ACL', '')
+        acl = acl or self.s3_additional_kwargs.get("ACL", "")
         kw = self.s3_additional_kwargs.copy()
         kw.update(kwargs)
         if not self.version_aware and version_id:
-            raise ValueError("version_id cannot be specified if the filesystem "
-                             "is not version aware")
+            raise ValueError(
+                "version_id cannot be specified if the filesystem "
+                "is not version aware"
+            )
 
         if cache_type is None:
             cache_type = self.default_cache_type
 
-        return S3File(self, path, mode, block_size=block_size, acl=acl,
-                      version_id=version_id, fill_cache=fill_cache,
-                      s3_additional_kwargs=kw, cache_type=cache_type,
-                      autocommit=autocommit, requester_pays=requester_pays)
+        return S3File(
+            self,
+            path,
+            mode,
+            block_size=block_size,
+            acl=acl,
+            version_id=version_id,
+            fill_cache=fill_cache,
+            s3_additional_kwargs=kw,
+            cache_type=cache_type,
+            autocommit=autocommit,
+            requester_pays=requester_pays,
+        )
 
     async def _lsdir(self, path, refresh=False, max_items=None, delimiter="/"):
         bucket, prefix, _ = self.split_path(path)
-        prefix = prefix + '/' if prefix else ""
+        prefix = prefix + "/" if prefix else ""
         if path not in self.dircache or refresh or not delimiter:
             try:
                 logger.debug("Get directory listing page for %s" % path)
-                pag = self.s3.get_paginator('list_objects_v2')
+                pag = self.s3.get_paginator("list_objects_v2")
                 config = {}
                 if max_items is not None:
                     config.update(MaxItems=max_items, PageSize=2 * max_items)
-                it = pag.paginate(Bucket=bucket, Prefix=prefix, Delimiter=delimiter,
-                                  PaginationConfig=config, **self.req_kw)
+                it = pag.paginate(
+                    Bucket=bucket,
+                    Prefix=prefix,
+                    Delimiter=delimiter,
+                    PaginationConfig=config,
+                    **self.req_kw,
+                )
                 files = []
                 dircache = []
                 async for i in it:
-                    dircache.extend(i.get('CommonPrefixes', []))
-                    for c in i.get('Contents', []):
-                        c['type'] = 'file'
-                        c['size'] = c['Size']
+                    dircache.extend(i.get("CommonPrefixes", []))
+                    for c in i.get("Contents", []):
+                        c["type"] = "file"
+                        c["size"] = c["Size"]
                         files.append(c)
                 if dircache:
-                    files.extend([{'Key': l['Prefix'][:-1], 'Size': 0,
-                                  'StorageClass': "DIRECTORY",
-                                   'type': 'directory', 'size': 0}
-                                  for l in dircache])
+                    files.extend(
+                        [
+                            {
+                                "Key": l["Prefix"][:-1],
+                                "Size": 0,
+                                "StorageClass": "DIRECTORY",
+                                "type": "directory",
+                                "size": 0,
+                            }
+                            for l in dircache
+                        ]
+                    )
                 for f in files:
-                    f['Key'] = '/'.join([bucket, f['Key']])
-                    f['name'] = f['Key']
+                    f["Key"] = "/".join([bucket, f["Key"]])
+                    f["name"] = f["Key"]
             except ClientError as e:
                 raise translate_boto_error(e) from e
 
@@ -449,8 +534,9 @@ class S3FileSystem(AsyncFileSystem):
         if not bucket:
             raise ValueError("Cannot traverse all of S3")
         if maxdepth:
-            return super().find(bucket + "/" + key, maxdepth=maxdepth, withdirs=withdirs,
-                                detail=detail)
+            return super().find(
+                bucket + "/" + key, maxdepth=maxdepth, withdirs=withdirs, detail=detail
+            )
         # TODO: implement find from dircache, if all listings are present
         # if refresh is False:
         #     out = incomplete_tree_dirs(self.dircache, path)
@@ -469,13 +555,18 @@ class S3FileSystem(AsyncFileSystem):
         dirs = []
         sdirs = set()
         for o in out:
-            par = self._parent(o['name'])
+            par = self._parent(o["name"])
             if par not in sdirs:
                 sdirs.add(par)
                 dirs.append(
-                    {'Key': self.split_path(par)[1], 'Size': 0, "name": par,
-                     'StorageClass': "DIRECTORY",
-                     'type': 'directory', 'size': 0}
+                    {
+                        "Key": self.split_path(par)[1],
+                        "Size": 0,
+                        "name": par,
+                        "StorageClass": "DIRECTORY",
+                        "type": "directory",
+                        "size": 0,
+                    }
                 )
                 self.dircache[par] = []
             self.dircache[par].append(o)
@@ -483,32 +574,33 @@ class S3FileSystem(AsyncFileSystem):
         if withdirs:
             out = sorted(out + dirs, key=lambda x: x["name"])
         if detail:
-            return {o['name']: o for o in out}
-        return [o['name'] for o in out]
+            return {o["name"]: o for o in out}
+        return [o["name"] for o in out]
 
     find = sync_wrapper(_find)
 
     async def _mkdir(self, path, acl="", create_parents=True, **kwargs):
-        path = self._strip_protocol(path).rstrip('/')
+        path = self._strip_protocol(path).rstrip("/")
         bucket, key, _ = self.split_path(path)
         if not key or (create_parents and not await self._exists(bucket)):
             if acl and acl not in buck_acls:
-                raise ValueError('ACL not in %s', buck_acls)
+                raise ValueError("ACL not in %s", buck_acls)
             try:
-                params = {"Bucket": bucket, 'ACL': acl}
-                region_name = (kwargs.get("region_name", None) or
-                               self.client_kwargs.get("region_name", None))
+                params = {"Bucket": bucket, "ACL": acl}
+                region_name = kwargs.get("region_name", None) or self.client_kwargs.get(
+                    "region_name", None
+                )
                 if region_name:
-                    params['CreateBucketConfiguration'] = {
-                        'LocationConstraint': region_name
+                    params["CreateBucketConfiguration"] = {
+                        "LocationConstraint": region_name
                     }
                 await self.s3.create_bucket(**params)
-                self.invalidate_cache('')
+                self.invalidate_cache("")
                 self.invalidate_cache(bucket)
             except ClientError as e:
                 raise translate_boto_error(e) from e
             except ParamValidationError as e:
-                raise ValueError('Bucket create failed %r: %s' % (bucket, e))
+                raise ValueError("Bucket create failed %r: %s" % (bucket, e))
         else:
             # raises if bucket doesn't exist, but doesn't write anything
             await self._ls(bucket)
@@ -534,34 +626,34 @@ class S3FileSystem(AsyncFileSystem):
                 raise OSError from e
             raise
         self.invalidate_cache(path)
-        self.invalidate_cache('')
+        self.invalidate_cache("")
 
     rmdir = sync_wrapper(_rmdir)
 
     async def _lsbuckets(self, refresh=False):
-        if '' not in self.dircache or refresh:
+        if "" not in self.dircache or refresh:
             if self.anon:
                 # cannot list buckets if not logged in
                 return []
             try:
-                files = (await self.s3.list_buckets())['Buckets']
+                files = (await self.s3.list_buckets())["Buckets"]
             except ClientError:
                 # listbucket permission missing
                 return []
             for f in files:
-                f['Key'] = f['Name']
-                f['Size'] = 0
-                f['StorageClass'] = 'BUCKET'
-                f['size'] = 0
-                f['type'] = 'directory'
-                f['name'] = f['Name']
-                del f['Name']
-            self.dircache[''] = files
+                f["Key"] = f["Name"]
+                f["Size"] = 0
+                f["StorageClass"] = "BUCKET"
+                f["size"] = 0
+                f["type"] = "directory"
+                f["name"] = f["Name"]
+                del f["Name"]
+            self.dircache[""] = files
             return files
-        return self.dircache['']
+        return self.dircache[""]
 
     async def _ls(self, path, refresh=False):
-        """ List files in given bucket, or list of buckets.
+        """List files in given bucket, or list of buckets.
 
         Listing is cached unless `refresh=True`.
 
@@ -576,7 +668,7 @@ class S3FileSystem(AsyncFileSystem):
             if False, look in local cache for file details first
         """
         path = self._strip_protocol(path)
-        if path in ['', '/']:
+        if path in ["", "/"]:
             return await self._lsbuckets(refresh)
         else:
             return await self._lsdir(path, refresh)
@@ -584,7 +676,7 @@ class S3FileSystem(AsyncFileSystem):
     ls = sync_wrapper(_ls)
 
     async def _exists(self, path):
-        if path in ['', '/']:
+        if path in ["", "/"]:
             # the root always exists, even if anon
             return True
         bucket, key, version_id = self.split_path(path)
@@ -638,29 +730,28 @@ class S3FileSystem(AsyncFileSystem):
         else:
             head = {}
         resp = await self._call_s3(
-            self.s3.get_object, Bucket=bucket, Key=key,
-            **version_id_kw(version_id or vers), **head, **self.req_kw,
+            self.s3.get_object,
+            Bucket=bucket,
+            Key=key,
+            **version_id_kw(version_id or vers),
+            **head,
+            **self.req_kw,
         )
-        data = await resp['Body'].read()
-        resp['Body'].close()
+        data = await resp["Body"].read()
+        resp["Body"].close()
         return data
 
-    async def _pipe_file(self, path, data, chunksize=50*2**20, **kwargs):
+    async def _pipe_file(self, path, data, chunksize=50 * 2 ** 20, **kwargs):
         bucket, key, _ = self.split_path(path)
         size = len(data)
-        if size < 5 * 2**20:
+        if size < 5 * 2 ** 20:
             return await self._call_s3(
-                self.s3.put_object,
-                Bucket=bucket,
-                Key=key,
-                Body=data,
-                **kwargs
+                self.s3.put_object, Bucket=bucket, Key=key, Body=data, **kwargs
             )
         else:
 
             mpu = await self._call_s3(
-                self.s3.create_multipart_upload,
-                Bucket=bucket, Key=key, **kwargs
+                self.s3.create_multipart_upload, Bucket=bucket, Key=key, **kwargs
             )
 
             out = [
@@ -668,43 +759,40 @@ class S3FileSystem(AsyncFileSystem):
                     self.s3.upload_part,
                     Bucket=bucket,
                     PartNumber=i + 1,
-                    UploadId=mpu['UploadId'],
-                    Body=data[off:off + chunksize],
-                    Key=key
+                    UploadId=mpu["UploadId"],
+                    Body=data[off : off + chunksize],
+                    Key=key,
                 )
                 for i, off in enumerate(range(0, len(data), chunksize))
             ]
 
-            parts = [{'PartNumber': i + 1,
-                      'ETag': o['ETag']} for i, o in enumerate(out)]
+            parts = [
+                {"PartNumber": i + 1, "ETag": o["ETag"]} for i, o in enumerate(out)
+            ]
             await self._call_s3(
                 self.s3.complete_multipart_upload,
                 Bucket=bucket,
                 Key=key,
-                UploadId=mpu['UploadId'],
-                MultipartUpload={'Parts': parts})
+                UploadId=mpu["UploadId"],
+                MultipartUpload={"Parts": parts},
+            )
         self.invalidate_cache(path)
 
-    async def _put_file(self, lpath, rpath, chunksize=50*2**20, **kwargs):
+    async def _put_file(self, lpath, rpath, chunksize=50 * 2 ** 20, **kwargs):
         bucket, key, _ = self.split_path(rpath)
         if os.path.isdir(lpath) and key:
             # don't make remote "directory"
             return
         size = os.path.getsize(lpath)
-        with open(lpath, 'rb') as f0:
-            if size < 5 * 2**20:
+        with open(lpath, "rb") as f0:
+            if size < 5 * 2 ** 20:
                 return await self._call_s3(
-                    self.s3.put_object,
-                    Bucket=bucket,
-                    Key=key,
-                    Body=f0,
-                    **kwargs
+                    self.s3.put_object, Bucket=bucket, Key=key, Body=f0, **kwargs
                 )
             else:
 
                 mpu = await self._call_s3(
-                    self.s3.create_multipart_upload,
-                    Bucket=bucket, Key=key, **kwargs
+                    self.s3.create_multipart_upload, Bucket=bucket, Key=key, **kwargs
                 )
 
                 out = []
@@ -717,20 +805,22 @@ class S3FileSystem(AsyncFileSystem):
                             self.s3.upload_part,
                             Bucket=bucket,
                             PartNumber=len(out) + 1,
-                            UploadId=mpu['UploadId'],
+                            UploadId=mpu["UploadId"],
                             Body=chunk,
-                            Key=key
+                            Key=key,
                         )
                     )
 
-                parts = [{'PartNumber': i + 1,
-                          'ETag': o['ETag']} for i, o in enumerate(out)]
+                parts = [
+                    {"PartNumber": i + 1, "ETag": o["ETag"]} for i, o in enumerate(out)
+                ]
                 await self._call_s3(
                     self.s3.complete_multipart_upload,
                     Bucket=bucket,
                     Key=key,
-                    UploadId=mpu['UploadId'],
-                    MultipartUpload={'Parts': parts})
+                    UploadId=mpu["UploadId"],
+                    MultipartUpload={"Parts": parts},
+                )
         self.invalidate_cache(rpath)
 
     async def _get_file(self, rpath, lpath, version_id=None):
@@ -738,14 +828,17 @@ class S3FileSystem(AsyncFileSystem):
         if os.path.isdir(lpath):
             return
         resp = await self._call_s3(
-            self.s3.get_object, Bucket=bucket, Key=key,
-            **version_id_kw(version_id or vers), **self.req_kw
+            self.s3.get_object,
+            Bucket=bucket,
+            Key=key,
+            **version_id_kw(version_id or vers),
+            **self.req_kw,
         )
-        body = resp['Body']
+        body = resp["Body"]
         try:
             with open(lpath, "wb") as f0:
                 while True:
-                    chunk = await body.read(2**16)
+                    chunk = await body.read(2 ** 16)
                     if not chunk:
                         break
                     f0.write(chunk)
@@ -756,18 +849,24 @@ class S3FileSystem(AsyncFileSystem):
         if bucket is None:
             bucket, key, version_id = self.split_path(path)
         try:
-            out = await self._call_s3(self.s3.head_object, kwargs, Bucket=bucket,
-                                      Key=key, **version_id_kw(version_id), **self.req_kw)
+            out = await self._call_s3(
+                self.s3.head_object,
+                kwargs,
+                Bucket=bucket,
+                Key=key,
+                **version_id_kw(version_id),
+                **self.req_kw,
+            )
             return {
-                'ETag': out['ETag'],
-                'Key': '/'.join([bucket, key]),
-                'LastModified': out['LastModified'],
-                'Size': out['ContentLength'],
-                'size': out['ContentLength'],
-                'name': '/'.join([bucket, key]),
-                'type': 'file',
-                'StorageClass': "STANDARD",
-                'VersionId': out.get('VersionId')
+                "ETag": out["ETag"],
+                "Key": "/".join([bucket, key]),
+                "LastModified": out["LastModified"],
+                "Size": out["ContentLength"],
+                "size": out["ContentLength"],
+                "name": "/".join([bucket, key]),
+                "type": "file",
+                "StorageClass": "STANDARD",
+                "VersionId": out.get("VersionId"),
             }
         except FileNotFoundError:
             pass
@@ -784,7 +883,7 @@ class S3FileSystem(AsyncFileSystem):
                 Prefix=key.rstrip("/") + "/",
                 Delimiter="/",
                 MaxKeys=1,
-                **self.req_kw
+                **self.req_kw,
             )
             if out["KeyCount"] > 0:
                 return {
@@ -804,13 +903,15 @@ class S3FileSystem(AsyncFileSystem):
 
     def info(self, path, version_id=None, refresh=False):
         path = self._strip_protocol(path)
-        if path in ['/', '']:
-            return {'name': path, 'size': 0, 'type': 'directory'}
+        if path in ["/", ""]:
+            return {"name": path, "size": 0, "type": "directory"}
         kwargs = self.kwargs.copy()
         if version_id is not None:
             if not self.version_aware:
-                raise ValueError("version_id cannot be specified if the "
-                                 "filesystem is not version aware")
+                raise ValueError(
+                    "version_id cannot be specified if the "
+                    "filesystem is not version aware"
+                )
         bucket, key, path_version_id = self.split_path(path)
         version_id = _coalesce_version_id(path_version_id, version_id)
         should_fetch_from_s3 = (key and self._ls_from_cache(path) is None) or refresh
@@ -838,8 +939,8 @@ class S3FileSystem(AsyncFileSystem):
 
         info = self.info(path, refresh=refresh)
 
-        if info["type"] != 'directory':
-            return int(info["ETag"].strip('"').split('-')[0], 16)
+        if info["type"] != "directory":
+            return int(info["ETag"].strip('"').split("-")[0], 16)
         else:
             return int(tokenize(info), 16)
 
@@ -869,7 +970,7 @@ class S3FileSystem(AsyncFileSystem):
         return bool(maybe_sync(self._lsdir, self, path))
 
     def ls(self, path, detail=False, refresh=False, **kwargs):
-        """ List single "directory" with or without details
+        """List single "directory" with or without details
 
         Parameters
         ----------
@@ -883,37 +984,51 @@ class S3FileSystem(AsyncFileSystem):
         kwargs : dict
             additional arguments passed on
         """
-        path = self._strip_protocol(path).rstrip('/')
+        path = self._strip_protocol(path).rstrip("/")
         files = maybe_sync(self._ls, self, path, refresh=refresh)
         if not files:
             files = maybe_sync(self._ls, self, self._parent(path), refresh=refresh)
-            files = [o for o in files if o['name'].rstrip('/') == path
-                     and o['type'] != 'directory']
+            files = [
+                o
+                for o in files
+                if o["name"].rstrip("/") == path and o["type"] != "directory"
+            ]
         if detail:
             return files
         else:
-            return list(sorted(set([f['name'] for f in files])))
+            return list(sorted(set([f["name"] for f in files])))
 
     def object_version_info(self, path, **kwargs):
         if not self.version_aware:
-            raise ValueError("version specific functionality is disabled for "
-                             "non-version aware filesystems")
+            raise ValueError(
+                "version specific functionality is disabled for "
+                "non-version aware filesystems"
+            )
         bucket, key, _ = self.split_path(path)
         kwargs = {}
-        out = {'IsTruncated': True}
+        out = {"IsTruncated": True}
         versions = []
-        while out['IsTruncated']:
-            out = self.call_s3(self.s3.list_object_versions, kwargs,
-                               Bucket=bucket, Prefix=key, **self.req_kw)
-            versions.extend(out['Versions'])
-            kwargs.update({'VersionIdMarker': out.get('NextVersionIdMarker', ''),
-                           'KeyMarker': out.get('NextKeyMarker', '')})
+        while out["IsTruncated"]:
+            out = self.call_s3(
+                self.s3.list_object_versions,
+                kwargs,
+                Bucket=bucket,
+                Prefix=key,
+                **self.req_kw,
+            )
+            versions.extend(out["Versions"])
+            kwargs.update(
+                {
+                    "VersionIdMarker": out.get("NextVersionIdMarker", ""),
+                    "KeyMarker": out.get("NextKeyMarker", ""),
+                }
+            )
         return versions
 
     _metadata_cache = {}
 
     def metadata(self, path, refresh=False, **kwargs):
-        """ Return metadata of path.
+        """Return metadata of path.
 
         Metadata is cached unless `refresh=True`.
 
@@ -926,13 +1041,15 @@ class S3FileSystem(AsyncFileSystem):
         """
         bucket, key, version_id = self.split_path(path)
         if refresh or path not in self._metadata_cache:
-            response = self.call_s3(self.s3.head_object,
-                                    kwargs,
-                                    Bucket=bucket,
-                                    Key=key,
-                                    **version_id_kw(version_id),
-                                    **self.req_kw)
-            meta = {k.replace('_', '-'): v for k, v in response['Metadata'].items()}
+            response = self.call_s3(
+                self.s3.head_object,
+                kwargs,
+                Bucket=bucket,
+                Key=key,
+                **version_id_kw(version_id),
+                **self.req_kw,
+            )
+            meta = {k.replace("_", "-"): v for k, v in response["Metadata"].items()}
             self._metadata_cache[path] = meta
 
         return self._metadata_cache[path]
@@ -945,11 +1062,15 @@ class S3FileSystem(AsyncFileSystem):
         {str: str}
         """
         bucket, key, version_id = self.split_path(path)
-        response = self.call_s3(self.s3.get_object_tagging,
-                                Bucket=bucket, Key=key, **version_id_kw(version_id))
-        return {v['Key']: v['Value'] for v in response['TagSet']}
+        response = self.call_s3(
+            self.s3.get_object_tagging,
+            Bucket=bucket,
+            Key=key,
+            **version_id_kw(version_id),
+        )
+        return {v["Key"]: v["Value"] for v in response["TagSet"]}
 
-    def put_tags(self, path, tags, mode='o'):
+    def put_tags(self, path, tags, mode="o"):
         """Set tags for given existing key
 
         Tags are a str:str mapping that can be attached to any key, see
@@ -972,36 +1093,40 @@ class S3FileSystem(AsyncFileSystem):
         """
         bucket, key, version_id = self.split_path(path)
 
-        if mode == 'm':
+        if mode == "m":
             existing_tags = self.get_tags(path=path)
             existing_tags.update(tags)
-            new_tags = [{'Key': k, 'Value': v}
-                        for k, v in existing_tags.items()]
-        elif mode == 'o':
-            new_tags = [{'Key': k, 'Value': v} for k, v in tags.items()]
+            new_tags = [{"Key": k, "Value": v} for k, v in existing_tags.items()]
+        elif mode == "o":
+            new_tags = [{"Key": k, "Value": v} for k, v in tags.items()]
         else:
             raise ValueError("Mode must be {'o', 'm'}, not %s" % mode)
 
-        tag = {'TagSet': new_tags}
-        self.call_s3(self.s3.put_object_tagging,
-                     Bucket=bucket, Key=key, Tagging=tag, **version_id_kw(version_id))
+        tag = {"TagSet": new_tags}
+        self.call_s3(
+            self.s3.put_object_tagging,
+            Bucket=bucket,
+            Key=key,
+            Tagging=tag,
+            **version_id_kw(version_id),
+        )
 
     def getxattr(self, path, attr_name, **kwargs):
-        """ Get an attribute from the metadata.
+        """Get an attribute from the metadata.
 
         Examples
         --------
         >>> mys3fs.getxattr('mykey', 'attribute_1')  # doctest: +SKIP
         'value_1'
         """
-        attr_name = attr_name.replace('_', '-')
+        attr_name = attr_name.replace("_", "-")
         xattr = self.metadata(path, **kwargs)
         if attr_name in xattr:
             return xattr[attr_name]
         return None
 
     def setxattr(self, path, copy_kwargs=None, **kw_args):
-        """ Set metadata.
+        """Set metadata.
 
         Attributes have to be of the form documented in the
         `Metadata Reference`_.
@@ -1028,7 +1153,7 @@ class S3FileSystem(AsyncFileSystem):
         http://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html#object-metadata
         """
 
-        kw_args = {k.replace('_', '-'): v for k, v in kw_args.items()}
+        kw_args = {k.replace("_", "-"): v for k, v in kw_args.items()}
         bucket, key, version_id = self.split_path(path)
         metadata = self.metadata(path)
         metadata.update(**kw_args)
@@ -1039,9 +1164,9 @@ class S3FileSystem(AsyncFileSystem):
             if kw_args[kw_key] is None:
                 metadata.pop(kw_key, None)
 
-        src = {'Bucket': bucket, 'Key': key}
+        src = {"Bucket": bucket, "Key": key}
         if version_id:
-            src['VersionId'] = version_id
+            src["VersionId"] = version_id
 
         self.call_s3(
             self.s3.copy_object,
@@ -1050,14 +1175,14 @@ class S3FileSystem(AsyncFileSystem):
             Bucket=bucket,
             Key=key,
             Metadata=metadata,
-            MetadataDirective='REPLACE',
+            MetadataDirective="REPLACE",
         )
 
         # refresh metadata
         self._metadata_cache[path] = metadata
 
     def chmod(self, path, acl, **kwargs):
-        """ Set Access Control on a bucket/key
+        """Set Access Control on a bucket/key
 
         See http://docs.aws.amazon.com/AmazonS3/latest/dev/acl-overview.html#canned-acl
 
@@ -1071,17 +1196,22 @@ class S3FileSystem(AsyncFileSystem):
         bucket, key, version_id = self.split_path(path)
         if key:
             if acl not in key_acls:
-                raise ValueError('ACL not in %s', key_acls)
-            self.call_s3(self.s3.put_object_acl,
-                         kwargs, Bucket=bucket, Key=key, ACL=acl, **version_id_kw(version_id))
+                raise ValueError("ACL not in %s", key_acls)
+            self.call_s3(
+                self.s3.put_object_acl,
+                kwargs,
+                Bucket=bucket,
+                Key=key,
+                ACL=acl,
+                **version_id_kw(version_id),
+            )
         else:
             if acl not in buck_acls:
-                raise ValueError('ACL not in %s', buck_acls)
-            self.call_s3(self.s3.put_bucket_acl,
-                         kwargs, Bucket=bucket, ACL=acl)
+                raise ValueError("ACL not in %s", buck_acls)
+            self.call_s3(self.s3.put_bucket_acl, kwargs, Bucket=bucket, ACL=acl)
 
     def url(self, path, expires=3600, **kwargs):
-        """ Generate presigned URL to access path by HTTP
+        """Generate presigned URL to access path by HTTP
 
         Parameters
         ----------
@@ -1091,13 +1221,16 @@ class S3FileSystem(AsyncFileSystem):
             the number of seconds this signature will be good for.
         """
         bucket, key, version_id = self.split_path(path)
-        return maybe_sync(self.s3.generate_presigned_url, self,
-            ClientMethod='get_object',
+        return maybe_sync(
+            self.s3.generate_presigned_url,
+            self,
+            ClientMethod="get_object",
             Params=dict(Bucket=bucket, Key=key, **version_id_kw(version_id), **kwargs),
-            ExpiresIn=expires)
+            ExpiresIn=expires,
+        )
 
     async def _merge(self, path, filelist, **kwargs):
-        """ Create single S3 file from list of S3 files
+        """Create single S3 file from list of S3 files
 
         Uses multi-part, no data is downloaded. The original files are
         not deleted.
@@ -1113,30 +1246,37 @@ class S3FileSystem(AsyncFileSystem):
         if version_id:
             raise ValueError("Cannot write to an explicit versioned file!")
         mpu = await self._call_s3(
-            self.s3.create_multipart_upload,
-            kwargs,
-            Bucket=bucket,
-            Key=key
+            self.s3.create_multipart_upload, kwargs, Bucket=bucket, Key=key
         )
         # TODO: Make this support versions?
-        out = await asyncio.gather(*[
-            self._call_s3(self.s3.upload_part_copy, kwargs,
-                          Bucket=bucket, Key=key, UploadId=mpu['UploadId'],
-                          CopySource=f, PartNumber=i + 1)
-            for (i, f) in enumerate(filelist)
-        ])
-        parts = [{'PartNumber': i + 1, 'ETag': o['CopyPartResult']['ETag']} for
-                 (i, o) in enumerate(out)]
-        part_info = {'Parts': parts}
-        await self.s3.complete_multipart_upload(Bucket=bucket, Key=key,
-                                                UploadId=mpu['UploadId'],
-                                                MultipartUpload=part_info)
+        out = await asyncio.gather(
+            *[
+                self._call_s3(
+                    self.s3.upload_part_copy,
+                    kwargs,
+                    Bucket=bucket,
+                    Key=key,
+                    UploadId=mpu["UploadId"],
+                    CopySource=f,
+                    PartNumber=i + 1,
+                )
+                for (i, f) in enumerate(filelist)
+            ]
+        )
+        parts = [
+            {"PartNumber": i + 1, "ETag": o["CopyPartResult"]["ETag"]}
+            for (i, o) in enumerate(out)
+        ]
+        part_info = {"Parts": parts}
+        await self.s3.complete_multipart_upload(
+            Bucket=bucket, Key=key, UploadId=mpu["UploadId"], MultipartUpload=part_info
+        )
         self.invalidate_cache(path)
 
     merge = sync_wrapper(_merge)
 
     async def _copy_basic(self, path1, path2, **kwargs):
-        """ Copy file between locations on S3
+        """Copy file between locations on S3
 
         Not allowed where the origin is >5GB - use copy_managed
         """
@@ -1145,33 +1285,30 @@ class S3FileSystem(AsyncFileSystem):
         if ver2:
             raise ValueError("Cannot copy to a versioned file!")
         try:
-            copy_src = {'Bucket': buc1, 'Key': key1}
+            copy_src = {"Bucket": buc1, "Key": key1}
             if ver1:
-                copy_src['VersionId'] = ver1
+                copy_src["VersionId"] = ver1
             await self._call_s3(
-                self.s3.copy_object,
-                kwargs,
-                Bucket=buc2, Key=key2, CopySource=copy_src
+                self.s3.copy_object, kwargs, Bucket=buc2, Key=key2, CopySource=copy_src
             )
         except ClientError as e:
             raise translate_boto_error(e) from e
         except ParamValidationError as e:
-            raise ValueError('Copy failed (%r -> %r): %s' % (path1, path2, e)) from e
+            raise ValueError("Copy failed (%r -> %r): %s" % (path1, path2, e)) from e
         self.invalidate_cache(path2)
 
-    async def _copy_managed(self, path1, path2, size, block=5 * 2**30, **kwargs):
+    async def _copy_managed(self, path1, path2, size, block=5 * 2 ** 30, **kwargs):
         """Copy file between locations on S3 as multi-part
 
         block: int
             The size of the pieces, must be larger than 5MB and at most 5GB.
             Smaller blocks mean more calls, only useful for testing.
         """
-        if block < 5*2**20 or block > 5*2**30:
-            raise ValueError('Copy block size must be 5MB<=block<=5GB')
+        if block < 5 * 2 ** 20 or block > 5 * 2 ** 30:
+            raise ValueError("Copy block size must be 5MB<=block<=5GB")
         bucket, key, version = self.split_path(path2)
         mpu = await self._call_s3(
-            self.s3.create_multipart_upload,
-            Bucket=bucket, Key=key, **kwargs
+            self.s3.create_multipart_upload, Bucket=bucket, Key=key, **kwargs
         )
         # attempting to do the following calls concurrently with gather causes
         # occasional "upload is smaller than the minimum allowed"
@@ -1181,26 +1318,30 @@ class S3FileSystem(AsyncFileSystem):
                 Bucket=bucket,
                 Key=key,
                 PartNumber=i + 1,
-                UploadId=mpu['UploadId'],
+                UploadId=mpu["UploadId"],
                 CopySource=path1,
-                CopySourceRange="bytes=%i-%i" % (brange_first, brange_last))
+                CopySourceRange="bytes=%i-%i" % (brange_first, brange_last),
+            )
             for i, (brange_first, brange_last) in enumerate(_get_brange(size, block))
         ]
-        parts = [{'PartNumber': i + 1,
-                 'ETag': o['CopyPartResult']['ETag']} for i, o in enumerate(out)]
+        parts = [
+            {"PartNumber": i + 1, "ETag": o["CopyPartResult"]["ETag"]}
+            for i, o in enumerate(out)
+        ]
         await self._call_s3(
             self.s3.complete_multipart_upload,
             Bucket=bucket,
             Key=key,
-            UploadId=mpu['UploadId'],
-            MultipartUpload={'Parts': parts})
+            UploadId=mpu["UploadId"],
+            MultipartUpload={"Parts": parts},
+        )
         self.invalidate_cache(path2)
 
     async def _cp_file(self, path1, path2, **kwargs):
-        gb5 = 5 * 2**30
+        gb5 = 5 * 2 ** 30
         path1 = self._strip_protocol(path1)
         bucket, key, vers = self.split_path(path1)
-        size = (await self._info(path1, bucket, key, version_id=vers))['size']
+        size = (await self._info(path1, bucket, key, version_id=vers))["size"]
         if size <= gb5:
             # simple copy allowed for <5GB
             await self._copy_basic(path1, path2, **kwargs)
@@ -1211,13 +1352,17 @@ class S3FileSystem(AsyncFileSystem):
     async def _clear_multipart_uploads(self, bucket):
         """Remove any partial uploads in the bucket"""
         out = await self._call_s3(self.s3.list_multipart_uploads, Bucket=bucket)
-        await asyncio.gather(*[
-            self._call_s3(self.s3.abort_multipart_upload,
-                          Bucket=bucket,
-                          Key=upload['Key'],
-                          UploadId=upload['UploadId'])
-            for upload in out['Contents']
-        ])
+        await asyncio.gather(
+            *[
+                self._call_s3(
+                    self.s3.abort_multipart_upload,
+                    Bucket=bucket,
+                    Key=upload["Key"],
+                    UploadId=upload["UploadId"],
+                )
+                for upload in out["Contents"]
+            ]
+        )
 
     async def _bulk_delete(self, pathlist, **kwargs):
         """
@@ -1237,48 +1382,54 @@ class S3FileSystem(AsyncFileSystem):
         bucket = buckets.pop()
         if len(pathlist) > 1000:
             raise ValueError("Max number of files to delete in one call is 1000")
-        delete_keys = {'Objects': [{'Key': self.split_path(path)[1]} for path
-                                   in pathlist],
-                       "Quiet": True}
+        delete_keys = {
+            "Objects": [{"Key": self.split_path(path)[1]} for path in pathlist],
+            "Quiet": True,
+        }
         for path in pathlist:
             self.invalidate_cache(self._parent(path))
         await self._call_s3(
-            self.s3.delete_objects,
-            kwargs,
-            Bucket=bucket, Delete=delete_keys)
+            self.s3.delete_objects, kwargs, Bucket=bucket, Delete=delete_keys
+        )
 
     async def _rm(self, paths, **kwargs):
         files = [p for p in paths if self.split_path(p)[1]]
         dirs = [p for p in paths if not self.split_path(p)[1]]
         # TODO: fails if more than one bucket in list
-        await asyncio.gather(*[
-            self._bulk_delete(files[i:i+1000]) for i in range(0, len(files), 1000)
-        ])
-        await asyncio.gather(*[
-            self._rmdir(d) for d in dirs
-        ])
-        [(self.invalidate_cache(p), self.invalidate_cache(self._parent(p)))
-         for p in paths]
+        await asyncio.gather(
+            *[
+                self._bulk_delete(files[i : i + 1000])
+                for i in range(0, len(files), 1000)
+            ]
+        )
+        await asyncio.gather(*[self._rmdir(d) for d in dirs])
+        [
+            (self.invalidate_cache(p), self.invalidate_cache(self._parent(p)))
+            for p in paths
+        ]
 
     async def _is_bucket_versioned(self, bucket):
-        return (await self._call_s3(
-            self.s3.get_bucket_versioning,
-            Bucket=bucket)).get('Status', "") == 'Enabled'
+        return (await self._call_s3(self.s3.get_bucket_versioning, Bucket=bucket)).get(
+            "Status", ""
+        ) == "Enabled"
 
     is_bucket_versioned = sync_wrapper(_is_bucket_versioned)
 
     async def _rm_versioned_bucket_contents(self, bucket):
         """Remove a versioned bucket and all contents"""
-        pag = self.s3.get_paginator('list_object_versions')
+        pag = self.s3.get_paginator("list_object_versions")
         async for plist in pag.paginate(Bucket=bucket):
-            obs = plist.get('Versions', []) + plist.get('DeleteMarkers', [])
-            delete_keys = {'Objects': [{'Key': i['Key'], 'VersionId': i['VersionId']}
-                           for i in obs],
-                           'Quiet': True}
+            obs = plist.get("Versions", []) + plist.get("DeleteMarkers", [])
+            delete_keys = {
+                "Objects": [
+                    {"Key": i["Key"], "VersionId": i["VersionId"]} for i in obs
+                ],
+                "Quiet": True,
+            }
             if obs:
                 await self._call_s3(
-                    self.s3.delete_objects,
-                    Bucket=bucket, Delete=delete_keys)
+                    self.s3.delete_objects, Bucket=bucket, Delete=delete_keys
+                )
 
     def rm(self, path, recursive=False, **kwargs):
         if recursive and isinstance(path, str):
@@ -1299,17 +1450,17 @@ class S3FileSystem(AsyncFileSystem):
                 path = self._parent(path)
 
     def walk(self, path, maxdepth=None, **kwargs):
-        if path in ['', '*'] + ['{}://'.format(p) for p in self.protocol]:
-            raise ValueError('Cannot crawl all of S3')
+        if path in ["", "*"] + ["{}://".format(p) for p in self.protocol]:
+            raise ValueError("Cannot crawl all of S3")
         return super().walk(path, maxdepth=maxdepth, **kwargs)
 
     def modified(self, path, version_id=None, refresh=False):
         """Return the last modified timestamp of file at `path` as a datetime"""
         info = self.info(path=path, version_id=version_id, refresh=refresh)
-        if 'LastModified' not in info:
+        if "LastModified" not in info:
             # This path is a bucket or folder, which do not currently have a modified date
             raise IsADirectoryError
-        return info['LastModified'].replace(tzinfo=None)
+        return info["LastModified"].replace(tzinfo=None)
 
     def sign(self, path, expiration=100, **kwargs):
         return self.url(path, expires=expiration, **kwargs)
@@ -1355,51 +1506,64 @@ class S3File(AbstractBufferedFile):
     S3FileSystem.open: used to create ``S3File`` objects
 
     """
+
     retries = 5
     part_min = 5 * 2 ** 20
     part_max = 5 * 2 ** 30
 
-    def __init__(self, s3, path, mode='rb', block_size=5 * 2 ** 20, acl="",
-                 version_id=None, fill_cache=True, s3_additional_kwargs=None,
-                 autocommit=True, cache_type='bytes', requester_pays=False):
+    def __init__(
+        self,
+        s3,
+        path,
+        mode="rb",
+        block_size=5 * 2 ** 20,
+        acl="",
+        version_id=None,
+        fill_cache=True,
+        s3_additional_kwargs=None,
+        autocommit=True,
+        cache_type="bytes",
+        requester_pays=False,
+    ):
         bucket, key, path_version_id = s3.split_path(path)
         if not key:
-            raise ValueError('Attempt to open non key-like path: %s' % path)
+            raise ValueError("Attempt to open non key-like path: %s" % path)
         self.bucket = bucket
         self.key = key
         self.version_id = _coalesce_version_id(version_id, path_version_id)
         self.acl = acl
         if self.acl and self.acl not in key_acls:
-            raise ValueError('ACL not in %s', key_acls)
+            raise ValueError("ACL not in %s", key_acls)
         self.mpu = None
         self.parts = None
         self.fill_cache = fill_cache
         self.s3_additional_kwargs = s3_additional_kwargs or {}
-        self.req_kw = {'RequestPayer': 'requester'} if requester_pays else {}
-        if 'r' not in mode:
+        self.req_kw = {"RequestPayer": "requester"} if requester_pays else {}
+        if "r" not in mode:
             if block_size < 5 * 2 ** 20:
-                raise ValueError('Block size must be >=5MB')
+                raise ValueError("Block size must be >=5MB")
         else:
             if version_id and s3.version_aware:
                 self.version_id = version_id
                 self.details = s3.info(path, version_id=version_id)
-                self.size = self.details['size']
+                self.size = self.details["size"]
             elif s3.version_aware:
                 # In this case we have not managed to get the VersionId out of details and
                 # we should invalidate the cache and perform a full head_object since it
                 # has likely been partially populated by ls.
                 s3.invalidate_cache(path)
                 self.details = s3.info(path)
-                self.version_id = self.details.get('VersionId')
-        super().__init__(s3, path, mode, block_size, autocommit=autocommit,
-                         cache_type=cache_type)
+                self.version_id = self.details.get("VersionId")
+        super().__init__(
+            s3, path, mode, block_size, autocommit=autocommit, cache_type=cache_type
+        )
         self.s3 = self.fs  # compatibility
 
         # when not using autocommit we want to have transactional state to manage
         self.append_block = False
 
-        if 'a' in mode and s3.exists(path):
-            loc = s3.info(path)['size']
+        if "a" in mode and s3.exists(path):
+            loc = s3.info(path)["size"]
             if loc < 5 * 2 ** 20:
                 # existing file too small for multi-upload: download
                 self.write(self.fs.cat(self.path))
@@ -1408,8 +1572,7 @@ class S3File(AbstractBufferedFile):
             self.loc = loc
 
     def _call_s3(self, method, *kwarglist, **kwargs):
-        return self.fs.call_s3(method, self.s3_additional_kwargs, *kwarglist,
-                               **kwargs)
+        return self.fs.call_s3(method, self.s3_additional_kwargs, *kwarglist, **kwargs)
 
     def _initiate_upload(self):
         if self.autocommit and not self.append_block and self.tell() < self.blocksize:
@@ -1419,7 +1582,10 @@ class S3File(AbstractBufferedFile):
         self.parts = []
         self.mpu = self._call_s3(
             self.fs.s3.create_multipart_upload,
-            Bucket=self.bucket, Key=self.key, ACL=self.acl)
+            Bucket=self.bucket,
+            Key=self.key,
+            ACL=self.acl,
+        )
 
         if self.append_block:
             # use existing data in key when appending,
@@ -1430,13 +1596,13 @@ class S3File(AbstractBufferedFile):
                 Bucket=self.bucket,
                 Key=self.key,
                 PartNumber=1,
-                UploadId=self.mpu['UploadId'],
-                CopySource=self.path)
-            self.parts.append({'PartNumber': 1,
-                               'ETag': out['CopyPartResult']['ETag']})
+                UploadId=self.mpu["UploadId"],
+                CopySource=self.path,
+            )
+            self.parts.append({"PartNumber": 1, "ETag": out["CopyPartResult"]["ETag"]})
 
     def metadata(self, refresh=False, **kwargs):
-        """ Return metadata of file.
+        """Return metadata of file.
         See :func:`~s3fs.S3Filesystem.metadata`.
 
         Metadata is cached unless `refresh=True`.
@@ -1444,7 +1610,7 @@ class S3File(AbstractBufferedFile):
         return self.fs.metadata(self.path, refresh, **kwargs)
 
     def getxattr(self, xattr_name, **kwargs):
-        """ Get an attribute from the metadata.
+        """Get an attribute from the metadata.
         See :func:`~s3fs.S3Filesystem.getxattr`.
 
         Examples
@@ -1455,7 +1621,7 @@ class S3File(AbstractBufferedFile):
         return self.fs.getxattr(self.path, xattr_name, **kwargs)
 
     def setxattr(self, copy_kwargs=None, **kwargs):
-        """ Set metadata.
+        """Set metadata.
         See :func:`~s3fs.S3Filesystem.setxattr`.
 
         Examples
@@ -1463,25 +1629,38 @@ class S3File(AbstractBufferedFile):
         >>> mys3file.setxattr(attribute_1='value1', attribute_2='value2')  # doctest: +SKIP
         """
         if self.writable():
-            raise NotImplementedError('cannot update metadata while file '
-                                      'is open for writing')
+            raise NotImplementedError(
+                "cannot update metadata while file " "is open for writing"
+            )
         return self.fs.setxattr(self.path, copy_kwargs=copy_kwargs, **kwargs)
 
     def url(self, **kwargs):
-        """ HTTP URL to read this file (if it already exists)
-        """
+        """HTTP URL to read this file (if it already exists)"""
         return self.fs.url(self.path, **kwargs)
 
     def _fetch_range(self, start, end):
-        return _fetch_range(self.fs, self.bucket, self.key, self.version_id,
-                            start, end, req_kw=self.req_kw)
+        return _fetch_range(
+            self.fs,
+            self.bucket,
+            self.key,
+            self.version_id,
+            start,
+            end,
+            req_kw=self.req_kw,
+        )
 
     def _upload_chunk(self, final=False):
         bucket, key, _ = self.fs.split_path(self.path)
-        logger.debug("Upload for %s, final=%s, loc=%s, buffer loc=%s" % (
-            self, final, self.loc, self.buffer.tell()
-        ))
-        if self.autocommit and not self.append_block and final and self.tell() < self.blocksize:
+        logger.debug(
+            "Upload for %s, final=%s, loc=%s, buffer loc=%s"
+            % (self, final, self.loc, self.buffer.tell())
+        )
+        if (
+            self.autocommit
+            and not self.append_block
+            and final
+            and self.tell() < self.blocksize
+        ):
             # only happens when closing small file, use on-shot PUT
             data1 = False
         else:
@@ -1508,11 +1687,13 @@ class S3File(AbstractBufferedFile):
             out = self._call_s3(
                 self.fs.s3.upload_part,
                 Bucket=bucket,
-                PartNumber=part, UploadId=self.mpu['UploadId'],
-                Body=data0, Key=key
+                PartNumber=part,
+                UploadId=self.mpu["UploadId"],
+                Body=data0,
+                Key=key,
             )
 
-            self.parts.append({'PartNumber': part, 'ETag': out['ETag']})
+            self.parts.append({"PartNumber": part, "ETag": out["ETag"]})
 
         if self.autocommit and final:
             self.commit()
@@ -1532,35 +1713,39 @@ class S3File(AbstractBufferedFile):
                 data = self.buffer.read()
                 write_result = self._call_s3(
                     self.fs.s3.put_object,
-                    Key=self.key, Bucket=self.bucket, Body=data, **self.kwargs
+                    Key=self.key,
+                    Bucket=self.bucket,
+                    Body=data,
+                    **self.kwargs,
                 )
                 if self.fs.version_aware:
-                    self.version_id = write_result.get('VersionId')
+                    self.version_id = write_result.get("VersionId")
             else:
                 raise RuntimeError
         else:
             logger.debug("Complete multi-part upload for %s " % self)
-            part_info = {'Parts': self.parts}
+            part_info = {"Parts": self.parts}
             write_result = self._call_s3(
                 self.fs.s3.complete_multipart_upload,
                 Bucket=self.bucket,
                 Key=self.key,
-                UploadId=self.mpu['UploadId'],
-                MultipartUpload=part_info)
+                UploadId=self.mpu["UploadId"],
+                MultipartUpload=part_info,
+            )
             if self.fs.version_aware:
-                self.version_id = write_result.get('VersionId')
+                self.version_id = write_result.get("VersionId")
 
         # complex cache invalidation, since file's appearance can cause several
         # directories
         self.buffer = None
-        parts = self.path.split('/')
+        parts = self.path.split("/")
         path = parts[0]
         for p in parts[1:]:
             if path in self.fs.dircache and not [
-                    True for f in self.fs.dircache[path]
-                    if f['name'] == path + '/' + p]:
+                True for f in self.fs.dircache[path] if f["name"] == path + "/" + p
+            ]:
                 self.fs.invalidate_cache(path)
-            path = path + '/' + p
+            path = path + "/" + p
 
     def discard(self):
         self._abort_mpu()
@@ -1572,24 +1757,30 @@ class S3File(AbstractBufferedFile):
                 self.fs.s3.abort_multipart_upload,
                 Bucket=self.bucket,
                 Key=self.key,
-                UploadId=self.mpu['UploadId'],
+                UploadId=self.mpu["UploadId"],
             )
             self.mpu = None
 
 
-def _fetch_range(fs, bucket, key, version_id, start, end,
-                 req_kw=None):
+def _fetch_range(fs, bucket, key, version_id, start, end, req_kw=None):
     if req_kw is None:
         req_kw = {}
     if start == end:
         logger.debug(
-            'skip fetch for negative range - bucket=%s,key=%s,start=%d,end=%d',
-            bucket, key, start, end
+            "skip fetch for negative range - bucket=%s,key=%s,start=%d,end=%d",
+            bucket,
+            key,
+            start,
+            end,
         )
-        return b''
+        return b""
     logger.debug("Fetch: %s/%s, %s-%s", bucket, key, start, end)
-    resp = fs.call_s3(fs.s3.get_object, Bucket=bucket, Key=key,
-                      Range='bytes=%i-%i' % (start, end - 1),
-                      **version_id_kw(version_id),
-                      **req_kw)
-    return maybe_sync(resp['Body'].read, fs)
+    resp = fs.call_s3(
+        fs.s3.get_object,
+        Bucket=bucket,
+        Key=key,
+        Range="bytes=%i-%i" % (start, end - 1),
+        **version_id_kw(version_id),
+        **req_kw,
+    )
+    return maybe_sync(resp["Body"].read, fs)

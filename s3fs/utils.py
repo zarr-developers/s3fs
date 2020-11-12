@@ -1,5 +1,4 @@
 from contextlib import contextmanager
-import sys
 
 
 @contextmanager
@@ -18,7 +17,7 @@ def title_case(string):
     ----------
     string : underscore separated string
     """
-    return ''.join(x.capitalize() for x in string.split('_'))
+    return "".join(x.capitalize() for x in string.split("_"))
 
 
 class ParamKwargsHelper(object):
@@ -30,6 +29,7 @@ class ParamKwargsHelper(object):
     ----------
     s3 : boto S3FileSystem
     """
+
     _kwarg_cache = {}
 
     def __init__(self, s3):
@@ -51,9 +51,13 @@ class ParamKwargsHelper(object):
 
 
 class SSEParams(object):
-
-    def __init__(self, server_side_encryption=None, sse_customer_algorithm=None,
-                 sse_customer_key=None, sse_kms_key_id=None):
+    def __init__(
+        self,
+        server_side_encryption=None,
+        sse_customer_algorithm=None,
+        sse_customer_key=None,
+        sse_kms_key_id=None,
+    ):
         self.ServerSideEncryption = server_side_encryption
         self.SSECustomerAlgorithm = sse_customer_algorithm
         self.SSECustomerKey = sse_customer_key
