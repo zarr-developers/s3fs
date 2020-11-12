@@ -265,7 +265,9 @@ class S3FileSystem(AsyncFileSystem):
     @staticmethod
     def _get_kwargs_from_urls(urlpath):
         """
-        When we have a urlpath that contains a ?versionId= query assume that we want to use version_aware mode for
+        When we have a urlpath that contains a ?versionId=
+
+        Assume that we want to use version_aware mode for
         the filesystem.
         """
         url_storage_opts = infer_storage_options(urlpath)
