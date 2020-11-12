@@ -49,5 +49,5 @@ jobs:
       - name: Lint
         shell: bash -l {0}
         run: |
-          flake8 gcsfs
-          black gcsfs --check
+          flake8 s3fs
+          black s3fs --check
