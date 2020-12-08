@@ -718,10 +718,13 @@ class S3FileSystem(AsyncFileSystem):
         if not truncate and self.exists(path):
             raise ValueError("S3 does not support touching existent files")
         try:
-            self.call_s3(self.s3.put_object, kwargs, Bucket=bucket, Key=key)
+            write_result = self.call_s3(
+                self.s3.put_object, kwargs, Bucket=bucket, Key=key
+            )
         except ClientError as ex:
             raise translate_boto_error(ex) from ex
         self.invalidate_cache(self._parent(path))
+        return write_result
 
     async def _cat_file(self, path, version_id=None, start=None, end=None):
         bucket, key, vers = self.split_path(path)
@@ -1707,7 +1710,7 @@ class S3File(AbstractBufferedFile):
             if self.buffer is not None:
                 logger.debug("Empty file committed %s" % self)
                 self._abort_mpu()
-                self.fs.touch(self.path)
+                write_result = self.fs.touch(self.path)
         elif not self.parts:
             if self.buffer is not None:
                 logger.debug("One-shot upload of %s" % self)
@@ -1720,8 +1723,6 @@ class S3File(AbstractBufferedFile):
                     Body=data,
                     **self.kwargs,
                 )
-                if self.fs.version_aware:
-                    self.version_id = write_result.get("VersionId")
             else:
                 raise RuntimeError
         else:
@@ -1734,9 +1735,9 @@ class S3File(AbstractBufferedFile):
                 UploadId=self.mpu["UploadId"],
                 MultipartUpload=part_info,
             )
-            if self.fs.version_aware:
-                self.version_id = write_result.get("VersionId")
 
+        if self.fs.version_aware:
+            self.version_id = write_result.get("VersionId")
         # complex cache invalidation, since file's appearance can cause several
         # directories
         self.buffer = None
