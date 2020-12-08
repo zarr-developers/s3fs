@@ -718,7 +718,9 @@ class S3FileSystem(AsyncFileSystem):
         if not truncate and self.exists(path):
             raise ValueError("S3 does not support touching existent files")
         try:
-            write_result = self.call_s3(self.s3.put_object, kwargs, Bucket=bucket, Key=key)
+            write_result = self.call_s3(
+                self.s3.put_object, kwargs, Bucket=bucket, Key=key
+            )
             if self.version_aware:
                 self.version_id = write_result.get("VersionId")
         except ClientError as ex:
