@@ -1544,6 +1544,35 @@ def test_touch(s3):
     assert s3.size(fn) == 4
 
 
+@pytest.mark.skipif(py35, reason="no versions on old moto for py36")
+def test_touch_versions(s3):
+    versioned_file = versioned_bucket_name + "/versioned_file"
+    s3 = S3FileSystem(
+        anon=False, version_aware=True, client_kwargs={"endpoint_url": endpoint_uri}
+    )
+    returned_versions = []
+    with s3.open(versioned_file, "wb") as fo:
+        fo.write(b"1")
+    returned_versions.append(fo.version_id)
+    with s3.open(versioned_file, "wb") as fo:
+        fo.write(b"")
+    returned_versions.append(fo.version_id)
+    assert s3.isfile(versioned_file)
+    versions = s3.object_version_info(versioned_file)
+    version_ids = [version["VersionId"] for version in versions]
+    assert len(version_ids) == 2
+
+    with s3.open(versioned_file) as fo:
+        assert fo.version_id == version_ids[1]
+        assert fo.version_id == returned_versions[1]
+        assert fo.read() == b""
+
+    with s3.open(versioned_file, version_id=version_ids[0]) as fo:
+        assert fo.version_id == version_ids[0]
+        assert fo.version_id == returned_versions[0]
+        assert fo.read() == b"1"
+
+
 def test_cat_missing(s3):
     fn0 = test_bucket_name + "/file0"
     fn1 = test_bucket_name + "/file1"
