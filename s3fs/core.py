@@ -718,7 +718,9 @@ class S3FileSystem(AsyncFileSystem):
         if not truncate and self.exists(path):
             raise ValueError("S3 does not support touching existent files")
         try:
-            self.call_s3(self.s3.put_object, kwargs, Bucket=bucket, Key=key)
+            write_result = self.call_s3(self.s3.put_object, kwargs, Bucket=bucket, Key=key)
+            if self.version_aware:
+                self.version_id = write_result.get("VersionId")
         except ClientError as ex:
             raise translate_boto_error(ex) from ex
         self.invalidate_cache(self._parent(path))
@@ -1708,6 +1710,9 @@ class S3File(AbstractBufferedFile):
                 logger.debug("Empty file committed %s" % self)
                 self._abort_mpu()
                 self.fs.touch(self.path)
+                if self.fs.version_aware and self.fs.version_id:
+                    self.version_id = self.fs.version_id
+
         elif not self.parts:
             if self.buffer is not None:
                 logger.debug("One-shot upload of %s" % self)
