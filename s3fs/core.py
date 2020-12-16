@@ -890,7 +890,11 @@ class S3FileSystem(AsyncFileSystem):
                 MaxKeys=1,
                 **self.req_kw,
             )
-            if out.get("KeyCount", 0) > 0 or out.get("Contents", []) or out.get("CommonPrefixes", []):
+            if (
+                out.get("KeyCount", 0) > 0
+                or out.get("Contents", [])
+                or out.get("CommonPrefixes", [])
+            ):
                 return {
                     "Key": "/".join([bucket, key]),
                     "name": "/".join([bucket, key]),
