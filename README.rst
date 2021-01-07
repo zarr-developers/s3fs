@@ -3,12 +3,12 @@ s3fs
 
 |Build Status| |Doc Status|
 
-S3FS builds on botocore_ to provide a convenient Python filesystem interface for S3.
+S3FS builds on aiobotocore_ to provide a convenient Python filesystem interface for S3.
 
 View the documentation_ for s3fs.
 
 .. _documentation: http://s3fs.readthedocs.io/en/latest/
-.. _botocore: https://botocore.readthedocs.io/en/latest/
+.. _aiobotocore: https://aiobotocore.readthedocs.io/en/latest/
 
 .. |Build Status| image:: https://github.com/dask/s3fs/workflows/CI/badge.svg
     :target: https://github.com/dask/s3fs/actions
