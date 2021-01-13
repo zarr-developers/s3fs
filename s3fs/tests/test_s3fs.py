@@ -1827,3 +1827,10 @@ def test_version_sizes(s3):
         with s3.open(path, version_id=version_id) as f:
             with gzip.open(f) as zfp:
                 zfp.read()
+
+
+def test_find_no_side_effect(s3):
+    infos1 = s3.find(test_bucket_name, maxdepth=1, withdirs=True, detail=True)
+    s3.find(test_bucket_name, maxdepth=None, withdirs=True, detail=True)
+    infos3 = s3.find(test_bucket_name, maxdepth=1, withdirs=True, detail=True)
+    assert infos1.keys() == infos3.keys()
