@@ -558,20 +558,22 @@ class S3FileSystem(AsyncFileSystem):
         sdirs = set()
         for o in out:
             par = self._parent(o["name"])
-            if par not in sdirs:
-                sdirs.add(par)
-                dirs.append(
-                    {
-                        "Key": self.split_path(par)[1],
-                        "Size": 0,
-                        "name": par,
-                        "StorageClass": "DIRECTORY",
-                        "type": "directory",
-                        "size": 0,
-                    }
-                )
-                self.dircache[par] = []
-            self.dircache[par].append(o)
+            if par not in self.dircache:
+                if par not in sdirs:
+                    sdirs.add(par)
+                    dirs.append(
+                        {
+                            "Key": self.split_path(par)[1],
+                            "Size": 0,
+                            "name": par,
+                            "StorageClass": "DIRECTORY",
+                            "type": "directory",
+                            "size": 0,
+                        }
+                    )
+                    self.dircache[par] = []
+            if par in sdirs:
+                self.dircache[par].append(o)
 
         if withdirs:
             out = sorted(out + dirs, key=lambda x: x["name"])
