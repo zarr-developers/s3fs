@@ -572,6 +572,7 @@ class S3FileSystem(AsyncFileSystem):
                         }
                     )
                     self.dircache[par] = []
+            if par in sdirs:
                 self.dircache[par].append(o)
 
         if withdirs:
