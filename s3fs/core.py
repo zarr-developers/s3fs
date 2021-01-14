@@ -561,16 +561,17 @@ class S3FileSystem(AsyncFileSystem):
             if par not in self.dircache:
                 if par not in sdirs:
                     sdirs.add(par)
-                    dirs.append(
-                        {
-                            "Key": self.split_path(par)[1],
-                            "Size": 0,
-                            "name": par,
-                            "StorageClass": "DIRECTORY",
-                            "type": "directory",
-                            "size": 0,
-                        }
-                    )
+                    if len(path) <= len(par):
+                        dirs.append(
+                            {
+                                "Key": self.split_path(par)[1],
+                                "Size": 0,
+                                "name": par,
+                                "StorageClass": "DIRECTORY",
+                                "type": "directory",
+                                "size": 0,
+                            }
+                        )
                     self.dircache[par] = []
             if par in sdirs:
                 self.dircache[par].append(o)

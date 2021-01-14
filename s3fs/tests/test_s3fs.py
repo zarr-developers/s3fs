@@ -776,10 +776,11 @@ def test_copy_managed(s3):
         sync(s3.loop, s3._copy_managed, fn, fn + "3", size=len(data), block=6 * 2 ** 30)
 
 
-def test_move(s3):
+@pytest.mark.parametrize("recursive", [True, False])
+def test_move(s3, recursive):
     fn = test_bucket_name + "/test/accounts.1.json"
     data = s3.cat(fn)
-    s3.mv(fn, fn + "2")
+    s3.mv(fn, fn + "2", recursive=recursive)
     assert s3.cat(fn + "2") == data
     assert not s3.exists(fn)
 
