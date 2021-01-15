@@ -1835,3 +1835,39 @@ def test_find_no_side_effect(s3):
     s3.find(test_bucket_name, maxdepth=None, withdirs=True, detail=True)
     infos3 = s3.find(test_bucket_name, maxdepth=1, withdirs=True, detail=True)
     assert infos1.keys() == infos3.keys()
+
+
+def test_get_file_info_with_selector(s3):
+    fs = s3
+    base_dir = "selector-dir/"
+    file_a = "selector-dir/test_file_a"
+    file_b = "selector-dir/test_file_b"
+    dir_a = "selector-dir/test_dir_a"
+    file_c = "selector-dir/test_dir_a/test_file_c"
+
+    try:
+        fs.mkdir(base_dir)
+        with fs.open(file_a, mode="wb"):
+            pass
+        with fs.open(file_b, mode="wb"):
+            pass
+        fs.mkdir(dir_a)
+        with fs.open(file_c, mode="wb"):
+            pass
+
+        infos = fs.find(base_dir, maxdepth=None, withdirs=True, detail=True)
+        assert len(infos) == 4
+
+        for info in infos.values():
+            if info["name"].endswith(file_a):
+                assert info["type"] == "file"
+            elif info["name"].endswith(file_b):
+                assert info["type"] == "file"
+            elif info["name"].endswith(file_c):
+                assert info["type"] == "file"
+            elif info["name"].rstrip("/").endswith(dir_a):
+                assert info["type"] == "directory"
+            else:
+                raise ValueError("unexpected path {}".format(info["name"]))
+    finally:
+        fs.rm(base_dir, recursive=True)
