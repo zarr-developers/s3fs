@@ -1839,11 +1839,11 @@ def test_find_no_side_effect(s3):
 
 def test_get_file_info_with_selector(s3):
     fs = s3
-    base_dir = 'selector-dir/'
-    file_a = 'selector-dir/test_file_a'
-    file_b = 'selector-dir/test_file_b'
-    dir_a = 'selector-dir/test_dir_a'
-    file_c = 'selector-dir/test_dir_a/test_file_c'
+    base_dir = "selector-dir/"
+    file_a = "selector-dir/test_file_a"
+    file_b = "selector-dir/test_file_b"
+    dir_a = "selector-dir/test_dir_a"
+    file_c = "selector-dir/test_dir_a/test_file_c"
 
     try:
         fs.mkdir(base_dir)
@@ -1868,6 +1868,6 @@ def test_get_file_info_with_selector(s3):
             elif info["name"].rstrip("/").endswith(dir_a):
                 assert info["type"] == "directory"
             else:
-                raise ValueError('unexpected path {}'.format(info["name"]))
+                raise ValueError("unexpected path {}".format(info["name"]))
     finally:
         fs.rm(base_dir, recursive=True)
