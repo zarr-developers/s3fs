@@ -72,7 +72,7 @@ Integration
 The libraries ``intake``, ``pandas`` and ``dask`` accept URLs with the prefix
 "s3://", and will use s3fs to complete the IO operation in question. The
 IO functions take an argument ``storage_options``, which will be passed
-to ``S3File3System``, for example:
+to ``S3FileSystem``, for example:
 
 .. code-block:: python
 
