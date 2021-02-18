@@ -1405,10 +1405,10 @@ def test_text_io__basic(s3):
     """Text mode is now allowed."""
     s3.mkdir("bucket")
 
-    with s3.open("bucket/file.txt", "w") as fd:
+    with s3.open("bucket/file.txt", "w", encoding='utf-8') as fd:
         fd.write("\u00af\\_(\u30c4)_/\u00af")
 
-    with s3.open("bucket/file.txt", "r") as fd:
+    with s3.open("bucket/file.txt", "r", encoding='utf-8') as fd:
         assert fd.read() == "\u00af\\_(\u30c4)_/\u00af"
 
 
