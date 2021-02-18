@@ -1189,7 +1189,11 @@ def _get_s3_id(s3):
 
 
 @pytest.mark.skipif(sys.version_info[:2] < (3, 7), reason="ctx method only >py37")
-@pytest.mark.parametrize("method", ["spawn", "forkserver"])
+@pytest.mark.parametrize("method",
+                         [
+                             "spawn",
+                             pytest.param("forkserver", marks=pytest.mark.skipif(sys.platform.startswith("win"), reason="'forserver' not available on windows"))
+                         ])
 def test_no_connection_sharing_among_processes(s3, method):
     import multiprocessing as mp
 
