@@ -752,7 +752,8 @@ class S3FileSystem(AsyncFileSystem):
     async def _pipe_file(self, path, data, chunksize=50 * 2 ** 20, **kwargs):
         bucket, key, _ = self.split_path(path)
         size = len(data)
-        if size < 5 * 2 ** 20:
+        # 5 GB is the limit for an S3 PUT
+        if size < min(5 * 2 ** 30, 2 * chunksize):
             return await self._call_s3(
                 self.s3.put_object, Bucket=bucket, Key=key, Body=data, **kwargs
             )
@@ -793,7 +794,7 @@ class S3FileSystem(AsyncFileSystem):
             return
         size = os.path.getsize(lpath)
         with open(lpath, "rb") as f0:
-            if size < 5 * 2 ** 20:
+            if size < min(5 * 2 ** 30, 2 * chunksize):
                 return await self._call_s3(
                     self.s3.put_object, Bucket=bucket, Key=key, Body=f0, **kwargs
                 )
