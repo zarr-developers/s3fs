@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import asyncio
+import errno
 import logging
 import os
 import socket
@@ -1676,7 +1677,10 @@ class S3File(AbstractBufferedFile):
             )
 
         except OSError as ex:
-            raise FileExpired(filename=self.details['name'], e_tag=self.details['ETag']) from ex
+            if ex.args[0] == errno.EINVAL and "pre-conditions" in ex.args[1]:
+                raise FileExpired(filename=self.details['name'], e_tag=self.details['ETag']) from ex
+            else:
+                raise
 
     def _upload_chunk(self, final=False):
         bucket, key, _ = self.fs.split_path(self.path)
