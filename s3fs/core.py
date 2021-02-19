@@ -17,7 +17,7 @@ from aiobotocore.config import AioConfig
 from botocore.exceptions import ClientError, ParamValidationError
 
 from s3fs.errors import translate_boto_error
-from s3fs.utils import ParamKwargsHelper, _get_brange
+from s3fs.utils import ParamKwargsHelper, _get_brange, FileExpired
 
 logger = logging.getLogger("s3fs")
 
@@ -448,6 +448,16 @@ class S3FileSystem(AsyncFileSystem):
         kwargs: dict-like
             Additional parameters used for s3 methods.  Typically used for
             ServerSideEncryption.
+
+        Exceptions
+        ----------
+        FileExpired(OSError) :
+            Is raised, when the file content has been changed from a different process after
+            opening the file. Reading the file would lead to invalid or inconsistent output.
+            This can also be triggered by outdated file-information inside the directory cache.
+            In this case ``S3FileSystem.invalidate_cache`` can be used to force an update of
+            the file-information when opening the file.
+
         """
         if block_size is None:
             block_size = self.default_block_size
@@ -1583,6 +1593,9 @@ class S3File(AbstractBufferedFile):
                 self.append_block = True
             self.loc = loc
 
+        if "r" in mode:
+            self.req_kw['IfMatch'] = self.details['ETag']
+
     def _call_s3(self, method, *kwarglist, **kwargs):
         return self.fs.call_s3(method, self.s3_additional_kwargs, *kwarglist, **kwargs)
 
@@ -1651,15 +1664,19 @@ class S3File(AbstractBufferedFile):
         return self.fs.url(self.path, **kwargs)
 
     def _fetch_range(self, start, end):
-        return _fetch_range(
-            self.fs,
-            self.bucket,
-            self.key,
-            self.version_id,
-            start,
-            end,
-            req_kw=self.req_kw,
-        )
+        try:
+            return _fetch_range(
+                self.fs,
+                self.bucket,
+                self.key,
+                self.version_id,
+                start,
+                end,
+                req_kw=self.req_kw,
+            )
+
+        except OSError as ex:
+            raise FileExpired(filename=self.details['name'], e_tag=self.details['ETag']) from ex
 
     def _upload_chunk(self, final=False):
         bucket, key, _ = self.fs.split_path(self.path)

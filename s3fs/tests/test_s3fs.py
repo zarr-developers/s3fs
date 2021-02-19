@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import asyncio
+import errno
 import datetime
 from contextlib import contextmanager
 import json
@@ -83,13 +84,17 @@ def s3_base():
     proc.wait()
 
 
-@pytest.fixture()
-def s3(s3_base):
+def get_boto3_client():
     from botocore.session import Session
 
     # NB: we use the sync botocore client for setup
     session = Session()
-    client = session.create_client("s3", endpoint_url=endpoint_uri)
+    return session.create_client("s3", endpoint_url=endpoint_uri)
+
+
+@pytest.fixture()
+def s3(s3_base):
+    client = get_boto3_client()
     client.create_bucket(Bucket=test_bucket_name, ACL="public-read")
 
     client.create_bucket(Bucket=versioned_bucket_name, ACL="public-read")
@@ -1883,3 +1888,26 @@ def test_get_file_info_with_selector(s3):
                 raise ValueError("unexpected path {}".format(info["name"]))
     finally:
         fs.rm(base_dir, recursive=True)
+
+
+def test_raise_exception_when_file_has_changed_during_reading(s3):
+    test_file_name = "file1"
+    test_file = "s3://" + test_bucket_name + "/" + test_file_name
+    content1 = b"123"
+    content2 = b"ABCDEFG"
+
+    boto3_client = get_boto3_client()
+
+    def create_file(content: bytes):
+        boto3_client.put_object(Bucket=test_bucket_name, Key=test_file_name, Body=content)
+
+    create_file(b"123")
+
+    with s3.open(test_file, "rb") as f:
+        content = f.read()
+        assert content == content1
+
+    with s3.open(test_file, "rb") as f:
+        create_file(content2)
+        with expect_errno(errno.EBUSY):
+            f.read()
