@@ -12,7 +12,11 @@ def ignoring(*exceptions):
 
 class FileExpired(IOError):
     def __init__(self, filename: str, e_tag: str):
-        super().__init__(errno.EBUSY, "The remote file corresponding to filename %s and Etag %s no longer exists." % (filename, e_tag))
+        super().__init__(
+            errno.EBUSY,
+            "The remote file corresponding to filename %s and Etag %s no longer exists."
+            % (filename, e_tag),
+        )
 
 
 def title_case(string):

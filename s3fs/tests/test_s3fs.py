@@ -1899,7 +1899,9 @@ def test_raise_exception_when_file_has_changed_during_reading(s3):
     boto3_client = get_boto3_client()
 
     def create_file(content: bytes):
-        boto3_client.put_object(Bucket=test_bucket_name, Key=test_file_name, Body=content)
+        boto3_client.put_object(
+            Bucket=test_bucket_name, Key=test_file_name, Body=content
+        )
 
     create_file(b"123")
 

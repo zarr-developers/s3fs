@@ -1595,7 +1595,7 @@ class S3File(AbstractBufferedFile):
             self.loc = loc
 
         if "r" in mode:
-            self.req_kw['IfMatch'] = self.details['ETag']
+            self.req_kw["IfMatch"] = self.details["ETag"]
 
     def _call_s3(self, method, *kwarglist, **kwargs):
         return self.fs.call_s3(method, self.s3_additional_kwargs, *kwarglist, **kwargs)
@@ -1678,7 +1678,9 @@ class S3File(AbstractBufferedFile):
 
         except OSError as ex:
             if ex.args[0] == errno.EINVAL and "pre-conditions" in ex.args[1]:
-                raise FileExpired(filename=self.details['name'], e_tag=self.details['ETag']) from ex
+                raise FileExpired(
+                    filename=self.details["name"], e_tag=self.details["ETag"]
+                ) from ex
             else:
                 raise
 
