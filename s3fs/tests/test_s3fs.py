@@ -11,12 +11,14 @@ import requests
 import time
 import sys
 import pytest
+import moto
 from itertools import chain
 import fsspec.core
 from s3fs.core import S3FileSystem
 from s3fs.utils import ignoring, SSEParams
 from botocore.exceptions import NoCredentialsError
 from fsspec.asyn import sync
+from packaging import version
 
 test_bucket_name = "test"
 secure_bucket_name = "test-secure"
@@ -1890,6 +1892,7 @@ def test_get_file_info_with_selector(s3):
         fs.rm(base_dir, recursive=True)
 
 
+@pytest.mark.xfail(version.parse(moto.__version__) > version.parse("1.3.16"))
 def test_raise_exception_when_file_has_changed_during_reading(s3):
     test_file_name = "file1"
     test_file = "s3://" + test_bucket_name + "/" + test_file_name
