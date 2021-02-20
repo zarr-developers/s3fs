@@ -1893,7 +1893,7 @@ def test_get_file_info_with_selector(s3):
 
 
 @pytest.mark.xfail(
-    version.parse(moto.__version__) > version.parse("1.3.16"),
+    skip=version.parse(moto.__version__) > version.parse("1.3.16"),
     reason="Moto 1.3.16 is not supporting pre-conditions.",
 )
 def test_raise_exception_when_file_has_changed_during_reading(s3):
