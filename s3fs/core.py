@@ -449,16 +449,6 @@ class S3FileSystem(AsyncFileSystem):
         kwargs: dict-like
             Additional parameters used for s3 methods.  Typically used for
             ServerSideEncryption.
-
-        Exceptions
-        ----------
-        FileExpired(OSError) :
-            Is raised, when the file content has been changed from a different process after
-            opening the file. Reading the file would lead to invalid or inconsistent output.
-            This can also be triggered by outdated file-information inside the directory cache.
-            In this case ``S3FileSystem.invalidate_cache`` can be used to force an update of
-            the file-information when opening the file.
-
         """
         if block_size is None:
             block_size = self.default_block_size
