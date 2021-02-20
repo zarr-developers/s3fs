@@ -18,6 +18,7 @@ class FileExpired(IOError):
     In this case ``S3FileSystem.invalidate_cache`` can be used to force an update of
     the file-information when opening the file.
     """
+
     def __init__(self, filename: str, e_tag: str):
         super().__init__(
             errno.EBUSY,
