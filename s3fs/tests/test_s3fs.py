@@ -1189,7 +1189,19 @@ def _get_s3_id(s3):
 
 
 @pytest.mark.skipif(sys.version_info[:2] < (3, 7), reason="ctx method only >py37")
-@pytest.mark.parametrize("method", ["spawn", "forkserver"])
+@pytest.mark.parametrize(
+    "method",
+    [
+        "spawn",
+        pytest.param(
+            "forkserver",
+            marks=pytest.mark.skipif(
+                sys.platform.startswith("win"),
+                reason="'forserver' not available on windows",
+            ),
+        ),
+    ],
+)
 def test_no_connection_sharing_among_processes(s3, method):
     import multiprocessing as mp
 
@@ -1405,10 +1417,10 @@ def test_text_io__basic(s3):
     """Text mode is now allowed."""
     s3.mkdir("bucket")
 
-    with s3.open("bucket/file.txt", "w") as fd:
+    with s3.open("bucket/file.txt", "w", encoding="utf-8") as fd:
         fd.write("\u00af\\_(\u30c4)_/\u00af")
 
-    with s3.open("bucket/file.txt", "r") as fd:
+    with s3.open("bucket/file.txt", "r", encoding="utf-8") as fd:
         assert fd.read() == "\u00af\\_(\u30c4)_/\u00af"
 
 
