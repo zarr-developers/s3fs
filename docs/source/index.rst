@@ -154,6 +154,11 @@ methods, in order:
 
 - for nodes on EC2, the IAM metadata provider
 
+You can specifiy a profile using `s3fs.S3FileSystem(profile='PROFILE')`.
+Othwerwise ``sf3s`` will use authentication via `boto environment variables`_.
+
+.. _boto environment variables: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-environment-variables
+
 In a distributed environment, it is not expected that raw credentials should
 be passed between machines. In the explicitly provided credentials case, the
 method ``get_delegated_s3pars()`` can be used to obtain temporary credentials.
