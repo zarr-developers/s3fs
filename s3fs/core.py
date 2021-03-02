@@ -734,7 +734,7 @@ class S3FileSystem(AsyncFileSystem):
         bucket, key, vers = self.split_path(path)
         if (start is None) ^ (end is None):
             raise ValueError("Give start and end or neither")
-        if start:
+        if start is not None:
             head = {"Range": "bytes=%i-%i" % (start, end - 1)}
         else:
             head = {}
