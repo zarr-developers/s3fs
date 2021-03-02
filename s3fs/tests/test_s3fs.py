@@ -1745,6 +1745,8 @@ def test_async_s3(s3):
 
         assert await s3._cat_file(fn) == data
 
+        assert await s3._cat_file(fn, start=0, end=3) == data[:3]
+
         with s3.open(fn, "rb") as f:
             assert f.read() == data
 
