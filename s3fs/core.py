@@ -227,12 +227,14 @@ class S3FileSystem(AsyncFileSystem):
     async def _call_s3(self, method, *akwarglist, **kwargs):
         kw2 = kwargs.copy()
         kw2.pop("Body", None)
-        logger.debug("CALL: %s - %s - %s", (method.__name__, akwarglist, kw2))
+        logger.debug("CALL: %s - %s - %s", method.__name__, akwarglist, kw2)
         additional_kwargs = self._get_s3_method_kwargs(method, *akwarglist, **kwargs)
         for i in range(self.retries):
             try:
                 logger.debug("await aiobotocore")
-                return await method(**additional_kwargs)
+                out = await method(**additional_kwargs)
+                logger.debug("OK")
+                return out
             except S3_RETRYABLE_ERRORS as e:
                 logger.debug("Retryable error: %s", e)
                 err = e
