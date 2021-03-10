@@ -255,7 +255,7 @@ class S3FileSystem(AsyncFileSystem):
         logger.debug("raise at end of call")
         ex = translate_boto_error(err)
         del err
-        raise from ex
+        raise ex
 
     call_s3 = sync_wrapper(_call_s3)
 
