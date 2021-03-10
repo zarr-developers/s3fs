@@ -227,29 +227,35 @@ class S3FileSystem(AsyncFileSystem):
     async def _call_s3(self, method, *akwarglist, **kwargs):
         kw2 = kwargs.copy()
         kw2.pop("Body", None)
-        logger.debug("CALL: %s - %s - %s" % (method.__name__, akwarglist, kw2))
+        logger.debug("CALL: %s - %s - %s", (method.__name__, akwarglist, kw2))
         additional_kwargs = self._get_s3_method_kwargs(method, *akwarglist, **kwargs)
         for i in range(self.retries):
             try:
+                logger.debug("await aiobotocore")
                 return await method(**additional_kwargs)
             except S3_RETRYABLE_ERRORS as e:
-                logger.debug("Retryable error: %s" % e)
+                logger.debug("Retryable error: %s", e)
                 err = e
                 await asyncio.sleep(min(1.7 ** i * 0.1, 15))
             except Exception as e:
-                logger.debug("Nonretryable error: %s" % e)
+                logger.debug("Nonretryable error: %s", e)
                 err = e
                 break
+        logger.debug("end retry block after error")
         if "'coroutine'" in str(err):
             # aiobotocore internal error - fetch original botocore error
             tb = err.__traceback__
             while tb.tb_next:
                 tb = tb.tb_next
             try:
+                logger.debug("await aiobotocore")
                 await tb.tb_frame.f_locals["response"]
             except Exception as e:
                 err = e
-        raise translate_boto_error(err) from err
+        logger.debug("raise at end of call")
+        ex = translate_boto_error(err)
+        del err
+        raise from ex
 
     call_s3 = sync_wrapper(_call_s3)
 
