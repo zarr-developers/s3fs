@@ -36,6 +36,7 @@ def setup_logging(level=None):
 if "S3FS_LOGGING_LEVEL" in os.environ:
     setup_logging()
 
+MANAGED_COPY_THRESHOLD = 5 * 2 ** 30
 S3_RETRYABLE_ERRORS = (socket.timeout,)
 
 _VALID_FILE_MODES = {"r", "w", "a", "rb", "wb", "ab"}
@@ -1395,13 +1396,12 @@ class S3FileSystem(AsyncFileSystem):
         self.invalidate_cache(path2)
 
     async def _cp_file(self, path1, path2, preserve_etag=None, **kwargs):
-        threshold = kwargs.pop("managed_threshold", 5 * 2 ** 30)
         path1 = self._strip_protocol(path1)
         bucket, key, vers = self.split_path(path1)
 
         info = await self._info(path1, bucket, key, version_id=vers)
         size = info["size"]
-        if size <= threshold:
+        if size <= MANAGED_COPY_THRESHOLD:
             # simple copy allowed for <5GB
             await self._copy_basic(path1, path2, **kwargs)
         elif preserve_etag:
