@@ -1401,23 +1401,35 @@ class S3FileSystem(AsyncFileSystem):
         self.invalidate_cache(path2)
 
     async def _cp_file(self, path1, path2, preserve_etag=None, **kwargs):
-        """Copy file between locations on S3."""
+        """Copy file between locations on S3.
+        
+        preserve_etag: bool
+            Whether to preserve etag while copying. If the file is uploaded
+            as a single part, then it will be always equalivent to the md5
+            hash of the file hence etag will always be preserved. But if the
+            file is uploaded in multi parts, then this option will try to
+            reproduce the same multipart upload while copying and preserve
+            the generated etag.
+        """
         path1 = self._strip_protocol(path1)
         bucket, key, vers = self.split_path(path1)
 
         info = await self._info(path1, bucket, key, version_id=vers)
         size = info["size"]
-        if size <= MANAGED_COPY_THRESHOLD:
-            # simple copy allowed for <5GB
-            await self._copy_basic(path1, path2, **kwargs)
-        elif preserve_etag:
-            # etag preserving multipart copy
-            _, _, parts_suffix = info["ETag"].strip('"').partition("-")
-            assert parts_suffix
+
+        _, _, parts_suffix = info["ETag"].strip('"').partition("-")
+        if preserve_etag and parts_suffix:
             await self._copy_etag_preserved(
                 path1, path2, size, total_parts=int(parts_suffix)
             )
+        elif size <= MANAGED_COPY_THRESHOLD:
+            # simple copy allowed for <5GB
+            await self._copy_basic(path1, path2, **kwargs)
         else:
+            # if the preserve_etag is true, either the file is uploaded
+            # on multiple parts or the size is lower than 5GB
+            assert not preserve_etag
+
             # serial multipart copy
             await self._copy_managed(path1, path2, size, **kwargs)
 
