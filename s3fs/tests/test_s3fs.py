@@ -1928,8 +1928,8 @@ def test_raise_exception_when_file_has_changed_during_reading(s3):
 def test_s3fs_etag_preserving_multipart_copy(monkeypatch, s3):
     # Set this to a lower value so that we can actually
     # test this without creating giant objects in memory
-    monkeypatch.setattr(s3fs.core, 'MANAGED_COPY_THRESHOLD', 5 * 2 ** 20)
-    
+    monkeypatch.setattr(s3fs.core, "MANAGED_COPY_THRESHOLD", 5 * 2 ** 20)
+
     test_file1 = test_bucket_name + "/test/multipart-upload.txt"
     test_file2 = test_bucket_name + "/test/multipart-upload-copy.txt"
 
