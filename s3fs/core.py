@@ -1322,14 +1322,14 @@ class S3FileSystem(AsyncFileSystem):
         mpu = await self._call_s3(
             self.s3.create_multipart_upload, Bucket=bucket2, Key=key2, **kwargs
         )
-        part_infos = await asyncio.gather(*[
-            self._call_s3(
-                self.s3.head_object,
-                Bucket=bucket1,
-                Key=key1,
-                PartNumber=i
-            ) for i in range(1, total_parts + 1)
-        ])
+        part_infos = await asyncio.gather(
+            *[
+                self._call_s3(
+                    self.s3.head_object, Bucket=bucket1, Key=key1, PartNumber=i
+                )
+                for i in range(1, total_parts + 1)
+            ]
+        )
 
         parts = []
         brange_first = 0
