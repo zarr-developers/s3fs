@@ -1311,6 +1311,49 @@ class S3FileSystem(AsyncFileSystem):
             raise ValueError("Copy failed (%r -> %r): %s" % (path1, path2, e)) from e
         self.invalidate_cache(path2)
 
+    async def _copy_etag_preserved(self, path1, path2, size, total_parts, **kwargs):
+        """Copy file between locations on S3 as multi-part while preserving
+        the etag (using the same part sizes for each part"""
+
+        bucket1, key1, version1 = self.split_path(path1)
+        bucket2, key2, version2 = self.split_path(path2)
+
+        mpu = await self._call_s3(
+            self.s3.create_multipart_upload, Bucket=bucket2, Key=key2, **kwargs
+        )
+
+        parts = []
+        brange_first = 0
+        for i in range(1, total_parts + 1):
+            part_info = await self._call_s3(
+                self.s3.head_object, Bucket=bucket1, Key=key1, PartNumber=i
+            )
+            part_size = part_info["ContentLength"]
+            brange_last = brange_first + part_size - 1
+            if brange_last > size:
+                brange_last = size - 1
+
+            part = await self._call_s3(
+                self.s3.upload_part_copy,
+                Bucket=bucket2,
+                Key=key2,
+                PartNumber=i,
+                UploadId=mpu["UploadId"],
+                CopySource=path1,
+                CopySourceRange="bytes=%i-%i" % (brange_first, brange_last),
+            )
+            parts.append({"PartNumber": i, "ETag": part["CopyPartResult"]["ETag"]})
+            brange_first += part_size
+
+        await self._call_s3(
+            self.s3.complete_multipart_upload,
+            Bucket=bucket2,
+            Key=key2,
+            UploadId=mpu["UploadId"],
+            MultipartUpload={"Parts": parts},
+        )
+        self.invalidate_cache(path2)
+
     async def _copy_managed(self, path1, path2, size, block=5 * 2 ** 30, **kwargs):
         """Copy file between locations on S3 as multi-part
 
@@ -1351,14 +1394,23 @@ class S3FileSystem(AsyncFileSystem):
         )
         self.invalidate_cache(path2)
 
-    async def _cp_file(self, path1, path2, **kwargs):
-        gb5 = 5 * 2 ** 30
+    async def _cp_file(self, path1, path2, preserve_etag=None, **kwargs):
+        threshold = kwargs.pop("managed_threshold", 5 * 2 ** 30)
         path1 = self._strip_protocol(path1)
         bucket, key, vers = self.split_path(path1)
-        size = (await self._info(path1, bucket, key, version_id=vers))["size"]
-        if size <= gb5:
+
+        info = await self._info(path1, bucket, key, version_id=vers)
+        size = info["size"]
+        if size <= threshold:
             # simple copy allowed for <5GB
             await self._copy_basic(path1, path2, **kwargs)
+        elif preserve_etag:
+            # etag preserving multipart copy
+            _, _, parts_suffix = info["ETag"].strip('"').partition("-")
+            assert parts_suffix
+            await self._copy_etag_preserved(
+                path1, path2, size, total_parts=int(parts_suffix)
+            )
         else:
             # serial multipart copy
             await self._copy_managed(path1, path2, size, **kwargs)
