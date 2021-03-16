@@ -1402,7 +1402,7 @@ class S3FileSystem(AsyncFileSystem):
 
     async def _cp_file(self, path1, path2, preserve_etag=None, **kwargs):
         """Copy file between locations on S3.
-        
+
         preserve_etag: bool
             Whether to preserve etag while copying. If the file is uploaded
             as a single part, then it will be always equalivent to the md5
