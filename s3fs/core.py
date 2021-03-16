@@ -211,15 +211,32 @@ class S3FileSystem(AsyncFileSystem):
         self.use_ssl = use_ssl
         if not asynchronous:
             self.connect()
-            weakref.finalize(self, sync, self.loop, self._s3.close)
+            weakref.finalize(self, self.close_s3, self._loop, self.loop)
         else:
-            self._s3 = None
+            self._loop._s3 = None
+
+    @staticmethod
+    def close_s3(looplocal, loop):
+        s3 = getattr(looplocal, "_s3", None)
+        if s3 is not None:
+            try:
+                sync(loop, s3.close)
+            except RuntimeError:
+                pass  # loop already closed
+
+    @property
+    def _s3(self):
+        return self._loop._s3
 
     @property
     def s3(self):
-        if self._s3 is None:
+        if not hasattr(self._loop, "_s3"):
+            # repeats __init__ for when instance is accessed in new thread
+            self.connect()
+            weakref.finalize(self, self.close_s3, self._loop, self.loop)
+        if self._loop._s3 is None:
             raise RuntimeError("please await ``._connect`` before anything else")
-        return self._s3
+        return self._loop._s3
 
     def _filter_kwargs(self, s3_method, kwargs):
         return self._kwargs_helper.filter_dict(s3_method.__name__, kwargs)
@@ -370,9 +387,9 @@ class S3FileSystem(AsyncFileSystem):
         s3creator = self.session.create_client(
             "s3", config=conf, **init_kwargs, **client_kwargs
         )
-        self._s3 = await s3creator.__aenter__()
-        self._kwargs_helper = ParamKwargsHelper(self.s3)
-        return self._s3
+        self._loop._s3 = await s3creator.__aenter__()
+        self._kwargs_helper = ParamKwargsHelper(self._loop._s3)
+        return self._loop._s3
 
     connect = sync_wrapper(_connect)
 
