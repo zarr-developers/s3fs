@@ -1401,6 +1401,7 @@ class S3FileSystem(AsyncFileSystem):
         self.invalidate_cache(path2)
 
     async def _cp_file(self, path1, path2, preserve_etag=None, **kwargs):
+        """Copy file between locations on S3."""
         path1 = self._strip_protocol(path1)
         bucket, key, vers = self.split_path(path1)
 
