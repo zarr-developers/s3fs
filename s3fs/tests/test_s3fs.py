@@ -865,6 +865,26 @@ def test_errors(s3):
         s3.find("s3://")
 
 
+def test_errors_cause_preservings(monkeypatch, s3):
+    # We translate the error, and preserve the original one
+    with pytest.raises(FileNotFoundError) as exc:
+        s3.rm("unknown")
+
+    assert type(exc.value.__cause__).__name__ == "NoSuchBucket"
+
+    async def head_object(*args, **kwargs):
+        raise NoCredentialsError
+
+    monkeypatch.setattr(type(s3.s3), "head_object", head_object)
+
+    # Since the error is not translate, the __cause__ would
+    # be None
+    with pytest.raises(NoCredentialsError) as exc:
+        s3.info("test/a.txt")
+
+    assert exc.value.__cause__ is None
+
+
 def test_read_small(s3):
     fn = test_bucket_name + "/2014-01-01.csv"
     with s3.open(fn, "rb", block_size=10) as f:

@@ -112,7 +112,7 @@ ERROR_CODE_TO_EXCEPTION = {
 }
 
 
-def translate_boto_error(error, message=None, *args, **kwargs):
+def translate_boto_error(error, message=None, set_cause=True, *args, **kwargs):
     """Convert a ClientError exception into a Python one.
 
     Parameters
@@ -123,6 +123,9 @@ def translate_boto_error(error, message=None, *args, **kwargs):
     message : str
         An error message to use for the returned exception. If not given, the
         error message returned by the server is used instead.
+    set_cause : bool
+        Whether to set the __cause__ attribute to the previous exception if the
+        exception is translated.
     *args, **kwargs :
         Additional arguments to pass to the exception constructor, after the
         error message. Useful for passing the filename arguments to ``IOError``.
@@ -138,11 +141,14 @@ def translate_boto_error(error, message=None, *args, **kwargs):
         return error
     code = error.response["Error"].get("Code")
     constructor = ERROR_CODE_TO_EXCEPTION.get(code)
-    if not constructor:
+    if constructor:
+        if not message:
+            message = error.response["Error"].get("Message", str(error))
+        custom_exc = constructor(message, *args, **kwargs)
+    else:
         # No match found, wrap this in an IOError with the appropriate message.
-        return IOError(errno.EIO, message or str(error), *args)
+        custom_exc = IOError(errno.EIO, message or str(error), *args)
 
-    if not message:
-        message = error.response["Error"].get("Message", str(error))
-
-    return constructor(message, *args, **kwargs)
+    if set_cause:
+        custom_exc.__cause__ = error
+    return custom_exc

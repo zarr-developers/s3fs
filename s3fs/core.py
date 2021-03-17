@@ -251,7 +251,7 @@ class S3FileSystem(AsyncFileSystem):
                 await tb.tb_frame.f_locals["response"]
             except Exception as e:
                 err = e
-        raise translate_boto_error(err) from err
+        raise translate_boto_error(err)
 
     call_s3 = sync_wrapper(_call_s3)
 
@@ -526,7 +526,7 @@ class S3FileSystem(AsyncFileSystem):
                     f["Key"] = "/".join([bucket, f["Key"]])
                     f["name"] = f["Key"]
             except ClientError as e:
-                raise translate_boto_error(e) from e
+                raise translate_boto_error(e)
 
             if delimiter:
                 self.dircache[path] = files
@@ -605,7 +605,7 @@ class S3FileSystem(AsyncFileSystem):
                 self.invalidate_cache("")
                 self.invalidate_cache(bucket)
             except ClientError as e:
-                raise translate_boto_error(e) from e
+                raise translate_boto_error(e)
             except ParamValidationError as e:
                 raise ValueError("Bucket create failed %r: %s" % (bucket, e))
         else:
@@ -727,7 +727,7 @@ class S3FileSystem(AsyncFileSystem):
                 self.s3.put_object, kwargs, Bucket=bucket, Key=key
             )
         except ClientError as ex:
-            raise translate_boto_error(ex) from ex
+            raise translate_boto_error(ex)
         self.invalidate_cache(self._parent(path))
         return write_result
 
@@ -882,7 +882,7 @@ class S3FileSystem(AsyncFileSystem):
         except FileNotFoundError:
             pass
         except ClientError as e:
-            raise translate_boto_error(e)
+            raise translate_boto_error(e, set_cause=False)
 
         try:
             # We check to see if the path is a directory by attempting to list its
@@ -912,7 +912,7 @@ class S3FileSystem(AsyncFileSystem):
 
             raise FileNotFoundError(path)
         except ClientError as e:
-            raise translate_boto_error(e)
+            raise translate_boto_error(e, set_cause=False)
         except ParamValidationError as e:
             raise ValueError("Failed to list path %r: %s" % (path, e))
 
@@ -1307,7 +1307,7 @@ class S3FileSystem(AsyncFileSystem):
                 self.s3.copy_object, kwargs, Bucket=buc2, Key=key2, CopySource=copy_src
             )
         except ClientError as e:
-            raise translate_boto_error(e) from e
+            raise translate_boto_error(e)
         except ParamValidationError as e:
             raise ValueError("Copy failed (%r -> %r): %s" % (path1, path2, e)) from e
         self.invalidate_cache(path2)
