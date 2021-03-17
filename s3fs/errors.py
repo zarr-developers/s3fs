@@ -123,6 +123,9 @@ def translate_boto_error(error, message=None, set_cause=True, *args, **kwargs):
     message : str
         An error message to use for the returned exception. If not given, the
         error message returned by the server is used instead.
+    set_cause : bool
+        Whether to set the __cause__ attribute to the previous exception if the
+        exception is translated.
     *args, **kwargs :
         Additional arguments to pass to the exception constructor, after the
         error message. Useful for passing the filename arguments to ``IOError``.
