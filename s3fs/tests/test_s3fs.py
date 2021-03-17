@@ -7,6 +7,7 @@ import json
 from concurrent.futures import ProcessPoolExecutor
 import io
 import os
+import random
 import requests
 import time
 import sys
@@ -14,6 +15,7 @@ import pytest
 import moto
 from itertools import chain
 import fsspec.core
+import s3fs.core
 from s3fs.core import S3FileSystem
 from s3fs.utils import ignoring, SSEParams
 from botocore.exceptions import NoCredentialsError
@@ -1921,3 +1923,35 @@ def test_raise_exception_when_file_has_changed_during_reading(s3):
         create_file(content2)
         with expect_errno(errno.EBUSY):
             f.read()
+
+
+def test_s3fs_etag_preserving_multipart_copy(monkeypatch, s3):
+    # Set this to a lower value so that we can actually
+    # test this without creating giant objects in memory
+    monkeypatch.setattr(s3fs.core, "MANAGED_COPY_THRESHOLD", 5 * 2 ** 20)
+
+    test_file1 = test_bucket_name + "/test/multipart-upload.txt"
+    test_file2 = test_bucket_name + "/test/multipart-upload-copy.txt"
+
+    with s3.open(test_file1, "wb", block_size=5 * 2 ** 21) as stream:
+        for _ in range(5):
+            stream.write(b"b" * (stream.blocksize + random.randrange(200)))
+
+    file_1 = s3.info(test_file1)
+
+    s3.copy(test_file1, test_file2)
+    file_2 = s3.info(test_file2)
+    s3.rm(test_file2)
+
+    # normal copy() uses a block size of 5GB
+    assert file_1["ETag"] != file_2["ETag"]
+
+    s3.copy(test_file1, test_file2, preserve_etag=True)
+    file_2 = s3.info(test_file2)
+    s3.rm(test_file2)
+
+    # etag preserving copy() determines each part size for the destination
+    # by checking out the matching part's size on the source
+    assert file_1["ETag"] == file_2["ETag"]
+
+    s3.rm(test_file1)
