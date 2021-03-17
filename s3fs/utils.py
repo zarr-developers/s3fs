@@ -1,3 +1,4 @@
+import errno
 from contextlib import contextmanager
 
 
@@ -7,6 +8,23 @@ def ignoring(*exceptions):
         yield
     except exceptions:
         pass
+
+
+class FileExpired(IOError):
+    """
+    Is raised, when the file content has been changed from a different process after
+    opening the file. Reading the file would lead to invalid or inconsistent output.
+    This can also be triggered by outdated file-information inside the directory cache.
+    In this case ``S3FileSystem.invalidate_cache`` can be used to force an update of
+    the file-information when opening the file.
+    """
+
+    def __init__(self, filename: str, e_tag: str):
+        super().__init__(
+            errno.EBUSY,
+            "The remote file corresponding to filename %s and Etag %s no longer exists."
+            % (filename, e_tag),
+        )
 
 
 def title_case(string):

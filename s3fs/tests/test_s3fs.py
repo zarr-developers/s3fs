@@ -1,21 +1,26 @@
 # -*- coding: utf-8 -*-
 import asyncio
+import errno
 import datetime
 from contextlib import contextmanager
 import json
 from concurrent.futures import ProcessPoolExecutor
 import io
 import os
+import random
 import requests
 import time
 import sys
 import pytest
+import moto
 from itertools import chain
 import fsspec.core
+import s3fs.core
 from s3fs.core import S3FileSystem
 from s3fs.utils import ignoring, SSEParams
 from botocore.exceptions import NoCredentialsError
 from fsspec.asyn import sync
+from packaging import version
 
 test_bucket_name = "test"
 secure_bucket_name = "test-secure"
@@ -83,13 +88,17 @@ def s3_base():
     proc.wait()
 
 
-@pytest.fixture()
-def s3(s3_base):
+def get_boto3_client():
     from botocore.session import Session
 
     # NB: we use the sync botocore client for setup
     session = Session()
-    client = session.create_client("s3", endpoint_url=endpoint_uri)
+    return session.create_client("s3", endpoint_url=endpoint_uri)
+
+
+@pytest.fixture()
+def s3(s3_base):
+    client = get_boto3_client()
     client.create_bucket(Bucket=test_bucket_name, ACL="public-read")
 
     client.create_bucket(Bucket=versioned_bucket_name, ACL="public-read")
@@ -856,6 +865,26 @@ def test_errors(s3):
         s3.find("s3://")
 
 
+def test_errors_cause_preservings(monkeypatch, s3):
+    # We translate the error, and preserve the original one
+    with pytest.raises(FileNotFoundError) as exc:
+        s3.rm("unknown")
+
+    assert type(exc.value.__cause__).__name__ == "NoSuchBucket"
+
+    async def head_object(*args, **kwargs):
+        raise NoCredentialsError
+
+    monkeypatch.setattr(type(s3.s3), "head_object", head_object)
+
+    # Since the error is not translate, the __cause__ would
+    # be None
+    with pytest.raises(NoCredentialsError) as exc:
+        s3.info("test/a.txt")
+
+    assert exc.value.__cause__ is None
+
+
 def test_read_small(s3):
     fn = test_bucket_name + "/2014-01-01.csv"
     with s3.open(fn, "rb", block_size=10) as f:
@@ -1189,7 +1218,19 @@ def _get_s3_id(s3):
 
 
 @pytest.mark.skipif(sys.version_info[:2] < (3, 7), reason="ctx method only >py37")
-@pytest.mark.parametrize("method", ["spawn", "forkserver"])
+@pytest.mark.parametrize(
+    "method",
+    [
+        "spawn",
+        pytest.param(
+            "forkserver",
+            marks=pytest.mark.skipif(
+                sys.platform.startswith("win"),
+                reason="'forserver' not available on windows",
+            ),
+        ),
+    ],
+)
 def test_no_connection_sharing_among_processes(s3, method):
     import multiprocessing as mp
 
@@ -1405,10 +1446,10 @@ def test_text_io__basic(s3):
     """Text mode is now allowed."""
     s3.mkdir("bucket")
 
-    with s3.open("bucket/file.txt", "w") as fd:
+    with s3.open("bucket/file.txt", "w", encoding="utf-8") as fd:
         fd.write("\u00af\\_(\u30c4)_/\u00af")
 
-    with s3.open("bucket/file.txt", "r") as fd:
+    with s3.open("bucket/file.txt", "r", encoding="utf-8") as fd:
         assert fd.read() == "\u00af\\_(\u30c4)_/\u00af"
 
 
@@ -1726,6 +1767,8 @@ def test_async_s3(s3):
 
         assert await s3._cat_file(fn) == data
 
+        assert await s3._cat_file(fn, start=0, end=3) == data[:3]
+
         with s3.open(fn, "rb") as f:
             assert f.read() == data
 
@@ -1871,3 +1914,64 @@ def test_get_file_info_with_selector(s3):
                 raise ValueError("unexpected path {}".format(info["name"]))
     finally:
         fs.rm(base_dir, recursive=True)
+
+
+@pytest.mark.xfail(
+    condition=version.parse(moto.__version__) <= version.parse("1.3.16"),
+    reason="Moto 1.3.16 is not supporting pre-conditions.",
+)
+def test_raise_exception_when_file_has_changed_during_reading(s3):
+    test_file_name = "file1"
+    test_file = "s3://" + test_bucket_name + "/" + test_file_name
+    content1 = b"123"
+    content2 = b"ABCDEFG"
+
+    boto3_client = get_boto3_client()
+
+    def create_file(content: bytes):
+        boto3_client.put_object(
+            Bucket=test_bucket_name, Key=test_file_name, Body=content
+        )
+
+    create_file(b"123")
+
+    with s3.open(test_file, "rb") as f:
+        content = f.read()
+        assert content == content1
+
+    with s3.open(test_file, "rb") as f:
+        create_file(content2)
+        with expect_errno(errno.EBUSY):
+            f.read()
+
+
+def test_s3fs_etag_preserving_multipart_copy(monkeypatch, s3):
+    # Set this to a lower value so that we can actually
+    # test this without creating giant objects in memory
+    monkeypatch.setattr(s3fs.core, "MANAGED_COPY_THRESHOLD", 5 * 2 ** 20)
+
+    test_file1 = test_bucket_name + "/test/multipart-upload.txt"
+    test_file2 = test_bucket_name + "/test/multipart-upload-copy.txt"
+
+    with s3.open(test_file1, "wb", block_size=5 * 2 ** 21) as stream:
+        for _ in range(5):
+            stream.write(b"b" * (stream.blocksize + random.randrange(200)))
+
+    file_1 = s3.info(test_file1)
+
+    s3.copy(test_file1, test_file2)
+    file_2 = s3.info(test_file2)
+    s3.rm(test_file2)
+
+    # normal copy() uses a block size of 5GB
+    assert file_1["ETag"] != file_2["ETag"]
+
+    s3.copy(test_file1, test_file2, preserve_etag=True)
+    file_2 = s3.info(test_file2)
+    s3.rm(test_file2)
+
+    # etag preserving copy() determines each part size for the destination
+    # by checking out the matching part's size on the source
+    assert file_1["ETag"] == file_2["ETag"]
+
+    s3.rm(test_file1)

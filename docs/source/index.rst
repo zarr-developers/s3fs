@@ -72,7 +72,7 @@ Integration
 The libraries ``intake``, ``pandas`` and ``dask`` accept URLs with the prefix
 "s3://", and will use s3fs to complete the IO operation in question. The
 IO functions take an argument ``storage_options``, which will be passed
-to ``S3File3System``, for example:
+to ``S3FileSystem``, for example:
 
 .. code-block:: python
 
@@ -153,6 +153,11 @@ methods, in order:
 - configuration files such as ``~/.aws/credentials``
 
 - for nodes on EC2, the IAM metadata provider
+
+You can specifiy a profile using `s3fs.S3FileSystem(profile='PROFILE')`.
+Othwerwise ``sf3s`` will use authentication via `boto environment variables`_.
+
+.. _boto environment variables: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-environment-variables
 
 In a distributed environment, it is not expected that raw credentials should
 be passed between machines. In the explicitly provided credentials case, the

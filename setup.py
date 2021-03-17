@@ -23,4 +23,8 @@ setup(name='s3fs',
       packages=['s3fs'],
       python_requires='>= 3.7',
       install_requires=[open('requirements.txt').read().strip().split('\n')],
+      extras_require = {
+          'awscli': ['aiobotocore[awscli]'],
+          'boto3': ['aiobotocore[boto3]'],
+      },
       zip_safe=False)

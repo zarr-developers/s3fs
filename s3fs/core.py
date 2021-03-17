@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import asyncio
+import errno
 import logging
 import os
 import socket
@@ -17,7 +18,7 @@ from aiobotocore.config import AioConfig
 from botocore.exceptions import ClientError, ParamValidationError
 
 from s3fs.errors import translate_boto_error
-from s3fs.utils import ParamKwargsHelper, _get_brange
+from s3fs.utils import ParamKwargsHelper, _get_brange, FileExpired
 
 logger = logging.getLogger("s3fs")
 
@@ -35,6 +36,7 @@ def setup_logging(level=None):
 if "S3FS_LOGGING_LEVEL" in os.environ:
     setup_logging()
 
+MANAGED_COPY_THRESHOLD = 5 * 2 ** 30
 S3_RETRYABLE_ERRORS = (socket.timeout,)
 
 _VALID_FILE_MODES = {"r", "w", "a", "rb", "wb", "ab"}
@@ -248,7 +250,6 @@ class S3FileSystem(AsyncFileSystem):
         additional_kwargs = self._get_s3_method_kwargs(method, *akwarglist, **kwargs)
         for i in range(self.retries):
             try:
-                logger.debug("await aiobotocore")
                 out = await method(**additional_kwargs)
                 logger.debug("OK")
                 return out
@@ -260,21 +261,16 @@ class S3FileSystem(AsyncFileSystem):
                 logger.debug("Nonretryable error: %s", e)
                 err = e
                 break
-        logger.debug("end retry block after error")
         if "'coroutine'" in str(err):
             # aiobotocore internal error - fetch original botocore error
             tb = err.__traceback__
             while tb.tb_next:
                 tb = tb.tb_next
             try:
-                logger.debug("await aiobotocore")
                 await tb.tb_frame.f_locals["response"]
             except Exception as e:
                 err = e
-        logger.debug("raise at end of call")
-        ex = translate_boto_error(err)
-        del err
-        raise ex
+        raise translate_boto_error(err)
 
     call_s3 = sync_wrapper(_call_s3)
 
@@ -549,7 +545,7 @@ class S3FileSystem(AsyncFileSystem):
                     f["Key"] = "/".join([bucket, f["Key"]])
                     f["name"] = f["Key"]
             except ClientError as e:
-                raise translate_boto_error(e) from e
+                raise translate_boto_error(e)
 
             if delimiter:
                 self.dircache[path] = files
@@ -628,7 +624,7 @@ class S3FileSystem(AsyncFileSystem):
                 self.invalidate_cache("")
                 self.invalidate_cache(bucket)
             except ClientError as e:
-                raise translate_boto_error(e) from e
+                raise translate_boto_error(e)
             except ParamValidationError as e:
                 raise ValueError("Bucket create failed %r: %s" % (bucket, e))
         else:
@@ -750,7 +746,7 @@ class S3FileSystem(AsyncFileSystem):
                 self.s3.put_object, kwargs, Bucket=bucket, Key=key
             )
         except ClientError as ex:
-            raise translate_boto_error(ex) from ex
+            raise translate_boto_error(ex)
         self.invalidate_cache(self._parent(path))
         return write_result
 
@@ -758,7 +754,7 @@ class S3FileSystem(AsyncFileSystem):
         bucket, key, vers = self.split_path(path)
         if (start is None) ^ (end is None):
             raise ValueError("Give start and end or neither")
-        if start:
+        if start is not None:
             head = {"Range": "bytes=%i-%i" % (start, end - 1)}
         else:
             head = {}
@@ -777,7 +773,8 @@ class S3FileSystem(AsyncFileSystem):
     async def _pipe_file(self, path, data, chunksize=50 * 2 ** 20, **kwargs):
         bucket, key, _ = self.split_path(path)
         size = len(data)
-        if size < 5 * 2 ** 20:
+        # 5 GB is the limit for an S3 PUT
+        if size < min(5 * 2 ** 30, 2 * chunksize):
             return await self._call_s3(
                 self.s3.put_object, Bucket=bucket, Key=key, Body=data, **kwargs
             )
@@ -818,7 +815,7 @@ class S3FileSystem(AsyncFileSystem):
             return
         size = os.path.getsize(lpath)
         with open(lpath, "rb") as f0:
-            if size < 5 * 2 ** 20:
+            if size < min(5 * 2 ** 30, 2 * chunksize):
                 return await self._call_s3(
                     self.s3.put_object, Bucket=bucket, Key=key, Body=f0, **kwargs
                 )
@@ -904,7 +901,7 @@ class S3FileSystem(AsyncFileSystem):
         except FileNotFoundError:
             pass
         except ClientError as e:
-            raise translate_boto_error(e)
+            raise translate_boto_error(e, set_cause=False)
 
         try:
             # We check to see if the path is a directory by attempting to list its
@@ -934,7 +931,7 @@ class S3FileSystem(AsyncFileSystem):
 
             raise FileNotFoundError(path)
         except ClientError as e:
-            raise translate_boto_error(e)
+            raise translate_boto_error(e, set_cause=False)
         except ParamValidationError as e:
             raise ValueError("Failed to list path %r: %s" % (path, e))
 
@@ -1329,9 +1326,57 @@ class S3FileSystem(AsyncFileSystem):
                 self.s3.copy_object, kwargs, Bucket=buc2, Key=key2, CopySource=copy_src
             )
         except ClientError as e:
-            raise translate_boto_error(e) from e
+            raise translate_boto_error(e)
         except ParamValidationError as e:
             raise ValueError("Copy failed (%r -> %r): %s" % (path1, path2, e)) from e
+        self.invalidate_cache(path2)
+
+    async def _copy_etag_preserved(self, path1, path2, size, total_parts, **kwargs):
+        """Copy file between locations on S3 as multi-part while preserving
+        the etag (using the same part sizes for each part"""
+
+        bucket1, key1, version1 = self.split_path(path1)
+        bucket2, key2, version2 = self.split_path(path2)
+
+        mpu = await self._call_s3(
+            self.s3.create_multipart_upload, Bucket=bucket2, Key=key2, **kwargs
+        )
+        part_infos = await asyncio.gather(
+            *[
+                self._call_s3(
+                    self.s3.head_object, Bucket=bucket1, Key=key1, PartNumber=i
+                )
+                for i in range(1, total_parts + 1)
+            ]
+        )
+
+        parts = []
+        brange_first = 0
+        for i, part_info in enumerate(part_infos, 1):
+            part_size = part_info["ContentLength"]
+            brange_last = brange_first + part_size - 1
+            if brange_last > size:
+                brange_last = size - 1
+
+            part = await self._call_s3(
+                self.s3.upload_part_copy,
+                Bucket=bucket2,
+                Key=key2,
+                PartNumber=i,
+                UploadId=mpu["UploadId"],
+                CopySource=path1,
+                CopySourceRange="bytes=%i-%i" % (brange_first, brange_last),
+            )
+            parts.append({"PartNumber": i, "ETag": part["CopyPartResult"]["ETag"]})
+            brange_first += part_size
+
+        await self._call_s3(
+            self.s3.complete_multipart_upload,
+            Bucket=bucket2,
+            Key=key2,
+            UploadId=mpu["UploadId"],
+            MultipartUpload={"Parts": parts},
+        )
         self.invalidate_cache(path2)
 
     async def _copy_managed(self, path1, path2, size, block=5 * 2 ** 30, **kwargs):
@@ -1374,15 +1419,36 @@ class S3FileSystem(AsyncFileSystem):
         )
         self.invalidate_cache(path2)
 
-    async def _cp_file(self, path1, path2, **kwargs):
-        gb5 = 5 * 2 ** 30
+    async def _cp_file(self, path1, path2, preserve_etag=None, **kwargs):
+        """Copy file between locations on S3.
+
+        preserve_etag: bool
+            Whether to preserve etag while copying. If the file is uploaded
+            as a single part, then it will be always equalivent to the md5
+            hash of the file hence etag will always be preserved. But if the
+            file is uploaded in multi parts, then this option will try to
+            reproduce the same multipart upload while copying and preserve
+            the generated etag.
+        """
         path1 = self._strip_protocol(path1)
         bucket, key, vers = self.split_path(path1)
-        size = (await self._info(path1, bucket, key, version_id=vers))["size"]
-        if size <= gb5:
+
+        info = await self._info(path1, bucket, key, version_id=vers)
+        size = info["size"]
+
+        _, _, parts_suffix = info["ETag"].strip('"').partition("-")
+        if preserve_etag and parts_suffix:
+            await self._copy_etag_preserved(
+                path1, path2, size, total_parts=int(parts_suffix)
+            )
+        elif size <= MANAGED_COPY_THRESHOLD:
             # simple copy allowed for <5GB
             await self._copy_basic(path1, path2, **kwargs)
         else:
+            # if the preserve_etag is true, either the file is uploaded
+            # on multiple parts or the size is lower than 5GB
+            assert not preserve_etag
+
             # serial multipart copy
             await self._copy_managed(path1, path2, size, **kwargs)
 
@@ -1608,6 +1674,9 @@ class S3File(AbstractBufferedFile):
                 self.append_block = True
             self.loc = loc
 
+        if "r" in mode:
+            self.req_kw["IfMatch"] = self.details["ETag"]
+
     def _call_s3(self, method, *kwarglist, **kwargs):
         return self.fs.call_s3(method, self.s3_additional_kwargs, *kwarglist, **kwargs)
 
@@ -1676,15 +1745,24 @@ class S3File(AbstractBufferedFile):
         return self.fs.url(self.path, **kwargs)
 
     def _fetch_range(self, start, end):
-        return _fetch_range(
-            self.fs,
-            self.bucket,
-            self.key,
-            self.version_id,
-            start,
-            end,
-            req_kw=self.req_kw,
-        )
+        try:
+            return _fetch_range(
+                self.fs,
+                self.bucket,
+                self.key,
+                self.version_id,
+                start,
+                end,
+                req_kw=self.req_kw,
+            )
+
+        except OSError as ex:
+            if ex.args[0] == errno.EINVAL and "pre-conditions" in ex.args[1]:
+                raise FileExpired(
+                    filename=self.details["name"], e_tag=self.details["ETag"]
+                ) from ex
+            else:
+                raise
 
     def _upload_chunk(self, final=False):
         bucket, key, _ = self.fs.split_path(self.path)
