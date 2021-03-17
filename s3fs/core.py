@@ -213,15 +213,32 @@ class S3FileSystem(AsyncFileSystem):
         self.use_ssl = use_ssl
         if not asynchronous:
             self.connect()
-            weakref.finalize(self, sync, self.loop, self._s3.close)
+            weakref.finalize(self, self.close_s3, self._loop, self.loop)
         else:
-            self._s3 = None
+            self._loop._s3 = None
+
+    @staticmethod
+    def close_s3(looplocal, loop):
+        s3 = getattr(looplocal, "_s3", None)
+        if s3 is not None:
+            try:
+                sync(loop, s3.close)
+            except RuntimeError:
+                pass  # loop already closed
+
+    @property
+    def _s3(self):
+        return self._loop._s3
 
     @property
     def s3(self):
-        if self._s3 is None:
+        if not hasattr(self._loop, "_s3"):
+            # repeats __init__ for when instance is accessed in new thread
+            self.connect()
+            weakref.finalize(self, self.close_s3, self._loop, self.loop)
+        if self._loop._s3 is None:
             raise RuntimeError("please await ``._connect`` before anything else")
-        return self._s3
+        return self._loop._s3
 
     def _filter_kwargs(self, s3_method, kwargs):
         return self._kwargs_helper.filter_dict(s3_method.__name__, kwargs)
@@ -229,17 +246,19 @@ class S3FileSystem(AsyncFileSystem):
     async def _call_s3(self, method, *akwarglist, **kwargs):
         kw2 = kwargs.copy()
         kw2.pop("Body", None)
-        logger.debug("CALL: %s - %s - %s" % (method.__name__, akwarglist, kw2))
+        logger.debug("CALL: %s - %s - %s", method.__name__, akwarglist, kw2)
         additional_kwargs = self._get_s3_method_kwargs(method, *akwarglist, **kwargs)
         for i in range(self.retries):
             try:
-                return await method(**additional_kwargs)
+                out = await method(**additional_kwargs)
+                logger.debug("OK")
+                return out
             except S3_RETRYABLE_ERRORS as e:
-                logger.debug("Retryable error: %s" % e)
+                logger.debug("Retryable error: %s", e)
                 err = e
                 await asyncio.sleep(min(1.7 ** i * 0.1, 15))
             except Exception as e:
-                logger.debug("Nonretryable error: %s" % e)
+                logger.debug("Nonretryable error: %s", e)
                 err = e
                 break
         if "'coroutine'" in str(err):
@@ -364,9 +383,9 @@ class S3FileSystem(AsyncFileSystem):
         s3creator = self.session.create_client(
             "s3", config=conf, **init_kwargs, **client_kwargs
         )
-        self._s3 = await s3creator.__aenter__()
-        self._kwargs_helper = ParamKwargsHelper(self.s3)
-        return self._s3
+        self._loop._s3 = await s3creator.__aenter__()
+        self._kwargs_helper = ParamKwargsHelper(self._loop._s3)
+        return self._loop._s3
 
     connect = sync_wrapper(_connect)
 
