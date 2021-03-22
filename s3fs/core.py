@@ -194,13 +194,13 @@ class S3FileSystem(AsyncFileSystem):
         self.secret = secret
         self.token = token
         self.kwargs = kwargs
-        self.session = session
         super_kwargs = {
             k: kwargs.pop(k)
             for k in ["use_listings_cache", "listings_expiry_time", "max_paths"]
             if k in kwargs
         }  # passed to fsspec superclass
         super().__init__(loop=loop, asynchronous=asynchronous, **super_kwargs)
+        self._loop.session = session
 
         self.default_block_size = default_block_size or self.default_block_size
         self.default_fill_cache = default_fill_cache
@@ -235,10 +235,15 @@ class S3FileSystem(AsyncFileSystem):
         if not hasattr(self._loop, "_s3"):
             # repeats __init__ for when instance is accessed in new thread
             self.connect()
-            weakref.finalize(self, self.close_s3, self._loop, self.loop)
         if self._loop._s3 is None:
             raise RuntimeError("please await ``._connect`` before anything else")
         return self._loop._s3
+
+    @property
+    def session(self):
+        if not hasattr(self._loop, "session") or self._loop.session is None:
+            self._loop.session = aiobotocore.AioSession(**self.kwargs)
+        return self._loop.session
 
     def _filter_kwargs(self, s3_method, kwargs):
         return self._kwargs_helper.filter_dict(s3_method.__name__, kwargs)
@@ -251,7 +256,6 @@ class S3FileSystem(AsyncFileSystem):
         for i in range(self.retries):
             try:
                 out = await method(**additional_kwargs)
-                logger.debug("OK")
                 return out
             except S3_RETRYABLE_ERRORS as e:
                 logger.debug("Retryable error: %s", e)
@@ -378,11 +382,10 @@ class S3FileSystem(AsyncFileSystem):
             }
             config_kwargs["signature_version"] = UNSIGNED
         conf = AioConfig(**config_kwargs)
-        if self.session is None:
-            self.session = aiobotocore.AioSession(**self.kwargs)
         s3creator = self.session.create_client(
             "s3", config=conf, **init_kwargs, **client_kwargs
         )
+        self._loop.s3creator = s3creator
         self._loop._s3 = await s3creator.__aenter__()
         self._kwargs_helper = ParamKwargsHelper(self._loop._s3)
         return self._loop._s3

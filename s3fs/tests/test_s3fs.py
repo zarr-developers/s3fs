@@ -1869,7 +1869,7 @@ def test_version_sizes(s3):
     for version in versions:
         version_id = version["VersionId"]
         with s3.open(path, version_id=version_id) as f:
-            with gzip.open(f) as zfp:
+            with gzip.GzipFile(fileobj=f) as zfp:
                 zfp.read()
 
 
