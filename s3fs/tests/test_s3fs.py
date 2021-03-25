@@ -1763,14 +1763,15 @@ def test_async_s3(s3):
         with pytest.raises(RuntimeError):
             await s3._cat_file(fn)
 
-        s3.connect()  # creates client
+        await s3._connect()  # creates client
 
         assert await s3._cat_file(fn) == data
 
         assert await s3._cat_file(fn, start=0, end=3) == data[:3]
 
-        with s3.open(fn, "rb") as f:
-            assert f.read() == data
+        # TODO: file IO is *not* async
+        # with s3.open(fn, "rb") as f:
+        #     assert f.read() == data
 
         await s3._s3.close()
 

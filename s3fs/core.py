@@ -213,14 +213,15 @@ class S3FileSystem(AsyncFileSystem):
         self.use_ssl = use_ssl
         if not asynchronous:
             self.connect()
-            weakref.finalize(self, self.close_s3, self._loop, self.loop)
+            weakref.finalize(self, self.close_s3, self._loop)
         else:
             self._loop._s3 = None
 
     @staticmethod
-    def close_s3(looplocal, loop):
+    def close_s3(looplocal):
         s3 = getattr(looplocal, "_s3", None)
-        if s3 is not None:
+        loop = getattr(looplocal, "loop", None)
+        if s3 is not None and loop is not None:
             try:
                 sync(loop, s3.close)
             except RuntimeError:
@@ -560,7 +561,7 @@ class S3FileSystem(AsyncFileSystem):
         if not bucket:
             raise ValueError("Cannot traverse all of S3")
         if maxdepth:
-            return super().find(
+            return await super()._find(
                 bucket + "/" + key, maxdepth=maxdepth, withdirs=withdirs, detail=detail
             )
         # TODO: implement find from dircache, if all listings are present
@@ -681,7 +682,7 @@ class S3FileSystem(AsyncFileSystem):
             return files
         return self.dircache[""]
 
-    async def _ls(self, path, refresh=False):
+    async def _ls(self, path, detail=True, refresh=False):
         """List files in given bucket, or list of buckets.
 
         Listing is cached unless `refresh=True`.
@@ -698,9 +699,12 @@ class S3FileSystem(AsyncFileSystem):
         """
         path = self._strip_protocol(path)
         if path in ["", "/"]:
-            return await self._lsbuckets(refresh)
+            out = await self._lsbuckets(refresh)
         else:
-            return await self._lsdir(path, refresh)
+            out = await self._lsdir(path, refresh)
+        if detail:
+            return out
+        return sorted([o["name"] for o in out])
 
     ls = sync_wrapper(_ls)
 
