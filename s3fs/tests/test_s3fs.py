@@ -1763,7 +1763,7 @@ def test_async_s3(s3):
         with pytest.raises(RuntimeError):
             await s3._cat_file(fn)
 
-        s3.connect()  # creates client
+        await s3._connect()  # creates client
 
         assert await s3._cat_file(fn) == data
 
