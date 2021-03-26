@@ -222,6 +222,7 @@ class S3FileSystem(AsyncFileSystem):
             raise RuntimeError("This class is not fork-safe")
         if not hasattr(self._loop, "loop"):
             self._loop.loop = get_loop()
+            self.s3
         return self._loop.loop
 
     @staticmethod
@@ -230,9 +231,6 @@ class S3FileSystem(AsyncFileSystem):
         loop = get_loop()
         if s3 is not None:
             sync(loop, s3.close)
-        session = getattr(looplocal, "session", None)
-        if session is not None:
-            pass
 
     @property
     def _s3(self):
@@ -241,7 +239,6 @@ class S3FileSystem(AsyncFileSystem):
     @property
     def s3(self):
         if not hasattr(self._loop, "_s3"):
-            # repeats __init__ for when instance is accessed in new thread
             self.connect()
             weakref.finalize(self, self.close_s3, self._loop)
         if self._loop._s3 is None:
