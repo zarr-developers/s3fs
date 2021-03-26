@@ -9,7 +9,7 @@ import weakref
 
 from fsspec.spec import AbstractBufferedFile
 from fsspec.utils import infer_storage_options, tokenize
-from fsspec.asyn import AsyncFileSystem, sync, sync_wrapper, maybe_sync
+from fsspec.asyn import AsyncFileSystem, sync, sync_wrapper, maybe_sync, get_loop
 
 import aiobotocore
 import botocore
@@ -212,31 +212,25 @@ class S3FileSystem(AsyncFileSystem):
         self.s3_additional_kwargs = s3_additional_kwargs or {}
         self.use_ssl = use_ssl
         if not asynchronous:
-            self.connect()
-            weakref.finalize(self, self.close_s3, self._loop)
+            self.s3
         else:
             self._loop._s3 = None
 
     @property
     def loop(self):
-        from fsspec.asyn import get_loop
-
         if os.getpid() != self._pid:
             raise RuntimeError("This class is not fork-safe")
         if not hasattr(self._loop, "loop"):
             self._loop.loop = get_loop()
-            sync(self._loop.loop, self._connect)
+            self.s3
         return self._loop.loop
 
     @staticmethod
     def close_s3(looplocal):
         s3 = getattr(looplocal, "_s3", None)
-        loop = getattr(looplocal, "loop", None)
-        if s3 is not None and loop is not None:
-            try:
-                sync(loop, s3.close)
-            except RuntimeError:
-                pass  # loop already closed
+        loop = get_loop()
+        if s3 is not None:
+            sync(loop, s3.close)
 
     @property
     def _s3(self):
@@ -245,7 +239,6 @@ class S3FileSystem(AsyncFileSystem):
     @property
     def s3(self):
         if not hasattr(self._loop, "_s3"):
-            # repeats __init__ for when instance is accessed in new thread
             self.connect()
             weakref.finalize(self, self.close_s3, self._loop)
         if self._loop._s3 is None:
