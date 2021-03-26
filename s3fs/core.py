@@ -217,6 +217,17 @@ class S3FileSystem(AsyncFileSystem):
         else:
             self._loop._s3 = None
 
+    @property
+    def loop(self):
+        from fsspec.asyn import get_loop
+
+        if os.getpid() != self._pid:
+            raise RuntimeError("This class is not fork-safe")
+        if not hasattr(self._loop, "loop"):
+            self._loop.loop = get_loop()
+            sync(self._loop.loop, self._connect)
+        return self._loop.loop
+
     @staticmethod
     def close_s3(looplocal):
         s3 = getattr(looplocal, "_s3", None)
@@ -236,6 +247,7 @@ class S3FileSystem(AsyncFileSystem):
         if not hasattr(self._loop, "_s3"):
             # repeats __init__ for when instance is accessed in new thread
             self.connect()
+            weakref.finalize(self, self.close_s3, self._loop)
         if self._loop._s3 is None:
             raise RuntimeError("please await ``._connect`` before anything else")
         return self._loop._s3
@@ -393,7 +405,7 @@ class S3FileSystem(AsyncFileSystem):
 
     connect = sync_wrapper(_connect)
 
-    def get_delegated_s3pars(self, exp=3600):
+    async def _get_delegated_s3pars(self, exp=3600):
         """Get temporary credentials from STS, appropriate for sending across a
         network. Only relevant where the key/secret were explicitly provided.
 
@@ -417,14 +429,16 @@ class S3FileSystem(AsyncFileSystem):
             }
         if self.key is None or self.secret is None:  # automatic credentials
             return {"anon": False}
-        sts = self.session.create_client("sts")
-        cred = sts.get_session_token(DurationSeconds=exp)["Credentials"]
-        return {
-            "key": cred["AccessKeyId"],
-            "secret": cred["SecretAccessKey"],
-            "token": cred["SessionToken"],
-            "anon": False,
-        }
+        async with self.session.create_client("sts") as sts:
+            cred = sts.get_session_token(DurationSeconds=exp)["Credentials"]
+            return {
+                "key": cred["AccessKeyId"],
+                "secret": cred["SecretAccessKey"],
+                "token": cred["SessionToken"],
+                "anon": False,
+            }
+
+    get_delegated_s3pars = sync_wrapper(_get_delegated_s3pars)
 
     def _open(
         self,
@@ -1502,7 +1516,13 @@ class S3FileSystem(AsyncFileSystem):
             self.s3.delete_objects, kwargs, Bucket=bucket, Delete=delete_keys
         )
 
-    async def _rm(self, paths, **kwargs):
+    async def _rm(self, path, recursive=False, **kwargs):
+        if recursive and isinstance(path, str):
+            bucket, key, _ = self.split_path(path)
+            if not key and await self._is_bucket_versioned(bucket):
+                # special path to completely remove versioned bucket
+                await self._rm_versioned_bucket_contents(self, bucket)
+        paths = await self._expand_path(path, recursive=recursive)
         files = [p for p in paths if self.split_path(p)[1]]
         dirs = [p for p in paths if not self.split_path(p)[1]]
         # TODO: fails if more than one bucket in list
@@ -1541,14 +1561,6 @@ class S3FileSystem(AsyncFileSystem):
                     self.s3.delete_objects, Bucket=bucket, Delete=delete_keys
                 )
 
-    def rm(self, path, recursive=False, **kwargs):
-        if recursive and isinstance(path, str):
-            bucket, key, _ = self.split_path(path)
-            if not key and self.is_bucket_versioned(bucket):
-                # special path to completely remove versioned bucket
-                maybe_sync(self._rm_versioned_bucket_contents, self, bucket)
-        super().rm(path, recursive=recursive, **kwargs)
-
     def invalidate_cache(self, path=None):
         if path is None:
             self.dircache.clear()
@@ -1559,10 +1571,11 @@ class S3FileSystem(AsyncFileSystem):
                 self.dircache.pop(path, None)
                 path = self._parent(path)
 
-    def walk(self, path, maxdepth=None, **kwargs):
+    async def _walk(self, path, maxdepth=None, **kwargs):
         if path in ["", "*"] + ["{}://".format(p) for p in self.protocol]:
             raise ValueError("Cannot crawl all of S3")
-        return super().walk(path, maxdepth=maxdepth, **kwargs)
+        async for _ in super()._walk(path, maxdepth=maxdepth, **kwargs):
+            yield _
 
     def modified(self, path, version_id=None, refresh=False):
         """Return the last modified timestamp of file at `path` as a datetime"""
