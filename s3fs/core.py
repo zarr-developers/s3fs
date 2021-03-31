@@ -9,7 +9,7 @@ import weakref
 
 from fsspec.spec import AbstractBufferedFile
 from fsspec.utils import infer_storage_options, tokenize, setup_logging
-from fsspec.asyn import AsyncFileSystem, sync, sync_wrapper, get_loop
+from fsspec.asyn import AsyncFileSystem, sync, sync_wrapper
 
 import aiobotocore
 import botocore
@@ -382,7 +382,7 @@ class S3FileSystem(AsyncFileSystem):
         if loop is not None and loop.is_running():
             sync(loop, s3.__aexit__, None, None, None, timeout=0.1)
         else:
-            self._s3._endpoint.http_session._connector._close
+            s3._endpoint.http_session._connector._close
 
     async def _get_delegated_s3pars(self, exp=3600):
         """Get temporary credentials from STS, appropriate for sending across a
@@ -735,7 +735,9 @@ class S3FileSystem(AsyncFileSystem):
                 # might still be a bucket we can access but don't own
                 pass
             try:
-                await self._call_s3("list_objects_v2", MaxKeys=1, Bucket=bucket, **self.req_kw)
+                await self._call_s3(
+                    "list_objects_v2", MaxKeys=1, Bucket=bucket, **self.req_kw
+                )
                 return True
             except Exception:
                 return False
@@ -1020,7 +1022,6 @@ class S3FileSystem(AsyncFileSystem):
 
     isdir = sync_wrapper(_isdir)
 
-
     async def _object_version_info(self, path, **kwargs):
         if not self.version_aware:
             raise ValueError(
@@ -1302,8 +1303,12 @@ class S3FileSystem(AsyncFileSystem):
             for (i, o) in enumerate(out)
         ]
         part_info = {"Parts": parts}
-        await self._call_s3("complete_multipart_upload",
-            Bucket=bucket, Key=key, UploadId=mpu["UploadId"], MultipartUpload=part_info
+        await self._call_s3(
+            "complete_multipart_upload",
+            Bucket=bucket,
+            Key=key,
+            UploadId=mpu["UploadId"],
+            MultipartUpload=part_info,
         )
         self.invalidate_cache(path)
 
@@ -1343,9 +1348,7 @@ class S3FileSystem(AsyncFileSystem):
         )
         part_infos = await asyncio.gather(
             *[
-                self._call_s3(
-                    "head_object", Bucket=bucket1, Key=key1, PartNumber=i
-                )
+                self._call_s3("head_object", Bucket=bucket1, Key=key1, PartNumber=i)
                 for i in range(1, total_parts + 1)
             ]
         )
@@ -1491,9 +1494,7 @@ class S3FileSystem(AsyncFileSystem):
         }
         for path in pathlist:
             self.invalidate_cache(self._parent(path))
-        await self._call_s3(
-            "delete_objects", kwargs, Bucket=bucket, Delete=delete_keys
-        )
+        await self._call_s3("delete_objects", kwargs, Bucket=bucket, Delete=delete_keys)
 
     async def _rm(self, path, recursive=False, **kwargs):
         if recursive and isinstance(path, str):
@@ -1537,9 +1538,7 @@ class S3FileSystem(AsyncFileSystem):
                 "Quiet": True,
             }
             if obs:
-                await self._call_s3(
-                    "delete_objects", Bucket=bucket, Delete=delete_keys
-                )
+                await self._call_s3("delete_objects", Bucket=bucket, Delete=delete_keys)
 
     def invalidate_cache(self, path=None):
         if path is None:
