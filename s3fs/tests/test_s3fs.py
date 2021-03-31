@@ -218,7 +218,7 @@ def test_config_kwargs_class_attributes_override():
 
 def test_idempotent_connect(s3):
     first = s3.s3
-    assert s3.connect() is not first
+    assert s3.connect(refresh=True) is not first
 
 
 def test_multiple_objects(s3):
@@ -423,7 +423,7 @@ def test_not_delegate():
 
 
 def test_ls(s3):
-    assert set(s3.ls("")) == {
+    assert set(s3.ls("", detail=False)) == {
         test_bucket_name,
         secure_bucket_name,
         versioned_bucket_name,
@@ -431,7 +431,7 @@ def test_ls(s3):
     with pytest.raises(FileNotFoundError):
         s3.ls("nonexistent")
     fn = test_bucket_name + "/test/accounts.1.json"
-    assert fn in s3.ls(test_bucket_name + "/test")
+    assert fn in s3.ls(test_bucket_name + "/test", detail=False)
 
 
 def test_pickle(s3):
@@ -1715,8 +1715,9 @@ def test_credentials():
     )
     assert s3.s3._request_signer._credentials.access_key == "foobar"
     assert s3.s3._request_signer._credentials.secret_key == "foobar"
-    with pytest.raises(TypeError) as excinfo:
-        s3 = S3FileSystem(
+    with pytest.raises((TypeError, KeyError)):
+        # should be TypeError: arg passed twice; but in moto can be KeyError
+        S3FileSystem(
             key="foo",
             secret="foo",
             client_kwargs={
@@ -1724,8 +1725,7 @@ def test_credentials():
                 "aws_secret_access_key": "bar",
                 "endpoint_url": endpoint_uri,
             },
-        )
-        assert "multiple values for keyword argument" in str(excinfo.value)
+        ).s3
 
 
 def test_modified(s3):
@@ -1759,9 +1759,8 @@ def test_async_s3(s3):
         fn = test_bucket_name + "/nested/file1"
         data = b"hello\n"
 
-        # Fails because client creation has not yet been awaited
-        with pytest.raises(RuntimeError):
-            await s3._cat_file(fn)
+        # Is good with or without connect()
+        await s3._cat_file(fn)
 
         await s3._connect()  # creates client
 
@@ -1976,3 +1975,14 @@ def test_s3fs_etag_preserving_multipart_copy(monkeypatch, s3):
     assert file_1["ETag"] == file_2["ETag"]
 
     s3.rm(test_file1)
+
+
+def test_sync_from_wihin_async(s3):
+    # if treating as sync but within an even loop, e.g., calling from jupyter;
+    # IO happens on dedicated thread.
+    async def f():
+        S3FileSystem.clear_instance_cache()
+        s3 = S3FileSystem(anon=False, client_kwargs={"endpoint_url": endpoint_uri})
+        assert s3.ls(test_bucket_name)
+
+    asyncio.run(f())

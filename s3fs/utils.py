@@ -56,7 +56,11 @@ class ParamKwargsHelper(object):
     def _get_valid_keys(self, model_name):
         if model_name not in self._kwarg_cache:
             model = self.s3.meta.service_model.operation_model(model_name)
-            valid_keys = set(model.input_shape.members.keys())
+            valid_keys = (
+                set(model.input_shape.members.keys())
+                if model.input_shape is not None
+                else set()
+            )
             self._kwarg_cache[model_name] = valid_keys
         return self._kwarg_cache[model_name]
 
