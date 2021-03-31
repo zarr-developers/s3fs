@@ -244,7 +244,7 @@ to the same object.
 
 .. code-block:: python
 
-   >>> s3 = s3fs.S3FileSytem(version_aware=True)
+   >>> s3 = s3fs.S3FileSystem(version_aware=True)
    # Open the file at the latest version
    >>> fo = s3.open('versioned_bucket/object')
    >>> versions = s3.object_version_info('versioned_bucket/object')
