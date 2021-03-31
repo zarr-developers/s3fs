@@ -98,14 +98,12 @@ await the client creation before making any S3 call.
 
 .. code-block:: python
 
-    loop = ...  # however you create your loop
-
-    async def run_program(loop):
-        s3 = S3FileSystem(..., asynchronous=True, loop=loop)
+    async def run_program():
+        s3 = S3FileSystem(..., asynchronous=True)
         await s3._connect()
         ...  # perform work
 
-    asyncio.run(run_program(loop))  # or call from your async code
+    asyncio.run(run_program())  # or call from your async code
 
 Concurrent async operations are also used internally for bulk operations
 such as ``pipe/cat``, ``get/put``, ``cp/mv/rm``. The async calls are
