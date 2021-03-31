@@ -423,7 +423,7 @@ def test_not_delegate():
 
 
 def test_ls(s3):
-    assert set(s3.ls("")) == {
+    assert set(s3.ls("", detail=False)) == {
         test_bucket_name,
         secure_bucket_name,
         versioned_bucket_name,
@@ -431,7 +431,7 @@ def test_ls(s3):
     with pytest.raises(FileNotFoundError):
         s3.ls("nonexistent")
     fn = test_bucket_name + "/test/accounts.1.json"
-    assert fn in s3.ls(test_bucket_name + "/test")
+    assert fn in s3.ls(test_bucket_name + "/test", detail=False)
 
 
 def test_pickle(s3):
