@@ -377,8 +377,7 @@ class S3FileSystem(AsyncFileSystem):
         self._kwargs_helper = ParamKwargsHelper(self._s3)
         return self._s3
 
-    async def _connect(self, refresh=False, kwargs={}):
-        return await self.set_session(refresh=refresh, **kwargs)
+    _connect = set_session
 
     connect = sync_wrapper(set_session)
 
