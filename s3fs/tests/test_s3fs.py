@@ -1762,7 +1762,7 @@ def test_async_s3(s3):
         # Is good with or without connect()
         await s3._cat_file(fn)
 
-        await s3._connect()  # creates client
+        session = await s3.set_session()  # creates client
 
         assert await s3._cat_file(fn) == data
 
@@ -1772,7 +1772,28 @@ def test_async_s3(s3):
         # with s3.open(fn, "rb") as f:
         #     assert f.read() == data
 
-        await s3._s3.close()
+        await session.close()
+
+    asyncio.run(_())
+
+
+@pytest.mark.skipif(sys.version_info < (3, 7), reason="no asyncio.run in py36")
+def test_async_s3_old(s3):
+    async def _():
+        s3 = S3FileSystem(
+            anon=False,
+            asynchronous=True,
+            loop=asyncio.get_running_loop(),
+            client_kwargs={"region_name": "eu-central-1", "endpoint_url": endpoint_uri},
+        )
+
+        fn = test_bucket_name + "/nested/file1"
+        data = b"hello\n"
+
+        # Check old API
+        session = await s3._connect()
+        assert await s3._cat_file(fn, start=0, end=3) == data[:3]
+        await session.close()
 
     asyncio.run(_())
 
