@@ -217,7 +217,7 @@ class S3FileSystem(AsyncFileSystem):
     def s3(self):
         if self._s3 is None:
             if self.asynchronous:
-                raise RuntimeError("please await ``._connect`` before anything else")
+                raise RuntimeError("please await ``.set_session`` before anything else")
             self.connect()
         return self._s3
 
@@ -225,7 +225,7 @@ class S3FileSystem(AsyncFileSystem):
         return self._kwargs_helper.filter_dict(s3_method.__name__, kwargs)
 
     async def _call_s3(self, method, *akwarglist, **kwargs):
-        await self._connect()
+        await self.set_session()
         method = getattr(self.s3, method)
         kw2 = kwargs.copy()
         kw2.pop("Body", None)
@@ -322,9 +322,11 @@ class S3FileSystem(AsyncFileSystem):
             config_kwargs["read_timeout"] = self.read_timeout
         return config_kwargs
 
-    async def _connect(self, refresh=False, kwargs={}):
-        """
-        Establish S3 connection object.
+    async def set_session(self, refresh=False, kwargs={}):
+        """Establish S3 connection object.
+        Returns
+        -------
+        Session to be closed later with await .close()
         """
         if self._s3 is not None and not refresh:
             return self._s3
@@ -375,7 +377,10 @@ class S3FileSystem(AsyncFileSystem):
         self._kwargs_helper = ParamKwargsHelper(self._s3)
         return self._s3
 
-    connect = sync_wrapper(_connect)
+    async def _connect(self, refresh=False, kwargs={}):
+        return await self.set_session(refresh=refresh, **kwargs)
+
+    connect = sync_wrapper(set_session)
 
     @staticmethod
     def close_session(loop, s3):
@@ -506,7 +511,7 @@ class S3FileSystem(AsyncFileSystem):
         if path not in self.dircache or refresh or not delimiter:
             try:
                 logger.debug("Get directory listing page for %s" % path)
-                await self._connect()
+                await self.set_session()
                 pag = self.s3.get_paginator("list_objects_v2")
                 config = {}
                 if max_items is not None:
@@ -1255,7 +1260,7 @@ class S3FileSystem(AsyncFileSystem):
             the number of seconds this signature will be good for.
         """
         bucket, key, version_id = self.split_path(path)
-        await self._connect()
+        await self.set_session()
         return await self.s3.generate_presigned_url(
             ClientMethod="get_object",
             Params=dict(Bucket=bucket, Key=key, **version_id_kw(version_id), **kwargs),
@@ -1527,7 +1532,7 @@ class S3FileSystem(AsyncFileSystem):
 
     async def _rm_versioned_bucket_contents(self, bucket):
         """Remove a versioned bucket and all contents"""
-        await self._connect()
+        await self.set_session()
         pag = self.s3.get_paginator("list_object_versions")
         async for plist in pag.paginate(Bucket=bucket):
             obs = plist.get("Versions", []) + plist.get("DeleteMarkers", [])

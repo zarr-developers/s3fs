@@ -100,8 +100,9 @@ await the client creation before making any S3 call.
 
     async def run_program():
         s3 = S3FileSystem(..., asynchronous=True)
-        await s3._connect()
+        session = await s3.set_session()
         ...  # perform work
+        await session.close()
 
     asyncio.run(run_program())  # or call from your async code
 
