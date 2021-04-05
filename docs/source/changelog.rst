@@ -1,6 +1,18 @@
 Changelog
 =========
 
+Version 0.6.0
+-------------
+
+- update for fsspec 0.9.0 (#448)
+- better errors (#443)
+- cp to preserve ETAG (#441)
+- CI (#435, #427, #395)
+- 5GB PUT (#425)
+- partical cat (#389)
+- direct find (#360)
+
+
 Version 0.5.0
 -------------
 
