@@ -1327,19 +1327,23 @@ def test_versions(s3):
     )
     with s3.open(versioned_file, "wb") as fo:
         fo.write(b"1")
+    first_version = s3.info(versioned_file)['VersionId']
+
     with s3.open(versioned_file, "wb") as fo:
         fo.write(b"2")
+    second_version = s3.info(versioned_file)['VersionId']
+
     assert s3.isfile(versioned_file)
     versions = s3.object_version_info(versioned_file)
-    version_ids = [version["VersionId"] for version in versions]
-    assert len(version_ids) == 2
+    assert len(versionss) == 2
+    assert set(versions) == {first_version, second_version}
 
     with s3.open(versioned_file) as fo:
-        assert fo.version_id == version_ids[1]
+        assert fo.version_id == second_version
         assert fo.read() == b"2"
 
     with s3.open(versioned_file, version_id=version_ids[0]) as fo:
-        assert fo.version_id == version_ids[0]
+        assert fo.version_id == first_version
         assert fo.read() == b"1"
 
 
