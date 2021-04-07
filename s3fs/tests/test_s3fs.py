@@ -1998,6 +1998,7 @@ def test_s3fs_etag_preserving_multipart_copy(monkeypatch, s3):
     s3.rm(test_file1)
 
 
+@pytest.mark.skipif(sys.version_info < (3, 7), reason="no asyncio.run in py36")
 def test_sync_from_wihin_async(s3):
     # if treating as sync but within an even loop, e.g., calling from jupyter;
     # IO happens on dedicated thread.
