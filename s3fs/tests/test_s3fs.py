@@ -60,7 +60,6 @@ a = test_bucket_name + "/tmp/test/a"
 b = test_bucket_name + "/tmp/test/b"
 c = test_bucket_name + "/tmp/test/c"
 d = test_bucket_name + "/tmp/test/d"
-py35 = sys.version_info[:2] == (3, 5)
 port = 5555
 endpoint_uri = "http://127.0.0.1:%s/" % port
 
@@ -1321,7 +1320,6 @@ def test_tags(s3):
     assert s3.get_tags(fname) == tagset
 
 
-@pytest.mark.skipif(py35, reason="no versions on old moto for py36")
 def test_versions(s3):
     versioned_file = versioned_bucket_name + "/versioned_file"
     s3 = S3FileSystem(
@@ -1329,23 +1327,29 @@ def test_versions(s3):
     )
     with s3.open(versioned_file, "wb") as fo:
         fo.write(b"1")
+    first_version = fo.version_id
+
     with s3.open(versioned_file, "wb") as fo:
         fo.write(b"2")
+    second_version = fo.version_id
+
     assert s3.isfile(versioned_file)
     versions = s3.object_version_info(versioned_file)
-    version_ids = [version["VersionId"] for version in versions]
-    assert len(version_ids) == 2
+    assert len(versions) == 2
+    assert {version["VersionId"] for version in versions} == {
+        first_version,
+        second_version,
+    }
 
     with s3.open(versioned_file) as fo:
-        assert fo.version_id == version_ids[1]
+        assert fo.version_id == second_version
         assert fo.read() == b"2"
 
-    with s3.open(versioned_file, version_id=version_ids[0]) as fo:
-        assert fo.version_id == version_ids[0]
+    with s3.open(versioned_file, version_id=first_version) as fo:
+        assert fo.version_id == first_version
         assert fo.read() == b"1"
 
 
-@pytest.mark.skipif(py35, reason="no versions on old moto for py36")
 def test_list_versions_many(s3):
     # moto doesn't actually behave in the same way that s3 does here so this doesn't test
     # anything really in moto 1.2
@@ -1387,7 +1391,6 @@ def test_fsspec_versions_multiple(s3):
             assert contents == version_lookup[fo.version_id]
 
 
-@pytest.mark.skipif(py35, reason="no versions on old moto for py36")
 def test_versioned_file_fullpath(s3):
     versioned_file = versioned_bucket_name + "/versioned_file_fullpath"
     s3 = S3FileSystem(
@@ -1586,32 +1589,33 @@ def test_touch(s3):
     assert s3.size(fn) == 4
 
 
-@pytest.mark.skipif(py35, reason="no versions on old moto for py36")
 def test_touch_versions(s3):
     versioned_file = versioned_bucket_name + "/versioned_file"
     s3 = S3FileSystem(
         anon=False, version_aware=True, client_kwargs={"endpoint_url": endpoint_uri}
     )
-    returned_versions = []
+
     with s3.open(versioned_file, "wb") as fo:
         fo.write(b"1")
-    returned_versions.append(fo.version_id)
+    first_version = fo.version_id
     with s3.open(versioned_file, "wb") as fo:
         fo.write(b"")
-    returned_versions.append(fo.version_id)
+    second_version = fo.version_id
+
     assert s3.isfile(versioned_file)
     versions = s3.object_version_info(versioned_file)
-    version_ids = [version["VersionId"] for version in versions]
-    assert len(version_ids) == 2
+    assert len(versions) == 2
+    assert {version["VersionId"] for version in versions} == {
+        first_version,
+        second_version,
+    }
 
     with s3.open(versioned_file) as fo:
-        assert fo.version_id == version_ids[1]
-        assert fo.version_id == returned_versions[1]
+        assert fo.version_id == second_version
         assert fo.read() == b""
 
-    with s3.open(versioned_file, version_id=version_ids[0]) as fo:
-        assert fo.version_id == version_ids[0]
-        assert fo.version_id == returned_versions[0]
+    with s3.open(versioned_file, version_id=first_version) as fo:
+        assert fo.version_id == first_version
         assert fo.read() == b"1"
 
 
@@ -1998,6 +2002,7 @@ def test_s3fs_etag_preserving_multipart_copy(monkeypatch, s3):
     s3.rm(test_file1)
 
 
+@pytest.mark.skipif(sys.version_info < (3, 7), reason="no asyncio.run in py36")
 def test_sync_from_wihin_async(s3):
     # if treating as sync but within an even loop, e.g., calling from jupyter;
     # IO happens on dedicated thread.
