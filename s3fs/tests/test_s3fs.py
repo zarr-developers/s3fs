@@ -1335,7 +1335,7 @@ def test_versions(s3):
 
     assert s3.isfile(versioned_file)
     versions = s3.object_version_info(versioned_file)
-    assert len(versionss) == 2
+    assert len(versions) == 2
     assert set(versions) == {first_version, second_version}
 
     with s3.open(versioned_file) as fo:
