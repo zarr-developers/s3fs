@@ -1336,7 +1336,10 @@ def test_versions(s3):
     assert s3.isfile(versioned_file)
     versions = s3.object_version_info(versioned_file)
     assert len(versions) == 2
-    assert {version['VersionId'] for version in versions} == {first_version, second_version}
+    assert {version["VersionId"] for version in versions} == {
+        first_version,
+        second_version,
+    }
 
     with s3.open(versioned_file) as fo:
         assert fo.version_id == second_version
@@ -1602,7 +1605,10 @@ def test_touch_versions(s3):
     assert s3.isfile(versioned_file)
     versions = s3.object_version_info(versioned_file)
     assert len(versions) == 2
-    assert {version["VersionId"] for version in versions} == {first_version, second_version}
+    assert {version["VersionId"] for version in versions} == {
+        first_version,
+        second_version,
+    }
 
     with s3.open(versioned_file) as fo:
         assert fo.version_id == second_version
