@@ -146,7 +146,7 @@ A more secure way, not including the credentials directly in code, is to allow
 boto to establish the credentials automatically. Boto will try the following
 methods, in order:
 
-- ``aws_access_key_id``, ``aws_secret_access_key``, and ``aws_session_token``
+- ``AWS_ACCESS_KEY_ID``, ``AWS_SECRET_ACCESS_KEY``, and ``AWS_SESSION_TOKEN``
   environment variables
 
 - configuration files such as ``~/.aws/credentials``
