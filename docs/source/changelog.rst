@@ -1,6 +1,13 @@
 Changelog
 =========
 
+Version 2021.04.0
+-----------------
+
+- switch to calver and fsspec pin
+- py36 (#462)
+- async fixes (#456, 452)
+
 Version 0.6.0
 -------------
 
@@ -9,7 +16,7 @@ Version 0.6.0
 - cp to preserve ETAG (#441)
 - CI (#435, #427, #395)
 - 5GB PUT (#425)
-- partical cat (#389)
+- partial cat (#389)
 - direct find (#360)
 
 
