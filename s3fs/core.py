@@ -8,7 +8,7 @@ from typing import Tuple, Optional
 import weakref
 
 from fsspec.spec import AbstractBufferedFile
-from fsspec.utils import infer_storage_options, tokenize, setup_logging
+from fsspec.utils import infer_storage_options, tokenize, setup_logging as setup_logger
 from fsspec.asyn import AsyncFileSystem, sync, sync_wrapper
 
 import aiobotocore
@@ -20,21 +20,18 @@ from botocore.exceptions import ClientError, ParamValidationError
 from s3fs.errors import translate_boto_error
 from s3fs.utils import ParamKwargsHelper, _get_brange, FileExpired
 
+
 logger = logging.getLogger("s3fs")
 
 
 def setup_logging(level=None):
-    handle = logging.StreamHandler()
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s " "- %(message)s"
-    )
-    handle.setFormatter(formatter)
-    logger.addHandler(handle)
-    logger.setLevel(level or os.environ["S3FS_LOGGING_LEVEL"])
+
+    setup_logger(logger=logger, level=(level or os.environ["S3FS_LOGGING_LEVEL"]))
 
 
 if "S3FS_LOGGING_LEVEL" in os.environ:
     setup_logging()
+
 
 MANAGED_COPY_THRESHOLD = 5 * 2 ** 30
 S3_RETRYABLE_ERRORS = (socket.timeout,)
