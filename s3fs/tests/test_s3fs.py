@@ -2012,3 +2012,11 @@ def test_sync_from_wihin_async(s3):
         assert s3.ls(test_bucket_name)
 
     asyncio.run(f())
+
+
+def test_token_paths(s3):
+    fs, tok, files = fsspec.get_fs_token_paths(
+        "s3://" + test_bucket_name + "/*.csv",
+        storage_options={"client_kwargs": {"endpoint_url": endpoint_uri}}
+    )
+    assert files

@@ -1,6 +1,13 @@
 Changelog
 =========
 
+Version 2021.04.0
+-----------------
+
+- swith to calver and fsspec pin
+- py36 (#462)
+- async fixes (#456, 452)
+
 Version 0.6.0
 -------------
 
