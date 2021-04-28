@@ -78,6 +78,24 @@ def test_clear_empty(s3):
     assert list(d) == []
 
 
+def test_no_dircache(s3):
+    from s3fs.tests.test_s3fs import endpoint_uri
+    import fsspec
+
+    d = fsspec.get_mapper(
+        "s3://" + root,
+        anon=False,
+        client_kwargs={"endpoint_url": endpoint_uri},
+        use_listings_cache=False,
+    )
+    d.clear()
+    assert list(d) == []
+    d[1] = b"1"
+    assert list(d) == ["1"]
+    d.clear()
+    assert list(d) == []
+
+
 def test_pickle(s3):
     d = s3.get_mapper(root)
     d["x"] = b"1"
