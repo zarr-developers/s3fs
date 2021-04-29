@@ -2038,3 +2038,29 @@ def test_same_name_but_no_exact(s3):
     assert s3.exists(test_bucket_name + "/very/similiar/prefix3/something")
 
     assert not s3.exists(test_bucket_name + "/very/similiar/prefix3/some")
+
+    s3.touch(test_bucket_name + "/starting/very/similiar/prefix")
+
+    assert not s3.exists(test_bucket_name + "/starting/very/similiar/prefix1")
+    assert not s3.exists(test_bucket_name + "/starting/very/similiar/prefix2")
+    assert not s3.exists(test_bucket_name + "/starting/very/similiar/prefix3")
+    assert not s3.exists(test_bucket_name + "/starting/very/similiar/prefix3/")
+    assert not s3.exists(test_bucket_name + "/starting/very/similiar/prefix3/something")
+
+    assert s3.exists(test_bucket_name + "/starting/very/similiar/prefix")
+    assert s3.exists(test_bucket_name + "/starting/very/similiar/prefix/")
+
+
+def test_info_with_permission_error_for_list_objects(monkeypatch, s3):
+    s3.touch(test_bucket_name + "/very/similiar/prefix")
+
+    async def list_objects_v2(*args, **kwargs):
+        if kwargs.pop("Prefix").endswith("/"):
+            return {}
+        else:
+            raise PermissionError
+
+    monkeypatch.setattr(type(s3.s3), "list_objects_v2", list_objects_v2)
+    assert not s3.exists(test_bucket_name + "/very/similiar/prefix1")
+    assert s3.exists(test_bucket_name + "/very/similiar/prefix")
+    assert s3.info(test_bucket_name + "/very/similiar/prefix")["type"] == "file"
