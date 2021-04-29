@@ -921,6 +921,28 @@ class S3FileSystem(AsyncFileSystem):
             or out.get("CommonPrefixes", [])
         ):
             raise FileNotFoundError(path)
+    
+    async def _version_aware_info(self, path):
+        out = await self._call_s3(
+            "head_object",
+            self.kwargs,
+            Bucket=bucket,
+            Key=key,
+            **version_id_kw(version_id),
+            **self.req_kw,
+        )
+        return {
+            "ETag": out["ETag"],
+            "Key": "/".join([bucket, key]),
+            "LastModified": out["LastModified"],
+            "Size": out["ContentLength"],
+            "size": out["ContentLength"],
+            "name": "/".join([bucket, key]),
+            "type": "file",
+            "StorageClass": "STANDARD",
+            "VersionId": out.get("VersionId"),
+        }
+
 
     async def _info(self, path, bucket=None, key=None, refresh=False, version_id=None):
         path = self._strip_protocol(path)
@@ -942,30 +964,13 @@ class S3FileSystem(AsyncFileSystem):
             return {"name": path, "size": 0, "type": "directory"}
         if key:
             try:
-                if version_id:
-                    out = await self._call_s3(
-                        "head_object",
-                        self.kwargs,
-                        Bucket=bucket,
-                        Key=key,
-                        **version_id_kw(version_id),
-                        **self.req_kw,
-                    )
-                    return {
-                        "ETag": out["ETag"],
-                        "Key": "/".join([bucket, key]),
-                        "LastModified": out["LastModified"],
-                        "Size": out["ContentLength"],
-                        "size": out["ContentLength"],
-                        "name": "/".join([bucket, key]),
-                        "type": "file",
-                        "StorageClass": "STANDARD",
-                        "VersionId": out.get("VersionId"),
-                    }
+                if self.version_aware:
+                    out = await self._version_aware_info(path)
                 else:
                     out = await self._simple_info(path)
-                    if out:
-                        return out
+
+                if out:
+                    return out
             except ClientError as e:
                 raise translate_boto_error(e, set_cause=False)
 
