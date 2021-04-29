@@ -871,10 +871,10 @@ def test_errors_cause_preservings(monkeypatch, s3):
 
     assert type(exc.value.__cause__).__name__ == "NoSuchBucket"
 
-    async def head_object(*args, **kwargs):
+    async def list_objects_v2(*args, **kwargs):
         raise NoCredentialsError
 
-    monkeypatch.setattr(type(s3.s3), "head_object", head_object)
+    monkeypatch.setattr(type(s3.s3), "list_objects_v2", list_objects_v2)
 
     # Since the error is not translate, the __cause__ would
     # be None
