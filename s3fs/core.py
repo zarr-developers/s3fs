@@ -967,8 +967,12 @@ class S3FileSystem(AsyncFileSystem):
                 if self.version_aware:
                     out = await self._version_aware_info(path, version_id)
                 else:
-                    out = await self._simple_info(path)
-
+                    try:
+                        out = await self._simple_info(path)
+                    except PermissionError:
+                        # If the permissions aren't enough for scanning a prefix
+                        # then fall back to using normal HEAD_OBJECT
+                        out = await self._version_aware_info(path, version_id)
                 if out:
                     return out
             except ClientError as e:
