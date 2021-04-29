@@ -922,8 +922,7 @@ class S3FileSystem(AsyncFileSystem):
         ):
             raise FileNotFoundError(path)
     
-    async def _version_aware_info(self, path):
-        path = self._strip_protocol(path)
+    async def _version_aware_info(self, path, version_id):
         bucket, key, _ = self.split_path(path)
 
         out = await self._call_s3(
@@ -968,7 +967,7 @@ class S3FileSystem(AsyncFileSystem):
         if key:
             try:
                 if self.version_aware:
-                    out = await self._version_aware_info(path)
+                    out = await self._version_aware_info(path, version_id)
                 else:
                     out = await self._simple_info(path)
 
