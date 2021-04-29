@@ -2064,3 +2064,10 @@ def test_info_with_permission_error_for_list_objects(monkeypatch, s3):
     assert not s3.exists(test_bucket_name + "/very/similiar/prefix1")
     assert s3.exists(test_bucket_name + "/very/similiar/prefix")
     assert s3.info(test_bucket_name + "/very/similiar/prefix")["type"] == "file"
+
+
+def test_leading_forward_slash(s3):
+    s3.touch(test_bucket_name + "/some/file")
+    assert s3.ls(test_bucket_name + "/some/")
+    assert s3.exists(test_bucket_name + "/some/file")
+    assert s3.exists("s3://" + test_bucket_name + "/some/file")
