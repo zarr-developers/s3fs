@@ -889,7 +889,6 @@ class S3FileSystem(AsyncFileSystem):
             body.close()
 
     async def _simple_info(self, path):
-        path = self._strip_protocol(path)
         bucket, key, _ = self.split_path(path)
         prefix = key.strip("/")
 
@@ -924,7 +923,7 @@ class S3FileSystem(AsyncFileSystem):
     
     async def _version_aware_info(self, path, version_id):
         bucket, key, _ = self.split_path(path)
-
+        
         out = await self._call_s3(
             "head_object",
             self.kwargs,
