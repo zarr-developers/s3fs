@@ -1,6 +1,11 @@
 Changelog
 =========
 
+dev
+---
+
+- optimize ``info``,``exists`` (and related) calls for non-version aware mode
+
 Version 2021.04.0
 -----------------
 
