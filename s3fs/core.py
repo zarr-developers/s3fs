@@ -924,14 +924,18 @@ class S3FileSystem(AsyncFileSystem):
     async def _version_aware_info(self, path, version_id):
         bucket, key, _ = self.split_path(path)
         
-        out = await self._call_s3(
-            "head_object",
-            self.kwargs,
-            Bucket=bucket,
-            Key=key,
-            **version_id_kw(version_id),
-            **self.req_kw,
-        )
+        try:
+            out = await self._call_s3(
+                "head_object",
+                self.kwargs,
+                Bucket=bucket,
+                Key=key,
+                **version_id_kw(version_id),
+                **self.req_kw,
+            )
+        except FileNotFoundError:
+            return None
+
         return {
             "ETag": out["ETag"],
             "Key": "/".join([bucket, key]),
