@@ -914,16 +914,12 @@ class S3FileSystem(AsyncFileSystem):
                 "StorageClass": "STANDARD",
                 "VersionId": file.get("VersionId"),
             }
-        elif not (
-            file
-            or out.get("KeyCount", 0)
-            or out.get("CommonPrefixes", [])
-        ):
+        elif not (file or out.get("KeyCount", 0) or out.get("CommonPrefixes", [])):
             raise FileNotFoundError(path)
-    
+
     async def _version_aware_info(self, path, version_id):
         bucket, key, _ = self.split_path(path)
-        
+
         try:
             out = await self._call_s3(
                 "head_object",
@@ -947,7 +943,6 @@ class S3FileSystem(AsyncFileSystem):
             "StorageClass": "STANDARD",
             "VersionId": out.get("VersionId"),
         }
-
 
     async def _info(self, path, bucket=None, key=None, refresh=False, version_id=None):
         path = self._strip_protocol(path)
