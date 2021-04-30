@@ -2020,3 +2020,11 @@ def test_token_paths(s3):
         storage_options={"client_kwargs": {"endpoint_url": endpoint_uri}},
     )
     assert files
+
+
+def test_lsdir(s3):
+    # https://github.com/dask/s3fs/issues/475
+    s3.find(test_bucket_name)
+
+    d = test_bucket_name + "/test"
+    assert d in s3.ls(test_bucket_name)
