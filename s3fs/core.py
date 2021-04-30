@@ -381,9 +381,17 @@ class S3FileSystem(AsyncFileSystem):
     @staticmethod
     def close_session(loop, s3):
         if loop is not None and loop.is_running():
-            sync(loop, s3.__aexit__, None, None, None, timeout=0.1)
-        else:
-            s3._endpoint.http_session._connector._close
+            try:
+                sync(loop, s3.__aexit__, None, None, None, timeout=0.1)
+                return
+            except TimeoutError:
+                pass
+        try:
+            # close the actual socket
+            s3._client._endpoint.http_session._connector._close()
+        except AttributeError:
+            # but during shutdown, it may have gone
+            pass
 
     async def _get_delegated_s3pars(self, exp=3600):
         """Get temporary credentials from STS, appropriate for sending across a
@@ -576,26 +584,38 @@ class S3FileSystem(AsyncFileSystem):
                 out = []
         dirs = []
         sdirs = set()
+        thisdircache = {}
         for o in out:
             par = self._parent(o["name"])
             if par not in self.dircache:
                 if par not in sdirs:
                     sdirs.add(par)
                     if len(path) <= len(par):
-                        dirs.append(
-                            {
-                                "Key": self.split_path(par)[1],
-                                "Size": 0,
-                                "name": par,
-                                "StorageClass": "DIRECTORY",
-                                "type": "directory",
-                                "size": 0,
-                            }
-                        )
-                    self.dircache[par] = []
+                        d = {
+                            "Key": self.split_path(par)[1],
+                            "Size": 0,
+                            "name": par,
+                            "StorageClass": "DIRECTORY",
+                            "type": "directory",
+                            "size": 0,
+                        }
+                        dirs.append(d)
+                    thisdircache[par] = []
+                    ppar = self._parent(par)
+                    if ppar in thisdircache:
+                        if d not in thisdircache[ppar]:
+                            thisdircache[ppar].append(d)
             if par in sdirs:
-                self.dircache[par].append(o)
-
+                thisdircache[par].append(o)
+        for k, v in thisdircache.items():
+            if k in self.dircache:
+                prev = self.dircache[k]
+                names = [p["name"] for p in prev]
+                for file in v:
+                    if v["name"] not in names:
+                        prev.append(v)
+            else:
+                self.dircache[k] = v
         if withdirs:
             out = sorted(out + dirs, key=lambda x: x["name"])
         if detail:

@@ -2071,3 +2071,11 @@ def test_leading_forward_slash(s3):
     assert s3.ls(test_bucket_name + "/some/")
     assert s3.exists(test_bucket_name + "/some/file")
     assert s3.exists("s3://" + test_bucket_name + "/some/file")
+
+
+def test_lsdir(s3):
+    # https://github.com/dask/s3fs/issues/475
+    s3.find(test_bucket_name)
+
+    d = test_bucket_name + "/test"
+    assert d in s3.ls(test_bucket_name)
