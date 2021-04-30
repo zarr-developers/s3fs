@@ -902,6 +902,11 @@ class S3FileSystem(AsyncFileSystem):
             MaxKeys=1,
             **self.req_kw,
         )
+        # This method either can return the info blob for the object if it
+        # exists, or return None if it doesn't exist as a file and it's
+        # existence as a directory is undeterminable with this call. If we
+        # can determine that no file or directory exists on the S3 with this
+        # prefix, then we can safely raise the FileNotFoundError.
         [file] = out.get("Contents", [None])
         if file and file["Key"] == prefix:
             return {
@@ -965,6 +970,12 @@ class S3FileSystem(AsyncFileSystem):
             return {"name": path, "size": 0, "type": "directory"}
         if key:
             try:
+                # The HeadObject calls are really expensive on objects
+                # compared to a ListObjectsV2 call with a max_keys=1. The
+                # disadvantage of the list objects is that, it doesn't yield
+                # a list of versions which might be needed on version_aware filesystems.
+                # So we switch between a normal HeadObject call (when version_aware is set)
+                # and ListObjectsV2 (when it is not).
                 if self.version_aware:
                     out = await self._version_aware_info(path, version_id)
                 else:
