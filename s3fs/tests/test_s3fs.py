@@ -2079,3 +2079,19 @@ def test_lsdir(s3):
 
     d = test_bucket_name + "/test"
     assert d in s3.ls(test_bucket_name)
+
+
+def test_copy_file_without_etag(s3, monkeypatch):
+
+    s3.touch(test_bucket_name + "/copy_tests/file")
+    s3.ls(test_bucket_name + "/copy_tests/")
+
+    [file] = s3.dircache[test_bucket_name + "/copy_tests"]
+
+    assert file["name"] == test_bucket_name + "/copy_tests/file"
+    file.pop("ETag")
+
+    assert s3.info(file["name"]).get("ETag", None) is None
+
+    s3.cp_file(file["name"], test_bucket_name + "/copy_tests/file2")
+    assert s3.info(test_bucket_name + "/copy_tests/file2")["ETag"] is not None

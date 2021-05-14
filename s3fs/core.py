@@ -1518,7 +1518,7 @@ class S3FileSystem(AsyncFileSystem):
         info = await self._info(path1, bucket, key, version_id=vers)
         size = info["size"]
 
-        _, _, parts_suffix = info["ETag"].strip('"').partition("-")
+        _, _, parts_suffix = info.get("ETag", "").strip('"').partition("-")
         if preserve_etag and parts_suffix:
             await self._copy_etag_preserved(
                 path1, path2, size, total_parts=int(parts_suffix)
