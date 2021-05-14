@@ -70,6 +70,10 @@ def s3_base():
     import shlex
     import subprocess
 
+    if "AWS_SECRET_ACCESS_KEY" not in os.environ:
+        os.environ["AWS_SECRET_ACCESS_KEY"] = "foo"
+    if "AWS_ACCESS_KEY_ID" not in os.environ:
+        os.environ["AWS_ACCESS_KEY_ID"] = "foo"
     proc = subprocess.Popen(shlex.split("moto_server s3 -p %s" % port))
 
     timeout = 5

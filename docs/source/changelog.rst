@@ -1,10 +1,16 @@
 Changelog
 =========
 
-dev
+Dev
 ---
 
+2021.05.0
+---------
+
 - optimize ``info``,``exists`` (and related) calls for non-version aware mode
+- copy with entries without ETag (#480)
+- find not to corrups parent listing (#476)
+- short listing to determine directory (#472, 471)
 
 Version 2021.04.0
 -----------------
