@@ -568,6 +568,24 @@ class S3FileSystem(AsyncFileSystem):
     async def _find(
         self, path, maxdepth=None, withdirs=None, detail=False, use_prefix=True
     ):
+        """List all files below path.
+
+        Like posix ``find`` command without conditions
+
+        Parameters
+        ----------
+        path : str
+        maxdepth: int or None
+            If not None, the maximum number of levels to descend
+        withdirs: bool
+            Whether to include directory paths in the output. This is True
+            when used by glob, but users usually only want files.
+        use_prefix: bool
+            Whether to treat the path like an existing prefix (concanate it
+            with a forward slash when searching). This option can't be used
+            with ``withdirs`` or ``maxdepth``.
+        """
+
         bucket, key, _ = self.split_path(path)
         if not bucket:
             raise ValueError("Cannot traverse all of S3")
