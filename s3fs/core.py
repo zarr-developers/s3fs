@@ -509,9 +509,15 @@ class S3FileSystem(AsyncFileSystem):
             requester_pays=requester_pays,
         )
 
-    async def _lsdir(self, path, refresh=False, max_items=None, delimiter="/"):
+    async def _lsdir(
+        self, path, refresh=False, max_items=None, delimiter="/", use_prefix=True
+    ):
         bucket, prefix, _ = self.split_path(path)
-        prefix = prefix + "/" if prefix else ""
+        if prefix:
+            if use_prefix:
+                prefix += "/"
+        else:
+            prefix = ""
         if path not in self.dircache or refresh or not delimiter:
             try:
                 logger.debug("Get directory listing page for %s" % path)
@@ -559,10 +565,16 @@ class S3FileSystem(AsyncFileSystem):
             return files
         return self.dircache[path]
 
-    async def _find(self, path, maxdepth=None, withdirs=None, detail=False):
+    async def _find(
+        self, path, maxdepth=None, withdirs=None, detail=False, use_prefix=True
+    ):
         bucket, key, _ = self.split_path(path)
         if not bucket:
             raise ValueError("Cannot traverse all of S3")
+        if use_prefix and (withdirs or maxdepth):
+            raise ValueError(
+                "use_prefix=True can't be used with withdirs/maxdepth options"
+            )
         if maxdepth:
             return await super()._find(
                 bucket + "/" + key, maxdepth=maxdepth, withdirs=withdirs, detail=detail
@@ -576,7 +588,7 @@ class S3FileSystem(AsyncFileSystem):
         #     elif len(out) == 0:
         #         return super().find(path)
         #     # else: we refresh anyway, having at least two missing trees
-        out = await self._lsdir(path, delimiter="")
+        out = await self._lsdir(path, delimiter="", use_prefix=use_prefix)
         if not out and key:
             try:
                 out = [await self._info(path)]
@@ -607,15 +619,18 @@ class S3FileSystem(AsyncFileSystem):
                             thisdircache[ppar].append(d)
             if par in sdirs:
                 thisdircache[par].append(o)
-        for k, v in thisdircache.items():
-            if k in self.dircache:
-                prev = self.dircache[k]
-                names = [p["name"] for p in prev]
-                for file in v:
-                    if v["name"] not in names:
-                        prev.append(v)
-            else:
-                self.dircache[k] = v
+
+        if use_prefix:
+            for k, v in thisdircache.items():
+                if k in self.dircache:
+                    prev = self.dircache[k]
+                    names = [p["name"] for p in prev]
+                    for file in v:
+                        if v["name"] not in names:
+                            prev.append(v)
+                else:
+                    self.dircache[k] = v
+
         if withdirs:
             out = sorted(out + dirs, key=lambda x: x["name"])
         if detail:
