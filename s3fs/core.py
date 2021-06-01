@@ -589,9 +589,9 @@ class S3FileSystem(AsyncFileSystem):
         bucket, key, _ = self.split_path(path)
         if not bucket:
             raise ValueError("Cannot traverse all of S3")
-        if use_prefix and (withdirs or maxdepth):
+        if (withdirs or maxdepth) and not use_prefix:
             raise ValueError(
-                "use_prefix=True can't be used with withdirs/maxdepth options"
+                "use_prefix=False can't be used with withdirs/maxdepth options"
             )
         if maxdepth:
             return await super()._find(
