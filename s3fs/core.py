@@ -590,6 +590,7 @@ class S3FileSystem(AsyncFileSystem):
             if par not in self.dircache:
                 if par not in sdirs:
                     sdirs.add(par)
+                    d = False
                     if len(path) <= len(par):
                         d = {
                             "Key": self.split_path(par)[1],
@@ -603,7 +604,7 @@ class S3FileSystem(AsyncFileSystem):
                     thisdircache[par] = []
                     ppar = self._parent(par)
                     if ppar in thisdircache:
-                        if d not in thisdircache[ppar]:
+                        if d and d not in thisdircache[ppar]:
                             thisdircache[ppar].append(d)
             if par in sdirs:
                 thisdircache[par].append(o)
@@ -786,10 +787,19 @@ class S3FileSystem(AsyncFileSystem):
 
     async def _cat_file(self, path, version_id=None, start=None, end=None):
         bucket, key, vers = self.split_path(path)
-        if (start is None) ^ (end is None):
-            raise ValueError("Give start and end or neither")
-        if start is not None:
-            head = {"Range": "bytes=%i-%i" % (start, end - 1)}
+        if start is not None or end is not None:
+            if start or 0 < 0 or end or 0 < 0:
+                size = (await self._info(path))["size"]
+            start = start or 0
+            if start < 0:
+                start = max(0, size + start)
+            if end is None:
+                end = ""
+            elif end < 0:
+                end = size + end - 1
+            else:
+                end -= 1
+            head = {"Range": "bytes=%s-%s" % (start, end)}
         else:
             head = {}
         resp = await self._call_s3(

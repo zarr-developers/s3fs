@@ -70,6 +70,14 @@ def s3_base():
     import shlex
     import subprocess
 
+    try:
+        # should fail since we didn't start server yet
+        r = requests.get(endpoint_uri)
+    except:
+        pass
+    else:
+        if r.ok:
+            raise RuntimeError("moto server already up")
     if "AWS_SECRET_ACCESS_KEY" not in os.environ:
         os.environ["AWS_SECRET_ACCESS_KEY"] = "foo"
     if "AWS_ACCESS_KEY_ID" not in os.environ:
@@ -1783,6 +1791,18 @@ def test_async_s3(s3):
         await session.close()
 
     asyncio.run(_())
+
+
+def test_cat_ranges(s3):
+    data = b"a string to select from"
+    fn = test_bucket_name + "/parts"
+    s3.pipe(fn, data)
+
+    assert s3.cat_file(fn) == data
+    assert s3.cat_file(fn, start=5) == data[5:]
+    assert s3.cat_file(fn, end=5) == data[:5]
+    assert s3.cat_file(fn, start=1, end=-1) == data[1:-1]
+    assert s3.cat_file(fn, start=-5) == data[-5:]
 
 
 @pytest.mark.skipif(sys.version_info < (3, 7), reason="no asyncio.run in py36")
