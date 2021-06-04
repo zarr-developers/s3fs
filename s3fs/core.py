@@ -788,18 +788,7 @@ class S3FileSystem(AsyncFileSystem):
     async def _cat_file(self, path, version_id=None, start=None, end=None):
         bucket, key, vers = self.split_path(path)
         if start is not None or end is not None:
-            if start or 0 < 0 or end or 0 < 0:
-                size = (await self._info(path))["size"]
-            start = start or 0
-            if start < 0:
-                start = max(0, size + start)
-            if end is None:
-                end = ""
-            elif end < 0:
-                end = size + end - 1
-            else:
-                end -= 1
-            head = {"Range": "bytes=%s-%s" % (start, end)}
+            head = {"Range": await self._process_limits(path, start, end)}
         else:
             head = {}
         resp = await self._call_s3(
