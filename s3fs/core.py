@@ -509,9 +509,12 @@ class S3FileSystem(AsyncFileSystem):
             requester_pays=requester_pays,
         )
 
-    async def _lsdir(self, path, refresh=False, max_items=None, delimiter="/"):
-        bucket, prefix, _ = self.split_path(path)
-        prefix = prefix + "/" if prefix else ""
+    async def _lsdir(
+        self, path, refresh=False, max_items=None, delimiter="/", prefix=""
+    ):
+        bucket, key, _ = self.split_path(path)
+        if key:
+            prefix = key.lstrip("/") + "/" + prefix
         if path not in self.dircache or refresh or not delimiter:
             try:
                 logger.debug("Get directory listing page for %s" % path)
@@ -559,10 +562,30 @@ class S3FileSystem(AsyncFileSystem):
             return files
         return self.dircache[path]
 
-    async def _find(self, path, maxdepth=None, withdirs=None, detail=False):
+    async def _find(self, path, maxdepth=None, withdirs=None, detail=False, prefix=""):
+        """List all files below path.
+        Like posix ``find`` command without conditions
+        Parameters
+        ----------
+        path : str
+        maxdepth: int or None
+            If not None, the maximum number of levels to descend
+        withdirs: bool
+            Whether to include directory paths in the output. This is True
+            when used by glob, but users usually only want files.
+        prefix: str
+            Only return files that match ``^{path}/{prefix}`` (if there is an
+            exact match ``filename == {path}/{prefix}``, it also will be included)
+        """
+
         bucket, key, _ = self.split_path(path)
         if not bucket:
             raise ValueError("Cannot traverse all of S3")
+        if (withdirs or maxdepth) and prefix:
+            # TODO: perhaps propagate these to a glob(f"path/{prefix}*") call
+            raise ValueError(
+                "Can not specify 'prefix' option alongside 'withdirs'/'maxdepth' options."
+            )
         if maxdepth:
             return await super()._find(
                 bucket + "/" + key, maxdepth=maxdepth, withdirs=withdirs, detail=detail
@@ -576,7 +599,7 @@ class S3FileSystem(AsyncFileSystem):
         #     elif len(out) == 0:
         #         return super().find(path)
         #     # else: we refresh anyway, having at least two missing trees
-        out = await self._lsdir(path, delimiter="")
+        out = await self._lsdir(path, delimiter="", prefix=prefix)
         if not out and key:
             try:
                 out = [await self._info(path)]
@@ -608,15 +631,16 @@ class S3FileSystem(AsyncFileSystem):
                             thisdircache[ppar].append(d)
             if par in sdirs:
                 thisdircache[par].append(o)
-        for k, v in thisdircache.items():
-            if k in self.dircache:
-                prev = self.dircache[k]
-                names = [p["name"] for p in prev]
-                for file in v:
-                    if v["name"] not in names:
-                        prev.append(v)
-            else:
-                self.dircache[k] = v
+        if not prefix:
+            for k, v in thisdircache.items():
+                if k in self.dircache:
+                    prev = self.dircache[k]
+                    names = [p["name"] for p in prev]
+                    for file in v:
+                        if v["name"] not in names:
+                            prev.append(v)
+                else:
+                    self.dircache[k] = v
         if withdirs:
             out = sorted(out + dirs, key=lambda x: x["name"])
         if detail:

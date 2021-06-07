@@ -8,6 +8,7 @@ API
    S3FileSystem.cat
    S3FileSystem.du
    S3FileSystem.exists
+   S3FileSystem.find
    S3FileSystem.get
    S3FileSystem.glob
    S3FileSystem.info

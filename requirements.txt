@@ -1,2 +1,2 @@
 aiobotocore>=1.0.1
-fsspec==2021.05.0
+fsspec==2021.06.0
