@@ -509,7 +509,9 @@ class S3FileSystem(AsyncFileSystem):
             requester_pays=requester_pays,
         )
 
-    async def _lsdir(self, path, refresh=False, max_items=None, delimiter="/", prefix=""):
+    async def _lsdir(
+        self, path, refresh=False, max_items=None, delimiter="/", prefix=""
+    ):
         bucket, key, _ = self.split_path(path)
         if key:
             prefix = key.lstrip("/") + "/" + prefix
@@ -581,9 +583,7 @@ class S3FileSystem(AsyncFileSystem):
             raise ValueError("Cannot traverse all of S3")
         if (withdirs or maxdepth) and prefix:
             # TODO: perhaps propagate these to a glob(f"path/{prefix}*") call
-            raise ValueError(
-                "Can not specify prefix whil"
-            )
+            raise ValueError("Can not specify prefix whil")
         if maxdepth:
             return await super()._find(
                 bucket + "/" + key, maxdepth=maxdepth, withdirs=withdirs, detail=detail

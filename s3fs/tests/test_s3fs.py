@@ -2100,17 +2100,18 @@ def test_copy_file_without_etag(s3, monkeypatch):
     s3.cp_file(file["name"], test_bucket_name + "/copy_tests/file2")
     assert s3.info(test_bucket_name + "/copy_tests/file2")["ETag"] is not None
 
+
 def test_find_with_prefix(s3):
     for cursor in range(100):
         s3.touch(test_bucket_name + f"/prefixes/test_{cursor}")
 
     s3.touch(test_bucket_name + "/prefixes2")
-    assert len(s3.find(test_bucket_name + '/prefixes')) == 100
-    assert len(s3.find(test_bucket_name, prefix='prefixes')) == 101
+    assert len(s3.find(test_bucket_name + "/prefixes")) == 100
+    assert len(s3.find(test_bucket_name, prefix="prefixes")) == 101
 
     assert len(s3.find(test_bucket_name + "/prefixes/test_")) == 0
-    assert len(s3.find(test_bucket_name + "/prefixes", prefix='test_')) == 100
-    assert len(s3.find(test_bucket_name + "/prefixes/", prefix='test_')) == 100
+    assert len(s3.find(test_bucket_name + "/prefixes", prefix="test_")) == 100
+    assert len(s3.find(test_bucket_name + "/prefixes/", prefix="test_")) == 100
 
     test_1s = s3.find(test_bucket_name + "/prefixes/test_1")
     assert len(test_1s) == 1
@@ -2121,4 +2122,3 @@ def test_find_with_prefix(s3):
     assert test_1s == [test_bucket_name + "/prefixes/test_1"] + [
         test_bucket_name + f"/prefixes/test_{cursor}" for cursor in range(10, 20)
     ]
-
