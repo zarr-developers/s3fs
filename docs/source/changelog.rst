@@ -4,14 +4,16 @@ Changelog
 2021.06.0
 ---------
 
-
+- support "prefix" in directory listings (#486)
+- support negative index in cat_file (#487, 488)
+- don't requite ETag in file details (#480)
 
 2021.05.0
 ---------
 
 - optimize ``info``,``exists`` (and related) calls for non-version aware mode
 - copy with entries without ETag (#480)
-- find not to corrups parent listing (#476)
+- find not to corrupts parent listing (#476)
 - short listing to determine directory (#472, 471)
 
 Version 2021.04.0
