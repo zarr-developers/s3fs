@@ -583,7 +583,7 @@ class S3FileSystem(AsyncFileSystem):
             raise ValueError("Cannot traverse all of S3")
         if (withdirs or maxdepth) and prefix:
             # TODO: perhaps propagate these to a glob(f"path/{prefix}*") call
-            raise ValueError("Can not specify prefix whil")
+            raise ValueError("Can not specify 'prefix' option alongside 'withdirs'/'maxdepth' options.")
         if maxdepth:
             return await super()._find(
                 bucket + "/" + key, maxdepth=maxdepth, withdirs=withdirs, detail=detail
