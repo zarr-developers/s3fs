@@ -561,6 +561,21 @@ class S3FileSystem(AsyncFileSystem):
         return self.dircache[path]
 
     async def _find(self, path, maxdepth=None, withdirs=None, detail=False, prefix=""):
+        """List all files below path.
+        Like posix ``find`` command without conditions
+        Parameters
+        ----------
+        path : str
+        maxdepth: int or None
+            If not None, the maximum number of levels to descend
+        withdirs: bool
+            Whether to include directory paths in the output. This is True
+            when used by glob, but users usually only want files.
+        prefix: str
+            Only return files that match ``^{path}/{prefix}`` (if there is an
+            exact match ``filename == {path}/{prefix}``, it also will be included)
+        """
+
         bucket, key, _ = self.split_path(path)
         if not bucket:
             raise ValueError("Cannot traverse all of S3")
