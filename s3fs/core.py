@@ -9,7 +9,7 @@ import weakref
 
 from fsspec.spec import AbstractBufferedFile
 from fsspec.utils import infer_storage_options, tokenize, setup_logging as setup_logger
-from fsspec.asyn import AsyncFileSystem, sync, sync_wrapper
+from fsspec.asyn import AsyncFileSystem, sync, sync_wrapper, FSTimeoutError
 
 import aiobotocore
 import botocore
@@ -384,7 +384,7 @@ class S3FileSystem(AsyncFileSystem):
             try:
                 sync(loop, s3.__aexit__, None, None, None, timeout=0.1)
                 return
-            except TimeoutError:
+            except FSTimeoutError:
                 pass
         try:
             # close the actual socket
@@ -577,7 +577,7 @@ class S3FileSystem(AsyncFileSystem):
             Only return files that match ``^{path}/{prefix}`` (if there is an
             exact match ``filename == {path}/{prefix}``, it also will be included)
         """
-
+        path = self._strip_protocol(path)
         bucket, key, _ = self.split_path(path)
         if not bucket:
             raise ValueError("Cannot traverse all of S3")
@@ -633,13 +633,7 @@ class S3FileSystem(AsyncFileSystem):
                 thisdircache[par].append(o)
         if not prefix:
             for k, v in thisdircache.items():
-                if k in self.dircache:
-                    prev = self.dircache[k]
-                    names = [p["name"] for p in prev]
-                    for file in v:
-                        if v["name"] not in names:
-                            prev.append(v)
-                else:
+                if k not in self.dircache and len(k) >= len(path):
                     self.dircache[k] = v
         if withdirs:
             out = sorted(out + dirs, key=lambda x: x["name"])
