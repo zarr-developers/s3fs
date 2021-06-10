@@ -1,5 +1,5 @@
 import errno
-from contextlib import contextmanager
+from contextlib import AsyncExitStack, contextmanager
 
 
 @contextmanager
@@ -8,6 +8,46 @@ def ignoring(*exceptions):
         yield
     except exceptions:
         pass
+
+
+class S3BucketRegionCache:
+    # See https://github.com/aio-libs/aiobotocore/issues/866
+    # for details.
+
+    def __init__(self, session, client, **client_kwargs):
+        self._session = session
+        self._stack = AsyncExitStack()
+        self._client = client
+        self._client_kwargs = client_kwargs
+        self._buckets = {}
+        self._regions = {}
+
+    async def get_bucket_client(self, bucket_name=None):
+        # TODO: raise error when client_kwargs has region
+        if bucket_name in self._buckets:
+            return self._buckets[bucket_name]
+
+        general_client = await self.get_client()
+        if bucket_name is None:
+            return general_client
+
+        response = await general_client.head_bucket(Bucket=bucket_name)
+        region = response["ResponseMetadata"]["HTTPHeaders"]["x-amz-bucket-region"]
+        if region not in self._regions:
+            self._regions[region] = await self._stack.enter_async_context(
+                self._session.create_client(
+                    "s3", region_name=region, **self._client_kwargs
+                )
+            )
+
+        client = self._buckets[bucket_name] = self._regions[region]
+        return client
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_args):
+        await self._stack.aclose()
 
 
 class FileExpired(IOError):
