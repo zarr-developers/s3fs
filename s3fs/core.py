@@ -1687,6 +1687,20 @@ class S3FileSystem(AsyncFileSystem):
     def sign(self, path, expiration=100, **kwargs):
         return self.url(path, expires=expiration, **kwargs)
 
+    async def _invalidate_region_cache(self):
+        if not self.cache_regions:
+            raise ValueError(
+                "This method is only available when cache_regions is turned on"
+            )
+
+        # If the region cache is not initialized, then
+        # do nothing.
+        cache = getattr(self, "_s3creator", None)
+        if cache is not None:
+            await cache.clear()
+
+    invalidate_region_cache = sync_wrapper(_invalidate_region_cache)
+
 
 class S3File(AbstractBufferedFile):
     """
