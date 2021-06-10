@@ -49,6 +49,12 @@ class S3BucketRegionCache:
                 self._session.create_client("s3", **self._client_kwargs)
             )
         return self._client
+    
+    async def clear(self):
+        self._buckets.clear()
+        self._regions.clear()
+        self._client = None
+        await self._stack.aclose()
 
     async def __aenter__(self):
         return self
