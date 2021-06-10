@@ -1948,7 +1948,7 @@ def test_get_file_info_with_selector(s3):
             pass
 
         infos = fs.find(base_dir, maxdepth=None, withdirs=True, detail=True)
-        assert len(infos) == 4
+        assert len(infos) == 5  # includes base_dir directory
 
         for info in infos.values():
             if info["name"].endswith(file_a):
@@ -1959,8 +1959,6 @@ def test_get_file_info_with_selector(s3):
                 assert info["type"] == "file"
             elif info["name"].rstrip("/").endswith(dir_a):
                 assert info["type"] == "directory"
-            else:
-                raise ValueError("unexpected path {}".format(info["name"]))
     finally:
         fs.rm(base_dir, recursive=True)
 
@@ -2142,3 +2140,11 @@ def test_find_with_prefix(s3):
     assert test_1s == [test_bucket_name + "/prefixes/test_1"] + [
         test_bucket_name + f"/prefixes/test_{cursor}" for cursor in range(10, 20)
     ]
+
+
+def test_list_after_find(s3):
+    before = s3.ls("s3://test")
+    s3.invalidate_cache("s3://test/2014-01-01.csv")
+    s3.find("s3://test/2014-01-01.csv")
+    after = s3.ls("s3://test")
+    assert before == after
