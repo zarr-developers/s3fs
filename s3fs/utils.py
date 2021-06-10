@@ -14,10 +14,10 @@ class S3BucketRegionCache:
     # See https://github.com/aio-libs/aiobotocore/issues/866
     # for details.
 
-    def __init__(self, session, client, **client_kwargs):
+    def __init__(self, session, **client_kwargs):
         self._session = session
         self._stack = AsyncExitStack()
-        self._client = client
+        self._client = None
         self._client_kwargs = client_kwargs
         self._buckets = {}
         self._regions = {}
@@ -42,6 +42,13 @@ class S3BucketRegionCache:
 
         client = self._buckets[bucket_name] = self._regions[region]
         return client
+
+    async def get_client(self):
+        if not self._client:
+            self._client = await self._stack.enter_async_context(
+                self._session.create_client("s3", **self._client_kwargs)
+            )
+        return self._client
 
     async def __aenter__(self):
         return self
