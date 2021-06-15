@@ -1,5 +1,10 @@
 import errno
+import logging
 from contextlib import contextmanager
+from botocore.exceptions import ClientError
+
+
+logger = logging.getLogger("s3fs")
 
 
 @contextmanager
@@ -57,9 +62,23 @@ class S3BucketRegionCache:
         if bucket_name is None:
             return general_client
 
-        response = await general_client.head_bucket(Bucket=bucket_name)
-        region = response["ResponseMetadata"]["HTTPHeaders"]["x-amz-bucket-region"]
+        try:
+            response = await general_client.head_bucket(Bucket=bucket_name)
+        except ClientError:
+            logger.debug(
+                "RC: HEAD_BUCKET clal for %r has failed, returning the general client",
+                bucket_name,
+            )
+            return general_client
+        else:
+            region = response["ResponseMetadata"]["HTTPHeaders"]["x-amz-bucket-region"]
+
         if region not in self._regions:
+            logger.debug(
+                "RC: Creating a new regional client for %r on the region %r",
+                bucket_name,
+                region,
+            )
             self._regions[region] = await self._stack.enter_async_context(
                 self._session.create_client(
                     "s3", region_name=region, **self._client_kwargs
@@ -77,6 +96,7 @@ class S3BucketRegionCache:
         return self._client
 
     async def clear(self):
+        logger.debug("RC: discarding all clients")
         self._buckets.clear()
         self._regions.clear()
         self._client = None
@@ -86,7 +106,7 @@ class S3BucketRegionCache:
         return self
 
     async def __aexit__(self, *exc_args):
-        await self._stack.aclose()
+        await self.clear()
 
 
 class FileExpired(IOError):
