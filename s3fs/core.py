@@ -373,10 +373,24 @@ class S3FileSystem(AsyncFileSystem):
                 if key not in drop_keys
             }
             config_kwargs["signature_version"] = UNSIGNED
+
         conf = AioConfig(**config_kwargs)
         self.session = aiobotocore.AioSession(**self.kwargs)
 
-        if self.cache_regions:
+        for parameters in (config_kwargs, self.kwargs, init_kwargs, client_kwargs):
+            for option in ("region_name", "endpoint_url"):
+                if parameters.get(option):
+                    self.cache_regions = False
+                    break
+        else:
+            cache_regions = self.cache_regions
+
+        logger.debug(
+            "RC: caching enabled? %r (explicit option is %r)",
+            cache_regions,
+            self.cache_regions,
+        )
+        if cache_regions:
             s3creator = S3BucketRegionCache(
                 self.session, config=conf, **init_kwargs, **client_kwargs
             )
