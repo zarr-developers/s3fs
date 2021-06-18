@@ -390,7 +390,8 @@ class S3FileSystem(AsyncFileSystem):
             cache_regions,
             self.cache_regions,
         )
-        if cache_regions:
+        self.cache_regions = cache_regions
+        if self.cache_regions:
             s3creator = S3BucketRegionCache(
                 self.session, config=conf, **init_kwargs, **client_kwargs
             )
@@ -1702,6 +1703,8 @@ class S3FileSystem(AsyncFileSystem):
         return self.url(path, expires=expiration, **kwargs)
 
     async def _invalidate_region_cache(self):
+        """Invalidate the region cache (associated with buckets)
+        if ``cache_regions`` is turned on."""
         if not self.cache_regions:
             return None
 

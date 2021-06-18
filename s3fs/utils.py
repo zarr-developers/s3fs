@@ -65,7 +65,7 @@ class S3BucketRegionCache:
             response = await general_client.head_bucket(Bucket=bucket_name)
         except ClientError:
             logger.debug(
-                "RC: HEAD_BUCKET clal for %r has failed, returning the general client",
+                "RC: HEAD_BUCKET call for %r has failed, returning the general client",
                 bucket_name,
             )
             return general_client
