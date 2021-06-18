@@ -1689,9 +1689,7 @@ class S3FileSystem(AsyncFileSystem):
 
     async def _invalidate_region_cache(self):
         if not self.cache_regions:
-            raise ValueError(
-                "This method is only available when cache_regions is turned on"
-            )
+            return None
 
         # If the region cache is not initialized, then
         # do nothing.

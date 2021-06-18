@@ -54,7 +54,6 @@ class S3BucketRegionCache:
         self._regions = {}
 
     async def get_bucket_client(self, bucket_name=None):
-        # TODO: raise error when client_kwargs has region
         if bucket_name in self._buckets:
             return self._buckets[bucket_name]
 
