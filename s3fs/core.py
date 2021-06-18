@@ -18,7 +18,7 @@ from aiobotocore.config import AioConfig
 from botocore.exceptions import ClientError, ParamValidationError
 
 from s3fs.errors import translate_boto_error
-from s3fs.utils import ParamKwargsHelper, _get_brange, FileExpired
+from s3fs.utils import S3BucketRegionCache, ParamKwargsHelper, _get_brange, FileExpired
 
 
 logger = logging.getLogger("s3fs")
@@ -125,6 +125,10 @@ class S3FileSystem(AsyncFileSystem):
         Whether to support bucket versioning.  If enable this will require the
         user to have the necessary IAM permissions for dealing with versioned
         objects.
+    cache_regions : bool (False)
+        Whether to cache bucket regions or not. Whenever a new bucket is used,
+        it will first find out which region it belongs and then use the client
+        for that region.
     config_kwargs : dict of parameters passed to ``botocore.client.Config``
     kwargs : other parameters for core session
     session : aiobotocore AioSession object to be used for all connections.
@@ -173,6 +177,7 @@ class S3FileSystem(AsyncFileSystem):
         session=None,
         username=None,
         password=None,
+        cache_regions=False,
         asynchronous=False,
         loop=None,
         **kwargs
@@ -207,6 +212,7 @@ class S3FileSystem(AsyncFileSystem):
         self.req_kw = {"RequestPayer": "requester"} if requester_pays else {}
         self.s3_additional_kwargs = s3_additional_kwargs or {}
         self.use_ssl = use_ssl
+        self.cache_regions = cache_regions
         self._s3 = None
         self.session = None
 
@@ -221,9 +227,16 @@ class S3FileSystem(AsyncFileSystem):
     def _filter_kwargs(self, s3_method, kwargs):
         return self._kwargs_helper.filter_dict(s3_method.__name__, kwargs)
 
+    async def get_s3(self, bucket=None):
+        if self.cache_regions and bucket is not None:
+            return await self._s3creator.get_bucket_client(bucket)
+        else:
+            return self._s3
+
     async def _call_s3(self, method, *akwarglist, **kwargs):
         await self.set_session()
-        method = getattr(self.s3, method)
+        s3 = await self.get_s3(kwargs.get("Bucket"))
+        method = getattr(s3, method)
         kw2 = kwargs.copy()
         kw2.pop("Body", None)
         logger.debug("CALL: %s - %s - %s", method.__name__, akwarglist, kw2)
@@ -360,13 +373,36 @@ class S3FileSystem(AsyncFileSystem):
                 if key not in drop_keys
             }
             config_kwargs["signature_version"] = UNSIGNED
+
         conf = AioConfig(**config_kwargs)
         self.session = aiobotocore.AioSession(**self.kwargs)
-        s3creator = self.session.create_client(
-            "s3", config=conf, **init_kwargs, **client_kwargs
+
+        for parameters in (config_kwargs, self.kwargs, init_kwargs, client_kwargs):
+            for option in ("region_name", "endpoint_url"):
+                if parameters.get(option):
+                    self.cache_regions = False
+                    break
+        else:
+            cache_regions = self.cache_regions
+
+        logger.debug(
+            "RC: caching enabled? %r (explicit option is %r)",
+            cache_regions,
+            self.cache_regions,
         )
+        self.cache_regions = cache_regions
+        if self.cache_regions:
+            s3creator = S3BucketRegionCache(
+                self.session, config=conf, **init_kwargs, **client_kwargs
+            )
+            self._s3 = await s3creator.get_client()
+        else:
+            s3creator = self.session.create_client(
+                "s3", config=conf, **init_kwargs, **client_kwargs
+            )
+            self._s3 = await s3creator.__aenter__()
+
         self._s3creator = s3creator
-        self._s3 = await s3creator.__aenter__()
         # the following actually closes the aiohttp connection; use of privates
         # might break in the future, would cause exception at gc time
         if not self.asynchronous:
@@ -519,7 +555,8 @@ class S3FileSystem(AsyncFileSystem):
             try:
                 logger.debug("Get directory listing page for %s" % path)
                 await self.set_session()
-                pag = self.s3.get_paginator("list_objects_v2")
+                s3 = await self.get_s3(bucket)
+                pag = s3.get_paginator("list_objects_v2")
                 config = {}
                 if max_items is not None:
                     config.update(MaxItems=max_items, PageSize=2 * max_items)
@@ -1352,7 +1389,8 @@ class S3FileSystem(AsyncFileSystem):
         """
         bucket, key, version_id = self.split_path(path)
         await self.set_session()
-        return await self.s3.generate_presigned_url(
+        s3 = await self.get_s3(bucket)
+        return await s3.generate_presigned_url(
             ClientMethod="get_object",
             Params=dict(Bucket=bucket, Key=key, **version_id_kw(version_id), **kwargs),
             ExpiresIn=expires,
@@ -1624,7 +1662,8 @@ class S3FileSystem(AsyncFileSystem):
     async def _rm_versioned_bucket_contents(self, bucket):
         """Remove a versioned bucket and all contents"""
         await self.set_session()
-        pag = self.s3.get_paginator("list_object_versions")
+        s3 = await self.get_s3(bucket)
+        pag = s3.get_paginator("list_object_versions")
         async for plist in pag.paginate(Bucket=bucket):
             obs = plist.get("Versions", []) + plist.get("DeleteMarkers", [])
             delete_keys = {
@@ -1662,6 +1701,20 @@ class S3FileSystem(AsyncFileSystem):
 
     def sign(self, path, expiration=100, **kwargs):
         return self.url(path, expires=expiration, **kwargs)
+
+    async def _invalidate_region_cache(self):
+        """Invalidate the region cache (associated with buckets)
+        if ``cache_regions`` is turned on."""
+        if not self.cache_regions:
+            return None
+
+        # If the region cache is not initialized, then
+        # do nothing.
+        cache = getattr(self, "_s3creator", None)
+        if cache is not None:
+            await cache.clear()
+
+    invalidate_region_cache = sync_wrapper(_invalidate_region_cache)
 
 
 class S3File(AbstractBufferedFile):

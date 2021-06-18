@@ -1,5 +1,10 @@
 import errno
+import logging
 from contextlib import contextmanager
+from botocore.exceptions import ClientError
+
+
+logger = logging.getLogger("s3fs")
 
 
 @contextmanager
@@ -8,6 +13,99 @@ def ignoring(*exceptions):
         yield
     except exceptions:
         pass
+
+
+try:
+    from contextlib import AsyncExitStack
+except ImportError:
+    # Since AsyncExitStack is not available for 3.6<=
+    # we'll create a simple implementation that imitates
+    # the basic functionality.
+    class AsyncExitStack:
+        def __init__(self):
+            self.contexts = []
+
+        async def enter_async_context(self, context):
+            self.contexts.append(context)
+            return await context.__aenter__()
+
+        async def aclose(self, *args):
+            args = args or (None, None, None)
+            for context in self.contexts:
+                await context.__aexit__(*args)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            await self.aclose(*args)
+
+
+class S3BucketRegionCache:
+    # See https://github.com/aio-libs/aiobotocore/issues/866
+    # for details.
+
+    def __init__(self, session, **client_kwargs):
+        self._session = session
+        self._stack = AsyncExitStack()
+        self._client = None
+        self._client_kwargs = client_kwargs
+        self._buckets = {}
+        self._regions = {}
+
+    async def get_bucket_client(self, bucket_name=None):
+        if bucket_name in self._buckets:
+            return self._buckets[bucket_name]
+
+        general_client = await self.get_client()
+        if bucket_name is None:
+            return general_client
+
+        try:
+            response = await general_client.head_bucket(Bucket=bucket_name)
+        except ClientError:
+            logger.debug(
+                "RC: HEAD_BUCKET call for %r has failed, returning the general client",
+                bucket_name,
+            )
+            return general_client
+        else:
+            region = response["ResponseMetadata"]["HTTPHeaders"]["x-amz-bucket-region"]
+
+        if region not in self._regions:
+            logger.debug(
+                "RC: Creating a new regional client for %r on the region %r",
+                bucket_name,
+                region,
+            )
+            self._regions[region] = await self._stack.enter_async_context(
+                self._session.create_client(
+                    "s3", region_name=region, **self._client_kwargs
+                )
+            )
+
+        client = self._buckets[bucket_name] = self._regions[region]
+        return client
+
+    async def get_client(self):
+        if not self._client:
+            self._client = await self._stack.enter_async_context(
+                self._session.create_client("s3", **self._client_kwargs)
+            )
+        return self._client
+
+    async def clear(self):
+        logger.debug("RC: discarding all clients")
+        self._buckets.clear()
+        self._regions.clear()
+        self._client = None
+        await self._stack.aclose()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_args):
+        await self.clear()
 
 
 class FileExpired(IOError):
