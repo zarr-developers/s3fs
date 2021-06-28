@@ -2148,3 +2148,14 @@ def test_list_after_find(s3):
     s3.find("s3://test/2014-01-01.csv")
     after = s3.ls("s3://test")
     assert before == after
+
+
+def test_upload_recursive_to_bucket(s3, tmpdir):
+    # GH#491
+    folders = [os.path.join(tmpdir, d) for d in ["outer", "outer/inner"]]
+    files = [os.path.join(tmpdir, f) for f in ["outer/afile", "outer/inner/bfile"]]
+    for d in folders:
+        os.mkdir(d)
+    for f in files:
+        open(f, "w").write("hello")
+    s3.put(folders[0], "newbucket", recursive=True)
