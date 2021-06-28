@@ -898,13 +898,16 @@ class S3FileSystem(AsyncFileSystem):
 
     async def _put_file(self, lpath, rpath, chunksize=50 * 2 ** 20, **kwargs):
         bucket, key, _ = self.split_path(rpath)
-        if os.path.isdir(lpath) and key:
-            # don't make remote "directory"
-            return
+        if os.path.isdir(lpath):
+            if key:
+                # don't make remote "directory"
+                return
+            else:
+                await self._mkdir(lpath)
         size = os.path.getsize(lpath)
         with open(lpath, "rb") as f0:
             if size < min(5 * 2 ** 30, 2 * chunksize):
-                return await self._call_s3(
+                await self._call_s3(
                     "put_object", Bucket=bucket, Key=key, Body=f0, **kwargs
                 )
             else:
@@ -939,7 +942,9 @@ class S3FileSystem(AsyncFileSystem):
                     UploadId=mpu["UploadId"],
                     MultipartUpload={"Parts": parts},
                 )
-        self.invalidate_cache(rpath)
+        while rpath:
+            self.invalidate_cache(rpath)
+            rpath = self._parent(rpath)
 
     async def _get_file(self, rpath, lpath, version_id=None):
         bucket, key, vers = self.split_path(rpath)
