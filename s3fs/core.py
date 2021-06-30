@@ -549,6 +549,8 @@ class S3FileSystem(AsyncFileSystem):
         self, path, refresh=False, max_items=None, delimiter="/", prefix=""
     ):
         bucket, key, _ = self.split_path(path)
+        if not prefix:
+            prefix = ""
         if key:
             prefix = key.lstrip("/") + "/" + prefix
         if path not in self.dircache or refresh or not delimiter:

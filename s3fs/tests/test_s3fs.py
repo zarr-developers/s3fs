@@ -2140,6 +2140,7 @@ def test_find_with_prefix(s3):
     assert test_1s == [test_bucket_name + "/prefixes/test_1"] + [
         test_bucket_name + f"/prefixes/test_{cursor}" for cursor in range(10, 20)
     ]
+    assert s3.find(test_bucket_name + "/prefixes/") == s3.find(test_bucket_name + "/prefixes/", prefix=None)
 
 
 def test_list_after_find(s3):
