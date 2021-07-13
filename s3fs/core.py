@@ -1637,6 +1637,14 @@ class S3FileSystem(AsyncFileSystem):
             self.invalidate_cache(self._parent(path))
         await self._call_s3("delete_objects", kwargs, Bucket=bucket, Delete=delete_keys)
 
+    async def _rm_file(self, path, **kwargs):
+        bucket, key, _ = self.split_path(path)
+
+        try:
+            await self._call_s3("delete_object", Bucket=bucket, Key=key)
+        except ClientError as e:
+            raise translate_boto_error(e)
+
     async def _rm(self, path, recursive=False, **kwargs):
         if recursive and isinstance(path, str):
             bucket, key, _ = self.split_path(path)
