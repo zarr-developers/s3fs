@@ -2162,3 +2162,10 @@ def test_upload_recursive_to_bucket(s3, tmpdir):
     for f in files:
         open(f, "w").write("hello")
     s3.put(folders[0], "newbucket", recursive=True)
+
+def test_rm_file(s3):
+    target = test_bucket_name + "/to_be_removed/file"
+    s3.touch(target)
+    s3.rm_file(target)
+    assert not s3.exists(target)
+    assert not s3.exists(test_bucket_name + "/to_be_removed")
