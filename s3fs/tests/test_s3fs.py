@@ -2163,6 +2163,7 @@ def test_upload_recursive_to_bucket(s3, tmpdir):
         open(f, "w").write("hello")
     s3.put(folders[0], "newbucket", recursive=True)
 
+
 def test_rm_file(s3):
     target = test_bucket_name + "/to_be_removed/file"
     s3.touch(target)

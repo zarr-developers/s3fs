@@ -1642,7 +1642,7 @@ class S3FileSystem(AsyncFileSystem):
 
         try:
             await self._call_s3("delete_object", Bucket=bucket, Key=key)
-        except ClientError:
+        except ClientError as e:
             raise translate_boto_error(e)
 
     async def _rm(self, path, recursive=False, **kwargs):
