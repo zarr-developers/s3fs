@@ -6,6 +6,7 @@ Changelog
 
 - make bucket in put(recursive) (#496)
 - non-truthy prefixes (#497)
+- implement rm_file (#499)
 
 2021.06.1
 ---------
