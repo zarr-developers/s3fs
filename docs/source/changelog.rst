@@ -1,6 +1,12 @@
 Changelog
 =========
 
+2021.07.0
+---------
+
+- make bucket in put(recursive) (#496)
+- non-truthy prefixes (#497)
+
 2021.06.1
 ---------
 
