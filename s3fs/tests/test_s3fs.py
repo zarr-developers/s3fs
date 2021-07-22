@@ -607,14 +607,6 @@ def test_makedirs(s3):
     s3.makedirs(test_file)
     assert bucket in s3.ls("/")
 
-"""
-def test_makedirs_existing(s3):
-    bucket = "test_makedirs_bucket"
-    test_file = bucket + "a/b/c"
-    s3.makedirs(test_file)
-    with pytest.raises(FileExistsError):
-        s3.makedirs(test_file, exist_ok = False)
-"""
 
 def test_bulk_delete(s3):
     with pytest.raises(FileNotFoundError):
