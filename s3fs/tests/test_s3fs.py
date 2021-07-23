@@ -580,9 +580,25 @@ def test_mkdir_existing_bucket(s3):
     # creating a s3 bucket
     bucket = "test1_bucket"
     s3.mkdir(bucket)
-    # a second call.
-    s3.mkdir(bucket)
     assert bucket in s3.ls("/")
+    # a second call.
+    with pytest.raises(FileExistsError):
+        s3.mkdir(bucket)
+
+
+def test_mkdir_bucket_and_key_1(s3):
+    bucket = "test1_bucket"
+    file = bucket + "/a/b/c"
+    s3.mkdir(file, create_parents=True)
+    assert bucket in s3.ls("/")
+
+
+def test_mkdir_bucket_and_key_2(s3):
+    bucket = "test1_bucket"
+    file = bucket + "/a/b/c"
+    with pytest.raises(FileNotFoundError):
+        s3.mkdir(file, create_parents=False)
+    assert bucket not in s3.ls("/")
 
 
 def test_mkdir_region_name(s3):
@@ -606,6 +622,28 @@ def test_makedirs(s3):
     test_file = bucket + "/a/b/c/file"
     s3.makedirs(test_file)
     assert bucket in s3.ls("/")
+
+
+def test_makedirs_existing_bucket(s3):
+    bucket = "test_makedirs_bucket"
+    s3.mkdir(bucket)
+    assert bucket in s3.ls("/")
+    test_file = bucket + "/a/b/c/file"
+    # no-op, and no error.
+    s3.makedirs(test_file)
+
+
+def test_makedirs_pure_bucket_exist_ok(s3):
+    bucket = "test1_bucket"
+    s3.mkdir(bucket)
+    s3.makedirs(bucket, exist_ok=True)
+
+
+def test_makedirs_pure_bucket_error_on_exist(s3):
+    bucket = "test1_bucket"
+    s3.mkdir(bucket)
+    with pytest.raises(FileExistsError):
+        s3.makedirs(bucket, exist_ok=False)
 
 
 def test_bulk_delete(s3):
@@ -1704,7 +1742,6 @@ def test_requester_pays(s3):
     fn = test_bucket_name + "/myfile"
     s3 = S3FileSystem(requester_pays=True, client_kwargs={"endpoint_url": endpoint_uri})
     assert s3.req_kw["RequestPayer"] == "requester"
-    s3.mkdir(test_bucket_name)
     s3.touch(fn)
     with s3.open(fn, "rb") as f:
         assert f.req_kw["RequestPayer"] == "requester"
