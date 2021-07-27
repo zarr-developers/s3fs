@@ -684,6 +684,8 @@ class S3FileSystem(AsyncFileSystem):
 
     async def _mkdir(self, path, acl="", create_parents=True, **kwargs):
         path = self._strip_protocol(path).rstrip("/")
+        if not path:
+            raise ValueError
         bucket, key, _ = self.split_path(path)
         if await self._exists(bucket):
             if not key:

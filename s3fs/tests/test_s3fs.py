@@ -914,9 +914,8 @@ def test_errors(s3):
         f.close()
         f.read()
 
-    # disabling this for now, mkdir("/") can be a non-op as creating bucket
-    # with pytest.raises(ValueError):
-    #    s3.mkdir("/")
+    with pytest.raises(ValueError):
+        s3.mkdir("/")
 
     with pytest.raises(ValueError):
         s3.find("")
