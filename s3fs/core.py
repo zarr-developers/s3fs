@@ -684,8 +684,15 @@ class S3FileSystem(AsyncFileSystem):
 
     async def _mkdir(self, path, acl="", create_parents=True, **kwargs):
         path = self._strip_protocol(path).rstrip("/")
+        if not path:
+            raise ValueError
         bucket, key, _ = self.split_path(path)
-        if not key or (create_parents and not await self._exists(bucket)):
+        if await self._exists(bucket):
+            if not key:
+                # requested to create bucket, but bucket already exist
+                raise FileExistsError
+            # else: # do nothing as bucket is already created.
+        elif not key or create_parents:
             if acl and acl not in buck_acls:
                 raise ValueError("ACL not in %s", buck_acls)
             try:
@@ -705,7 +712,7 @@ class S3FileSystem(AsyncFileSystem):
             except ParamValidationError as e:
                 raise ValueError("Bucket create failed %r: %s" % (bucket, e))
         else:
-            # raises if bucket doesn't exist, but doesn't write anything
+            # raises if bucket doesn't exist and doesn't get create flag.
             await self._ls(bucket)
 
     mkdir = sync_wrapper(_mkdir)
