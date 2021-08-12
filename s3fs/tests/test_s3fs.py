@@ -227,6 +227,15 @@ def test_config_kwargs_class_attributes_override():
     assert s3.connect().meta.config.read_timeout == 120
 
 
+def test_user_session_is_preserved():
+    from aiobotocore.session import get_session
+
+    session = get_session()
+    s3 = S3FileSystem(session=session)
+    s3.connect()
+    assert s3.session == session
+
+
 def test_idempotent_connect(s3):
     first = s3.s3
     assert s3.connect(refresh=True) is not first
