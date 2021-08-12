@@ -214,7 +214,7 @@ class S3FileSystem(AsyncFileSystem):
         self.use_ssl = use_ssl
         self.cache_regions = cache_regions
         self._s3 = None
-        self.session = None
+        self.session = session
 
     @property
     def s3(self):
@@ -375,7 +375,8 @@ class S3FileSystem(AsyncFileSystem):
             config_kwargs["signature_version"] = UNSIGNED
 
         conf = AioConfig(**config_kwargs)
-        self.session = aiobotocore.AioSession(**self.kwargs)
+        if self.session is None:
+            self.session = aiobotocore.AioSession(**self.kwargs)
 
         for parameters in (config_kwargs, self.kwargs, init_kwargs, client_kwargs):
             for option in ("region_name", "endpoint_url"):
