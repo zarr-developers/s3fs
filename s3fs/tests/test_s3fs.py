@@ -229,6 +229,7 @@ def test_config_kwargs_class_attributes_override():
 
 def test_user_session_is_preserved():
     from aiobotocore.session import get_session
+
     session = get_session()
     s3 = S3FileSystem(session=session)
     s3.connect()
