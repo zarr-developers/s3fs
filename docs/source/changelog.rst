@@ -1,6 +1,11 @@
 Changelog
 =========
 
+2121.08.0
+---------
+
+- fix for aiobotocore update (#510)
+
 2021.07.0
 ---------
 
