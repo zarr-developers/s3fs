@@ -133,7 +133,7 @@ class S3FileSystem(AsyncFileSystem):
     kwargs : other parameters for core session
     session : aiobotocore AioSession object to be used for all connections.
          This session will be used inplace of creating a new session inside S3FileSystem.
-         For example: aiobotocore.AioSession(profile='test_user')
+         For example: aiobotocore.session.AioSession(profile='test_user')
 
     The following parameters are passed on to fsspec:
 
@@ -376,7 +376,7 @@ class S3FileSystem(AsyncFileSystem):
 
         conf = AioConfig(**config_kwargs)
         if self.session is None:
-            self.session = aiobotocore.AioSession(**self.kwargs)
+            self.session = aiobotocore.session.AioSession(**self.kwargs)
 
         for parameters in (config_kwargs, self.kwargs, init_kwargs, client_kwargs):
             for option in ("region_name", "endpoint_url"):
