@@ -1,2 +1,2 @@
-aiobotocore>=1.0.1
+aiobotocore~=1.4.0
 fsspec==2021.07.0
