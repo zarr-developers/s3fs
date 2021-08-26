@@ -1943,7 +1943,7 @@ def test_async_close():
 def test_put_single(s3, tmpdir):
     fn = os.path.join(str(tmpdir), "dir")
     os.mkdir(fn)
-    open(os.path.join(fn, "abc"), 'w').write("text")
+    open(os.path.join(fn, "abc"), "w").write("text")
     s3.put(fn + "/", test_bucket_name)  # no-op, no files
     assert not s3.exists(test_bucket_name + "/abc")
     assert not s3.exists(test_bucket_name + "/dir")
