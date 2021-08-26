@@ -2226,3 +2226,9 @@ def test_rm_file(s3):
     s3.rm_file(target)
     assert not s3.exists(target)
     assert not s3.exists(test_bucket_name + "/to_be_removed")
+
+
+def test_exists_isdir(s3):
+    bad_path = "s3://nyc-tlc-asdfasdf/trip data/"
+    assert not s3.exists(bad_path)
+    assert not s3.isdir(bad_path)
