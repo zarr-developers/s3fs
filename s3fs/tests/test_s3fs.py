@@ -1951,6 +1951,17 @@ def test_async_close():
     asyncio.run(_())
 
 
+def test_put_single(s3, tmpdir):
+    fn = os.path.join(str(tmpdir), "dir")
+    os.mkdir(fn)
+    open(os.path.join(fn, "abc"), "w").write("text")
+    s3.put(fn + "/", test_bucket_name)  # no-op, no files
+    assert not s3.exists(test_bucket_name + "/abc")
+    assert not s3.exists(test_bucket_name + "/dir")
+    s3.put(fn + "/", test_bucket_name, recursive=True)  # no-op, no files
+    assert s3.cat(test_bucket_name + "/dir/abc") == b"text"
+
+
 def test_shallow_find(s3):
     """Test that find method respects maxdepth.
 
