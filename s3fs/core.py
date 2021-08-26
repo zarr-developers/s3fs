@@ -262,7 +262,8 @@ class S3FileSystem(AsyncFileSystem):
                 await tb.tb_frame.f_locals["response"]
             except Exception as e:
                 err = e
-        raise translate_boto_error(err)
+        err = translate_boto_error(err)
+        raise err
 
     call_s3 = sync_wrapper(_call_s3)
 
@@ -1166,7 +1167,10 @@ class S3FileSystem(AsyncFileSystem):
             return False
 
         # This only returns things within the path and NOT the path object itself
-        return bool(await self._lsdir(path))
+        try:
+            return bool(await self._lsdir(path))
+        except FileNotFoundError:
+            return False
 
     isdir = sync_wrapper(_isdir)
 

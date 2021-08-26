@@ -1844,7 +1844,11 @@ def test_async_s3(s3):
         # with s3.open(fn, "rb") as f:
         #     assert f.read() == data
 
-        await session.close()
+        try:
+            await session.close()
+        except AttributeError:
+            # bug in aiobotocore 1.4.1
+            await session._endpoint.http_session._session.close()
 
     asyncio.run(_())
 
@@ -1877,7 +1881,11 @@ def test_async_s3_old(s3):
         # Check old API
         session = await s3._connect()
         assert await s3._cat_file(fn, start=0, end=3) == data[:3]
-        await session.close()
+        try:
+            await session.close()
+        except AttributeError:
+            # bug in aiobotocore 1.4.1
+            await session._endpoint.http_session._session.close()
 
     asyncio.run(_())
 
@@ -1934,8 +1942,11 @@ def test_async_close():
                     future.result()
 
         await asyncio.gather(*[async_wrapper() for __ in range(2)])
-
-        await s3._s3.close()
+        try:
+            await s3._s3.close()
+        except AttributeError:
+            # bug in aiobotocore 1.4.1
+            await s3._s3._endpoint.http_session._session.close()
 
     asyncio.run(_())
 
@@ -2226,3 +2237,9 @@ def test_rm_file(s3):
     s3.rm_file(target)
     assert not s3.exists(target)
     assert not s3.exists(test_bucket_name + "/to_be_removed")
+
+
+def test_exists_isdir(s3):
+    bad_path = "s3://nyc-tlc-asdfasdf/trip data/"
+    assert not s3.exists(bad_path)
+    assert not s3.isdir(bad_path)
