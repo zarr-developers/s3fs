@@ -7,6 +7,8 @@ import socket
 from typing import Tuple, Optional
 import weakref
 
+from urllib3.exceptions import IncompleteRead
+
 from fsspec.spec import AbstractBufferedFile
 from fsspec.utils import infer_storage_options, tokenize, setup_logging as setup_logger
 from fsspec.asyn import AsyncFileSystem, sync, sync_wrapper, FSTimeoutError
@@ -34,7 +36,7 @@ if "S3FS_LOGGING_LEVEL" in os.environ:
 
 
 MANAGED_COPY_THRESHOLD = 5 * 2 ** 30
-S3_RETRYABLE_ERRORS = (socket.timeout,)
+S3_RETRYABLE_ERRORS = (socket.timeout, IncompleteRead)
 
 _VALID_FILE_MODES = {"r", "w", "a", "rb", "wb", "ab"}
 
