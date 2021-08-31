@@ -605,6 +605,11 @@ class S3FileSystem(AsyncFileSystem):
             return files
         return self.dircache[path]
 
+    async def _glob(self, path, **kwargs):
+        if path.startswith("*"):
+            raise ValueError("Cannot traverse all of S3")
+        return await super()._glob(path, **kwargs)
+
     async def _find(self, path, maxdepth=None, withdirs=None, detail=False, prefix=""):
         """List all files below path.
         Like posix ``find`` command without conditions
