@@ -1,6 +1,13 @@
 Changelog
 =========
 
+2021.08.1
+---------
+
+- retry on IncompleteRead (#525)
+- fix isdir for missing bucket (#522)
+- raise for glob("*") (#5167)
+
 2021.08.0
 ---------
 
