@@ -44,7 +44,7 @@ jobs:
 
       - name: Run Tests
         shell: bash -l {0}
-        run: py.test -vv s3fs
+        run: pytest -vv s3fs
 
       - name: Lint
         shell: bash -l {0}
