@@ -838,9 +838,7 @@ class S3FileSystem(AsyncFileSystem):
             except Exception:
                 pass
             try:
-                await self._call_s3(
-                    "get_bucket_location", Bucket=bucket, **self.req_kw
-                )
+                await self._call_s3("get_bucket_location", Bucket=bucket, **self.req_kw)
                 return True
             except Exception:
                 return False
