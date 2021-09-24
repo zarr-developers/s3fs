@@ -1,6 +1,12 @@
 Changelog
 =========
 
+2021.09.0
+---------
+
+- check for bucket also with get_bucket_location (#533)
+- update versioneer (#531)
+
 2021.08.1
 ---------
 
