@@ -1408,7 +1408,7 @@ class S3FileSystem(AsyncFileSystem):
 
     chmod = sync_wrapper(_chmod)
 
-    async def _url(self, path, expires=3600, **kwargs):
+    async def _url(self, path, expires=3600, client_method="get_object", **kwargs):
         """Generate presigned URL to access path by HTTP
 
         Parameters
@@ -1422,7 +1422,7 @@ class S3FileSystem(AsyncFileSystem):
         await self.set_session()
         s3 = await self.get_s3(bucket)
         return await s3.generate_presigned_url(
-            ClientMethod="get_object",
+            ClientMethod=client_method,
             Params=dict(Bucket=bucket, Key=key, **version_id_kw(version_id), **kwargs),
             ExpiresIn=expires,
         )
