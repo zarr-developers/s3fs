@@ -1,6 +1,11 @@
 Changelog
 =========
 
+2021.10.0
+---------
+
+No changes (just released to keep pin with fsspec)
+
 2021.09.0
 ---------
 
