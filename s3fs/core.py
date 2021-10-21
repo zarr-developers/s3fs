@@ -1674,7 +1674,7 @@ class S3FileSystem(AsyncFileSystem):
             bucket, key, _ = self.split_path(path)
             if not key and await self._is_bucket_versioned(bucket):
                 # special path to completely remove versioned bucket
-                await self._rm_versioned_bucket_contents(self, bucket)
+                await self._rm_versioned_bucket_contents(bucket)
         paths = await self._expand_path(path, recursive=recursive)
         files = [p for p in paths if self.split_path(p)[1]]
         dirs = [p for p in paths if not self.split_path(p)[1]]
