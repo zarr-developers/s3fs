@@ -132,7 +132,7 @@ class S3FileSystem(AsyncFileSystem):
         it will first find out which region it belongs and then use the client
         for that region.
     asynchronous :  bool (False)
-        Use async coroutines.
+        Whether this instance is to be used from inside coroutines.
     config_kwargs : dict of parameters passed to ``botocore.client.Config``
     kwargs : other parameters for core session.
     session : aiobotocore AioSession object to be used for all connections.
