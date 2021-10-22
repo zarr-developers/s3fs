@@ -131,8 +131,10 @@ class S3FileSystem(AsyncFileSystem):
         Whether to cache bucket regions or not. Whenever a new bucket is used,
         it will first find out which region it belongs and then use the client
         for that region.
+    asynchronous :  bool (False)
+        Use asyn coroutines.
     config_kwargs : dict of parameters passed to ``botocore.client.Config``
-    kwargs : other parameters for core session
+    kwargs : other parameters for core session.
     session : aiobotocore AioSession object to be used for all connections.
          This session will be used inplace of creating a new session inside S3FileSystem.
          For example: aiobotocore.session.AioSession(profile='test_user')
