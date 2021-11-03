@@ -810,7 +810,6 @@ class S3FileSystem(AsyncFileSystem):
         if path in ["", "/"]:
             # the root always exists, even if anon
             return True
-        path = self._strip_protocol(path)
         bucket, key, version_id = self.split_path(path)
         if key:
             try:
@@ -993,67 +992,6 @@ class S3FileSystem(AsyncFileSystem):
         finally:
             body.close()
 
-    async def _simple_info(self, path):
-        bucket, key, _ = self.split_path(path)
-        prefix = key.strip("/")
-
-        out = await self._call_s3(
-            "list_objects_v2",
-            self.kwargs,
-            Bucket=bucket,
-            Prefix=prefix,
-            Delimiter="/",
-            MaxKeys=1,
-            **self.req_kw,
-        )
-        # This method either can return the info blob for the object if it
-        # exists, or return None if it doesn't exist as a file and it's
-        # existence as a directory is undeterminable with this call. If we
-        # can determine that no file or directory exists on the S3 with this
-        # prefix, then we can safely raise the FileNotFoundError.
-        [file] = out.get("Contents", [None])
-        if file and file["Key"] == prefix:
-            return {
-                "ETag": file["ETag"],
-                "Key": "/".join([bucket, key]),
-                "LastModified": file["LastModified"],
-                "Size": file["Size"],
-                "size": file["Size"],
-                "name": "/".join([bucket, key]),
-                "type": "file",
-                "StorageClass": "STANDARD",
-                "VersionId": file.get("VersionId"),
-            }
-        elif not (file or out.get("KeyCount", 0) or out.get("CommonPrefixes", [])):
-            raise FileNotFoundError(path)
-
-    async def _version_aware_info(self, path, version_id):
-        bucket, key, _ = self.split_path(path)
-
-        try:
-            out = await self._call_s3(
-                "head_object",
-                self.kwargs,
-                Bucket=bucket,
-                Key=key,
-                **version_id_kw(version_id),
-                **self.req_kw,
-            )
-        except FileNotFoundError:
-            return None
-
-        return {
-            "ETag": out["ETag"],
-            "Key": "/".join([bucket, key]),
-            "LastModified": out["LastModified"],
-            "Size": out["ContentLength"],
-            "size": out["ContentLength"],
-            "name": "/".join([bucket, key]),
-            "type": "file",
-            "StorageClass": "STANDARD",
-            "VersionId": out.get("VersionId"),
-        }
-
     async def _info(self, path, bucket=None, key=None, refresh=False, version_id=None):
         path = self._strip_protocol(path)
         bucket, key, path_version_id = self.split_path(path)
@@ -1074,23 +1012,27 @@ class S3FileSystem(AsyncFileSystem):
             return {"name": path, "size": 0, "type": "directory"}
         if key:
             try:
-                # The HeadObject calls are really expensive on objects
-                # compared to a ListObjectsV2 call with a max_keys=1. The
-                # disadvantage of the list objects is that, it doesn't yield
-                # a list of versions which might be needed on version_aware filesystems.
-                # So we switch between a normal HeadObject call (when version_aware is set)
-                # and ListObjectsV2 (when it is not).
-                if self.version_aware:
-                    out = await self._version_aware_info(path, version_id)
-                else:
-                    try:
-                        out = await self._simple_info(path)
-                    except PermissionError:
-                        # If the permissions aren't enough for scanning a prefix
-                        # then fall back to using normal HEAD_OBJECT
-                        out = await self._version_aware_info(path, version_id)
-                if out:
-                    return out
+                out = await self._call_s3(
+                    "head_object",
+                    self.kwargs,
+                    Bucket=bucket,
+                    Key=key,
+                    **version_id_kw(version_id),
+                    **self.req_kw,
+                )
+                return {
+                    "ETag": out["ETag"],
+                    "Key": "/".join([bucket, key]),
+                    "LastModified": out["LastModified"],
+                    "Size": out["ContentLength"],
+                    "size": out["ContentLength"],
+                    "name": "/".join([bucket, key]),
+                    "type": "file",
+                    "StorageClass": "STANDARD",
+                    "VersionId": out.get("VersionId"),
+                }
+            except FileNotFoundError:
+                pass
             except ClientError as e:
                 raise translate_boto_error(e, set_cause=False)
 
