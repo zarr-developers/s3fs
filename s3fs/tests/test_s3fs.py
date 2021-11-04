@@ -2122,6 +2122,42 @@ def test_token_paths(s3):
     assert files
 
 
+def test_same_name_but_no_exact(s3):
+    s3.touch(test_bucket_name + "/very/similiar/prefix1")
+    s3.touch(test_bucket_name + "/very/similiar/prefix2")
+    s3.touch(test_bucket_name + "/very/similiar/prefix3/something")
+    assert not s3.exists(test_bucket_name + "/very/similiar/prefix")
+    assert not s3.exists(test_bucket_name + "/very/similiar/prefi")
+    assert not s3.exists(test_bucket_name + "/very/similiar/pref")
+
+    assert s3.exists(test_bucket_name + "/very/similiar/")
+    assert s3.exists(test_bucket_name + "/very/similiar/prefix1")
+    assert s3.exists(test_bucket_name + "/very/similiar/prefix2")
+    assert s3.exists(test_bucket_name + "/very/similiar/prefix3")
+    assert s3.exists(test_bucket_name + "/very/similiar/prefix3/")
+    assert s3.exists(test_bucket_name + "/very/similiar/prefix3/something")
+
+    assert not s3.exists(test_bucket_name + "/very/similiar/prefix3/some")
+
+    s3.touch(test_bucket_name + "/starting/very/similiar/prefix")
+
+    assert not s3.exists(test_bucket_name + "/starting/very/similiar/prefix1")
+    assert not s3.exists(test_bucket_name + "/starting/very/similiar/prefix2")
+    assert not s3.exists(test_bucket_name + "/starting/very/similiar/prefix3")
+    assert not s3.exists(test_bucket_name + "/starting/very/similiar/prefix3/")
+    assert not s3.exists(test_bucket_name + "/starting/very/similiar/prefix3/something")
+
+    assert s3.exists(test_bucket_name + "/starting/very/similiar/prefix")
+    assert s3.exists(test_bucket_name + "/starting/very/similiar/prefix/")
+
+
+def test_leading_forward_slash(s3):
+    s3.touch(test_bucket_name + "/some/file")
+    assert s3.ls(test_bucket_name + "/some/")
+    assert s3.exists(test_bucket_name + "/some/file")
+    assert s3.exists("s3://" + test_bucket_name + "/some/file")
+
+
 def test_lsdir(s3):
     # https://github.com/dask/s3fs/issues/475
     s3.find(test_bucket_name)
