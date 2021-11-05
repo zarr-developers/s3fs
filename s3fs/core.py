@@ -810,6 +810,7 @@ class S3FileSystem(AsyncFileSystem):
         if path in ["", "/"]:
             # the root always exists, even if anon
             return True
+        path = self._strip_protocol(path)
         bucket, key, version_id = self.split_path(path)
         if key:
             try:
