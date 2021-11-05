@@ -1294,7 +1294,7 @@ def _get_s3_id(s3):
             "forkserver",
             marks=pytest.mark.skipif(
                 sys.platform.startswith("win"),
-                reason="'forserver' not available on windows",
+                reason="'forkserver' not available on windows",
             ),
         ),
     ],
