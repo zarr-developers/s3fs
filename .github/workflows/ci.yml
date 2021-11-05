@@ -34,7 +34,7 @@ jobs:
         shell: bash -l {0}
         run: |
           conda install -c conda-forge pip botocore aiobotocore "moto>=2.0" pytest flake8 black -y
-          pip install git+https://github.com/intake/filesystem_spec --no-deps
+          pip install git+https://github.com/fsspec/filesystem_spec --no-deps
           conda list
           conda --version
 

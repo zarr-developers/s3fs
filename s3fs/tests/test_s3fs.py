@@ -2174,7 +2174,7 @@ def test_leading_forward_slash(s3):
 
 
 def test_lsdir(s3):
-    # https://github.com/dask/s3fs/issues/475
+    # https://github.com/fsspec/s3fs/issues/475
     s3.find(test_bucket_name)
 
     d = test_bucket_name + "/test"
