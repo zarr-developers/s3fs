@@ -1,6 +1,14 @@
 Changelog
 =========
 
+2021.11.0
+---------
+
+- move to fsspec org
+- doc tweaks (#546, 540)
+- redondant argument in _rm_versioned_bucket_contents (#439)
+- allow client_method in url/sign (POST, etc) (#536)
+
 2021.10.1
 ---------
 
