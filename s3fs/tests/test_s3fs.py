@@ -940,10 +940,10 @@ def test_errors_cause_preservings(monkeypatch, s3):
 
     assert type(exc.value.__cause__).__name__ == "NoSuchBucket"
 
-    async def list_objects_v2(*args, **kwargs):
+    async def head_object(*args, **kwargs):
         raise NoCredentialsError
 
-    monkeypatch.setattr(type(s3.s3), "list_objects_v2", list_objects_v2)
+    monkeypatch.setattr(type(s3.s3), "head_object", head_object)
 
     # Since the error is not translate, the __cause__ would
     # be None
@@ -1294,7 +1294,7 @@ def _get_s3_id(s3):
             "forkserver",
             marks=pytest.mark.skipif(
                 sys.platform.startswith("win"),
-                reason="'forserver' not available on windows",
+                reason="'forkserver' not available on windows",
             ),
         ),
     ],
@@ -2151,21 +2151,6 @@ def test_same_name_but_no_exact(s3):
     assert s3.exists(test_bucket_name + "/starting/very/similiar/prefix/")
 
 
-def test_info_with_permission_error_for_list_objects(monkeypatch, s3):
-    s3.touch(test_bucket_name + "/very/similiar/prefix")
-
-    async def list_objects_v2(*args, **kwargs):
-        if kwargs.pop("Prefix").endswith("/"):
-            return {}
-        else:
-            raise PermissionError
-
-    monkeypatch.setattr(type(s3.s3), "list_objects_v2", list_objects_v2)
-    assert not s3.exists(test_bucket_name + "/very/similiar/prefix1")
-    assert s3.exists(test_bucket_name + "/very/similiar/prefix")
-    assert s3.info(test_bucket_name + "/very/similiar/prefix")["type"] == "file"
-
-
 def test_leading_forward_slash(s3):
     s3.touch(test_bucket_name + "/some/file")
     assert s3.ls(test_bucket_name + "/some/")
@@ -2174,7 +2159,7 @@ def test_leading_forward_slash(s3):
 
 
 def test_lsdir(s3):
-    # https://github.com/dask/s3fs/issues/475
+    # https://github.com/fsspec/s3fs/issues/475
     s3.find(test_bucket_name)
 
     d = test_bucket_name + "/test"

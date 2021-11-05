@@ -113,7 +113,7 @@ pygments_style = 'sphinx'
 todo_include_todos = False
 
 extlinks = {
-    "pr": ("https://github.com/dask/s3fs/pull/%s", "PR #"),
+    "pr": ("https://github.com/fsspec/s3fs/pull/%s", "PR #"),
 }
 
 
