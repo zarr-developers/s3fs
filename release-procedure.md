@@ -8,7 +8,7 @@
 
 4.  Push new version bump commit and tag to github
 
-        git push dask main --tags
+        git push fsspec main --tags
 
 5.  Build source and wheel packages
 
