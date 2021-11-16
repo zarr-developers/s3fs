@@ -1788,7 +1788,13 @@ class S3File(AbstractBufferedFile):
                 self.details = s3.info(path)
                 self.version_id = self.details.get("VersionId")
         super().__init__(
-            s3, path, mode, block_size, autocommit=autocommit, cache_type=cache_type, cache_options=cache_options
+            s3,
+            path,
+            mode,
+            block_size,
+            autocommit=autocommit,
+            cache_type=cache_type,
+            cache_options=cache_options,
         )
         self.s3 = self.fs  # compatibility
 
