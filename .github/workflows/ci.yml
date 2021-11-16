@@ -50,4 +50,4 @@ jobs:
         shell: bash -l {0}
         run: |
           flake8 s3fs
-          black s3fs --check
+          black s3fs --check --diff
