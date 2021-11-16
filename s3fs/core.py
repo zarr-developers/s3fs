@@ -481,6 +481,7 @@ class S3FileSystem(AsyncFileSystem):
         cache_type=None,
         autocommit=True,
         requester_pays=None,
+        cache_options=None,
         **kwargs
     ):
         """Open a file for reading or writing
@@ -549,6 +550,7 @@ class S3FileSystem(AsyncFileSystem):
             cache_type=cache_type,
             autocommit=autocommit,
             requester_pays=requester_pays,
+            cache_options=cache_options,
         )
 
     async def _lsdir(
@@ -1754,6 +1756,7 @@ class S3File(AbstractBufferedFile):
         autocommit=True,
         cache_type="bytes",
         requester_pays=False,
+        cache_options=None,
     ):
         bucket, key, path_version_id = s3.split_path(path)
         if not key:
@@ -1785,7 +1788,7 @@ class S3File(AbstractBufferedFile):
                 self.details = s3.info(path)
                 self.version_id = self.details.get("VersionId")
         super().__init__(
-            s3, path, mode, block_size, autocommit=autocommit, cache_type=cache_type
+            s3, path, mode, block_size, autocommit=autocommit, cache_type=cache_type, cache_options=cache_options
         )
         self.s3 = self.fs  # compatibility
 
