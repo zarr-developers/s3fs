@@ -1167,29 +1167,24 @@ class S3FileSystem(AsyncFileSystem):
     async def _metadata(self, path, refresh=False, **kwargs):
         """Return metadata of path.
 
-        Metadata is cached unless `refresh=True`.
-
         Parameters
         ----------
         path : string/bytes
             filename to get metadata for
         refresh : bool (=False)
-            if False, look in local cache for file metadata first
+            (ignored)
         """
         bucket, key, version_id = self.split_path(path)
-        if refresh or path not in self._metadata_cache:
-            response = await self._call_s3(
-                "head_object",
-                kwargs,
-                Bucket=bucket,
-                Key=key,
-                **version_id_kw(version_id),
-                **self.req_kw,
-            )
-            meta = {k.replace("_", "-"): v for k, v in response["Metadata"].items()}
-            self._metadata_cache[path] = meta
-
-        return self._metadata_cache[path]
+        response = await self._call_s3(
+            "head_object",
+            kwargs,
+            Bucket=bucket,
+            Key=key,
+            **version_id_kw(version_id),
+            **self.req_kw,
+        )
+        meta = {k.replace("_", "-"): v for k, v in response["Metadata"].items()}
+        return meta
 
     metadata = sync_wrapper(_metadata)
 
@@ -1793,7 +1788,13 @@ class S3File(AbstractBufferedFile):
                 self.details = s3.info(path)
                 self.version_id = self.details.get("VersionId")
         super().__init__(
-            s3, path, mode, block_size, autocommit=autocommit, cache_type=cache_type, cache_options=cache_options
+            s3,
+            path,
+            mode,
+            block_size,
+            autocommit=autocommit,
+            cache_type=cache_type,
+            cache_options=cache_options,
         )
         self.s3 = self.fs  # compatibility
 
