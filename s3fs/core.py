@@ -1821,7 +1821,7 @@ class S3File(AbstractBufferedFile):
                 self.append_block = True
             self.loc = loc
 
-        if "r" in mode:
+        if "r" in mode and "ETag" in self.details:
             self.req_kw["IfMatch"] = self.details["ETag"]
 
     def _call_s3(self, method, *kwarglist, **kwargs):
@@ -1883,7 +1883,7 @@ class S3File(AbstractBufferedFile):
         """
         if self.writable():
             raise NotImplementedError(
-                "cannot update metadata while file " "is open for writing"
+                "cannot update metadata while file is open for writing"
             )
         return self.fs.setxattr(self.path, copy_kwargs=copy_kwargs, **kwargs)
 
@@ -1906,7 +1906,7 @@ class S3File(AbstractBufferedFile):
         except OSError as ex:
             if ex.args[0] == errno.EINVAL and "pre-conditions" in ex.args[1]:
                 raise FileExpired(
-                    filename=self.details["name"], e_tag=self.details["ETag"]
+                    filename=self.details["name"], e_tag=self.details.get("ETag")
                 ) from ex
             else:
                 raise
