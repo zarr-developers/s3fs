@@ -22,6 +22,14 @@ from botocore.exceptions import ClientError, ParamValidationError
 from s3fs.errors import translate_boto_error
 from s3fs.utils import S3BucketRegionCache, ParamKwargsHelper, _get_brange, FileExpired
 
+# ClientPayloadError can be thrown during an incomplete read. aiohttp is a dependency of
+# aiobotocore, we guard the import here in case this dependency is replaced in a future version
+# of aiobotocore.
+try:
+    from aiohttp import ClientPayloadError
+except ImportError:
+    ClientPayloadError = None
+
 
 logger = logging.getLogger("s3fs")
 
@@ -37,6 +45,9 @@ if "S3FS_LOGGING_LEVEL" in os.environ:
 
 MANAGED_COPY_THRESHOLD = 5 * 2 ** 30
 S3_RETRYABLE_ERRORS = (socket.timeout, IncompleteRead)
+
+if ClientPayloadError is not None:
+    S3_RETRYABLE_ERRORS += (ClientPayloadError,)
 
 _VALID_FILE_MODES = {"r", "w", "a", "rb", "wb", "ab"}
 
