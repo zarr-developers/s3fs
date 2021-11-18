@@ -1821,7 +1821,7 @@ class S3File(AbstractBufferedFile):
                 self.append_block = True
             self.loc = loc
 
-        if "r" in mode:
+        if "r" in mode and "ETag" in self.details:
             self.req_kw["IfMatch"] = self.details["ETag"]
 
     def _call_s3(self, method, *kwarglist, **kwargs):
