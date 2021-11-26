@@ -1,6 +1,13 @@
 Changelog
 =========
 
+2021.11.1
+---------
+
+- deal with missing ETag (#557)
+- ClientPayloadError to retryable (#556)
+- pin aiobotocore (#555)
+
 2021.11.0
 ---------
 
