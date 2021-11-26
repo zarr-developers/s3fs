@@ -22,6 +22,14 @@ from botocore.exceptions import ClientError, ParamValidationError
 from s3fs.errors import translate_boto_error
 from s3fs.utils import S3BucketRegionCache, ParamKwargsHelper, _get_brange, FileExpired
 
+# ClientPayloadError can be thrown during an incomplete read. aiohttp is a dependency of
+# aiobotocore, we guard the import here in case this dependency is replaced in a future version
+# of aiobotocore.
+try:
+    from aiohttp import ClientPayloadError
+except ImportError:
+    ClientPayloadError = None
+
 
 logger = logging.getLogger("s3fs")
 
@@ -37,6 +45,9 @@ if "S3FS_LOGGING_LEVEL" in os.environ:
 
 MANAGED_COPY_THRESHOLD = 5 * 2 ** 30
 S3_RETRYABLE_ERRORS = (socket.timeout, IncompleteRead)
+
+if ClientPayloadError is not None:
+    S3_RETRYABLE_ERRORS += (ClientPayloadError,)
 
 _VALID_FILE_MODES = {"r", "w", "a", "rb", "wb", "ab"}
 
@@ -1810,7 +1821,7 @@ class S3File(AbstractBufferedFile):
                 self.append_block = True
             self.loc = loc
 
-        if "r" in mode:
+        if "r" in mode and "ETag" in self.details:
             self.req_kw["IfMatch"] = self.details["ETag"]
 
     def _call_s3(self, method, *kwarglist, **kwargs):
@@ -1872,7 +1883,7 @@ class S3File(AbstractBufferedFile):
         """
         if self.writable():
             raise NotImplementedError(
-                "cannot update metadata while file " "is open for writing"
+                "cannot update metadata while file is open for writing"
             )
         return self.fs.setxattr(self.path, copy_kwargs=copy_kwargs, **kwargs)
 
@@ -1895,7 +1906,7 @@ class S3File(AbstractBufferedFile):
         except OSError as ex:
             if ex.args[0] == errno.EINVAL and "pre-conditions" in ex.args[1]:
                 raise FileExpired(
-                    filename=self.details["name"], e_tag=self.details["ETag"]
+                    filename=self.details["name"], e_tag=self.details.get("ETag")
                 ) from ex
             else:
                 raise
