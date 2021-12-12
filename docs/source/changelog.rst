@@ -20,7 +20,7 @@ Changelog
 2021.10.1
 ---------
 
-- alow other methods than GET to url/sign (#536)
+- allow other methods than GET to url/sign (#536)
 
 2021.10.0
 ---------

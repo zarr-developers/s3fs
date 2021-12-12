@@ -663,7 +663,7 @@ def test_bulk_delete(s3):
     assert not s3.exists(test_bucket_name + "/nested/nested2/file1")
 
 
-@pytest.mark.xfail(reason="anon user is still priviliged on moto")
+@pytest.mark.xfail(reason="anon user is still privileged on moto")
 def test_anonymous_access(s3):
     with ignoring(NoCredentialsError):
         s3 = S3FileSystem(anon=True, client_kwargs={"endpoint_url": endpoint_uri})
@@ -1558,7 +1558,7 @@ def test_change_defaults_only_subsequent():
     systems created after the change.
     """
     try:
-        S3FileSystem.cachable = False  # don't reuse instances with same pars
+        S3FileSystem.cacheable = False  # don't reuse instances with same pars
 
         fs_default = S3FileSystem(client_kwargs={"endpoint_url": endpoint_uri})
         assert fs_default.default_block_size == 5 * (1024 ** 2)
@@ -1581,7 +1581,7 @@ def test_change_defaults_only_subsequent():
         assert fs_default.default_block_size == 5 * (1024 ** 2)
     finally:
         S3FileSystem.default_block_size = 5 * (1024 ** 2)
-        S3FileSystem.cachable = True
+        S3FileSystem.cacheable = True
 
 
 def test_cache_after_copy(s3):
@@ -2123,32 +2123,32 @@ def test_token_paths(s3):
 
 
 def test_same_name_but_no_exact(s3):
-    s3.touch(test_bucket_name + "/very/similiar/prefix1")
-    s3.touch(test_bucket_name + "/very/similiar/prefix2")
-    s3.touch(test_bucket_name + "/very/similiar/prefix3/something")
-    assert not s3.exists(test_bucket_name + "/very/similiar/prefix")
-    assert not s3.exists(test_bucket_name + "/very/similiar/prefi")
-    assert not s3.exists(test_bucket_name + "/very/similiar/pref")
+    s3.touch(test_bucket_name + "/very/similar/prefix1")
+    s3.touch(test_bucket_name + "/very/similar/prefix2")
+    s3.touch(test_bucket_name + "/very/similar/prefix3/something")
+    assert not s3.exists(test_bucket_name + "/very/similar/prefix")
+    assert not s3.exists(test_bucket_name + "/very/similar/prefi")
+    assert not s3.exists(test_bucket_name + "/very/similar/pref")
 
-    assert s3.exists(test_bucket_name + "/very/similiar/")
-    assert s3.exists(test_bucket_name + "/very/similiar/prefix1")
-    assert s3.exists(test_bucket_name + "/very/similiar/prefix2")
-    assert s3.exists(test_bucket_name + "/very/similiar/prefix3")
-    assert s3.exists(test_bucket_name + "/very/similiar/prefix3/")
-    assert s3.exists(test_bucket_name + "/very/similiar/prefix3/something")
+    assert s3.exists(test_bucket_name + "/very/similar/")
+    assert s3.exists(test_bucket_name + "/very/similar/prefix1")
+    assert s3.exists(test_bucket_name + "/very/similar/prefix2")
+    assert s3.exists(test_bucket_name + "/very/similar/prefix3")
+    assert s3.exists(test_bucket_name + "/very/similar/prefix3/")
+    assert s3.exists(test_bucket_name + "/very/similar/prefix3/something")
 
-    assert not s3.exists(test_bucket_name + "/very/similiar/prefix3/some")
+    assert not s3.exists(test_bucket_name + "/very/similar/prefix3/some")
 
-    s3.touch(test_bucket_name + "/starting/very/similiar/prefix")
+    s3.touch(test_bucket_name + "/starting/very/similar/prefix")
 
-    assert not s3.exists(test_bucket_name + "/starting/very/similiar/prefix1")
-    assert not s3.exists(test_bucket_name + "/starting/very/similiar/prefix2")
-    assert not s3.exists(test_bucket_name + "/starting/very/similiar/prefix3")
-    assert not s3.exists(test_bucket_name + "/starting/very/similiar/prefix3/")
-    assert not s3.exists(test_bucket_name + "/starting/very/similiar/prefix3/something")
+    assert not s3.exists(test_bucket_name + "/starting/very/similar/prefix1")
+    assert not s3.exists(test_bucket_name + "/starting/very/similar/prefix2")
+    assert not s3.exists(test_bucket_name + "/starting/very/similar/prefix3")
+    assert not s3.exists(test_bucket_name + "/starting/very/similar/prefix3/")
+    assert not s3.exists(test_bucket_name + "/starting/very/similar/prefix3/something")
 
-    assert s3.exists(test_bucket_name + "/starting/very/similiar/prefix")
-    assert s3.exists(test_bucket_name + "/starting/very/similiar/prefix/")
+    assert s3.exists(test_bucket_name + "/starting/very/similar/prefix")
+    assert s3.exists(test_bucket_name + "/starting/very/similar/prefix/")
 
 
 def test_leading_forward_slash(s3):

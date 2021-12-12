@@ -153,8 +153,8 @@ methods, in order:
 
 - for nodes on EC2, the IAM metadata provider
 
-You can specifiy a profile using `s3fs.S3FileSystem(profile='PROFILE')`.
-Othwerwise ``sf3s`` will use authentication via `boto environment variables`_.
+You can specify a profile using `s3fs.S3FileSystem(profile='PROFILE')`.
+Otherwise ``sf3s`` will use authentication via `boto environment variables`_.
 
 .. _boto environment variables: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-environment-variables
 
