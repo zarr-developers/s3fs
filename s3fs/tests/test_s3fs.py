@@ -1558,7 +1558,7 @@ def test_change_defaults_only_subsequent():
     systems created after the change.
     """
     try:
-        S3FileSystem.cacheable = False  # don't reuse instances with same pars
+        S3FileSystem.cachable = False  # don't reuse instances with same pars
 
         fs_default = S3FileSystem(client_kwargs={"endpoint_url": endpoint_uri})
         assert fs_default.default_block_size == 5 * (1024 ** 2)
@@ -1581,7 +1581,7 @@ def test_change_defaults_only_subsequent():
         assert fs_default.default_block_size == 5 * (1024 ** 2)
     finally:
         S3FileSystem.default_block_size = 5 * (1024 ** 2)
-        S3FileSystem.cacheable = True
+        S3FileSystem.cachable = True
 
 
 def test_cache_after_copy(s3):
