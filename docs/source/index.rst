@@ -172,21 +172,60 @@ Furthermore, ``S3FileSystem.current()`` will return the most-recently created
 instance, so this method could be used in preference to the constructor in
 cases where the code must be agnostic of the credentials/config used.
 
-Self-hosted S3
---------------
+S3 Compatible Storage
+---------------------
 
-To use ``s3fs`` against your self hosted S3-compatible storage, like `MinIO`_ or
-`Ceph Object Gateway`_, you can set your custom ``endpoint_url`` when creating
-the ``s3fs`` filesystem:
+To use ``s3fs`` against an S3 compatible storage, like `MinIO`_ or
+`Ceph Object Gateway`_, you'll probably need to pass extra parameters when
+creating the ``s3fs`` filesystem. Here are some sample configurations:
+
+For a self-hosted MinIO instance:
 
 .. code-block:: python
-
+   # When relying on auto discovery for credentials
    >>> s3 = s3fs.S3FileSystem(
-         anon=false,
+         anon=False,
          client_kwargs={
             'endpoint_url': 'https://...'
          }
       )
+   # Or passing the credentials directly
+   >>> s3 = s3fs.S3FileSystem(
+         key='miniokey...',
+         secret='asecretkey...',
+         client_kwargs={
+            'endpoint_url': 'https://...'
+         }
+      )
+
+For a Scaleway s3-compatible storage in the ``fr-par`` zone:
+
+.. code-block:: python
+
+   >>> s3 = s3fs.S3FileSystem(
+      key='scaleway-api-key...',
+      secret='scaleway-secretkey...',
+      client_kwargs={
+         'endpoint_url': 'https://s3.fr-par.scw.cloud',
+         'region_name': 'fr-par'
+      }
+   )
+
+For an OVH s3-compatible storage in the ``GRA`` zone:
+
+.. code-block:: python
+
+   >>> s3 = s3fs.S3FileSystem(
+      key='ovh-s3-key...',
+      secret='ovh-s3-secretkey...',
+      client_kwargs={
+         'endpoint_url': 'https://s3.GRA.cloud.ovh.net',
+         'region_name': 'GRA'
+      },
+      config_kwargs={
+         'signature_version': 's3v4'
+      }
+   )
 
 
 .. _MinIO: https://min.io
