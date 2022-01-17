@@ -2,6 +2,7 @@
 import asyncio
 import errno
 import logging
+import mimetypes
 import os
 import socket
 from typing import Tuple, Optional
@@ -943,6 +944,12 @@ class S3FileSystem(AsyncFileSystem):
             else:
                 await self._mkdir(lpath)
         size = os.path.getsize(lpath)
+
+        if "ContentType" not in kwargs:
+            content_type, _ = mimetypes.guess_type(lpath)
+            if content_type is not None:
+                kwargs["ContentType"] = content_type
+
         with open(lpath, "rb") as f0:
             if size < min(5 * 2 ** 30, 2 * chunksize):
                 await self._call_s3(
