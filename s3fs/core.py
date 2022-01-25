@@ -52,6 +52,25 @@ if ClientPayloadError is not None:
 
 _VALID_FILE_MODES = {"r", "w", "a", "rb", "wb", "ab"}
 
+_PRESERVE_KWARGS = [
+    "CacheControl",
+    "ContentDisposition",
+    "ContentEncoding",
+    "ContentLanguage",
+    "ContentLength",
+    "ContentType",
+    "Expires",
+    "WebsiteRedirectLocation",
+    "ServerSideEncryption",
+    "SSECustomerAlgorithm",
+    "SSEKMSKeyId",
+    "BucketKeyEnabled",
+    "StorageClass",
+    "ObjectLockMode",
+    "ObjectLockRetainUntilDate",
+    "ObjectLockLegalHoldStatus",
+    "Metadata",
+]
 
 key_acls = {
     "private",
@@ -1047,7 +1066,7 @@ class S3FileSystem(AsyncFileSystem):
                     "size": out["ContentLength"],
                     "name": "/".join([bucket, key]),
                     "type": "file",
-                    "StorageClass": "STANDARD",
+                    "StorageClass": out.get("StorageClass", "STANDARD"),
                     "VersionId": out.get("VersionId"),
                     "ContentType": out.get("ContentType"),
                 }
@@ -1817,13 +1836,37 @@ class S3File(AbstractBufferedFile):
         self.append_block = False
 
         if "a" in mode and s3.exists(path):
-            loc = s3.info(path)["size"]
+            # See:
+            # put: https://boto3.amazonaws.com/v1/documentation/api/latest
+            # /reference/services/s3.html#S3.Client.put_object
+            #
+            # head: https://boto3.amazonaws.com/v1/documentation/api/latest
+            # /reference/services/s3.html#S3.Client.head_object
+            head = self._call_s3(
+                "head_object",
+                self.kwargs,
+                Bucket=bucket,
+                Key=key,
+                **version_id_kw(version_id),
+                **self.req_kw,
+            )
+
+            head = {
+                key: value
+                for key, value in head.items()
+                if key in _PRESERVE_KWARGS and key not in self.s3_additional_kwargs
+            }
+
+            loc = head.pop("ContentLength")
             if loc < 5 * 2 ** 20:
                 # existing file too small for multi-upload: download
                 self.write(self.fs.cat(self.path))
             else:
                 self.append_block = True
             self.loc = loc
+
+            # Reflect head
+            self.s3_additional_kwargs.update(head)
 
         if "r" in mode and "ETag" in self.details:
             self.req_kw["IfMatch"] = self.details["ETag"]

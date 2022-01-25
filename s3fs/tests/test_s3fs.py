@@ -15,6 +15,8 @@ import pytest
 import moto
 from itertools import chain
 import fsspec.core
+from dateutil.tz import tzutc
+
 import s3fs.core
 from s3fs.core import S3FileSystem
 from s3fs.utils import ignoring, SSEParams
@@ -1289,6 +1291,36 @@ def test_append(s3):
         f.write(b"b" * 10 * 2 ** 20)  # append, big write, big file
         assert f.tell() == 20 * 2 ** 20 + 5
     assert s3.cat(a) == b"a" * 10 * 2 ** 20 + b"extra" + b"b" * 10 * 2 ** 20
+
+    # Keep Head Metadata
+    head = dict(
+        CacheControl="public",
+        ContentDisposition="string",
+        ContentEncoding="gzip",
+        ContentLanguage="ru-RU",
+        ContentType="text/csv",
+        Expires=datetime.datetime(2015, 1, 1, 0, 0, tzinfo=tzutc()),
+        Metadata={"string": "string"},
+        ServerSideEncryption="AES256",
+        StorageClass="REDUCED_REDUNDANCY",
+        WebsiteRedirectLocation="https://www.example.com/",
+        BucketKeyEnabled=False,
+    )
+    with s3.open(a, "wb", **head) as f:
+        f.write(b"data")
+
+    with s3.open(a, "ab") as f:
+        f.write(b"other")
+
+    with s3.open(a) as f:
+        filehead = {
+            k: v
+            for k, v in f._call_s3(
+                "head_object", f.kwargs, Bucket=f.bucket, Key=f.key
+            ).items()
+            if k in head
+        }
+        assert filehead == head
 
 
 def test_bigger_than_block_read(s3):
