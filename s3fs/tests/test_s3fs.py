@@ -257,6 +257,8 @@ def test_info(s3):
     assert abs(info.pop("LastModified") - linfo.pop("LastModified")).seconds < 1
     info.pop("VersionId")
     info.pop("ContentType")
+    linfo.pop("Key")
+    linfo.pop("Size")
     assert info == linfo
     parent = a.rsplit("/", 1)[0]
     s3.invalidate_cache()  # remove full path from the cache
@@ -1047,7 +1049,7 @@ def test_write_small(s3):
         f.write(b"hello")
     assert s3.cat(test_bucket_name + "/test") == b"hello"
     s3.open(test_bucket_name + "/test", "wb").close()
-    assert s3.info(test_bucket_name + "/test")["Size"] == 0
+    assert s3.info(test_bucket_name + "/test")["size"] == 0
 
 
 def test_write_small_with_acl(s3):
@@ -1082,7 +1084,7 @@ def test_write_large(s3):
         fd.write(payload)
 
     assert s3.cat(test_bucket_name + "/test") == payload
-    assert s3.info(test_bucket_name + "/test")["Size"] == payload_size
+    assert s3.info(test_bucket_name + "/test")["size"] == payload_size
 
 
 def test_write_limit(s3):
@@ -1097,7 +1099,7 @@ def test_write_limit(s3):
 
     assert s3.cat(test_bucket_name + "/test") == payload
 
-    assert s3.info(test_bucket_name + "/test")["Size"] == payload_size
+    assert s3.info(test_bucket_name + "/test")["size"] == payload_size
 
 
 def test_write_small_secure(s3):
@@ -1152,11 +1154,11 @@ def test_write_blocks(s3):
         f.write(b"a" * 2 * 2 ** 20)
         assert f.mpu
         assert f.parts
-    assert s3.info(test_bucket_name + "/temp")["Size"] == 6 * 2 ** 20
+    assert s3.info(test_bucket_name + "/temp")["size"] == 6 * 2 ** 20
     with s3.open(test_bucket_name + "/temp", "wb", block_size=10 * 2 ** 20) as f:
         f.write(b"a" * 15 * 2 ** 20)
         assert f.buffer.tell() == 0
-    assert s3.info(test_bucket_name + "/temp")["Size"] == 15 * 2 ** 20
+    assert s3.info(test_bucket_name + "/temp")["size"] == 15 * 2 ** 20
 
 
 def test_readline(s3):
@@ -1256,7 +1258,7 @@ def test_merge(s3):
     with s3.open(b, "wb") as f:
         f.write(b"a" * 10 * 2 ** 20)
     s3.merge(test_bucket_name + "/joined", [a, b])
-    assert s3.info(test_bucket_name + "/joined")["Size"] == 2 * 10 * 2 ** 20
+    assert s3.info(test_bucket_name + "/joined")["size"] == 2 * 10 * 2 ** 20
 
 
 def test_append(s3):
