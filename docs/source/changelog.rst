@@ -1,6 +1,13 @@
 Changelog
 =========
 
+2022.02.0
+---------
+
+- callbacks fixes (#594, 590)
+- drop py36 (#582)
+- metadata fixes (#575, 579)
+
 2022.01.0
 ---------
 
