@@ -46,7 +46,7 @@ if "S3FS_LOGGING_LEVEL" in os.environ:
 
 
 MANAGED_COPY_THRESHOLD = 5 * 2**30
-S3_RETRYABLE_ERRORS = (socket.timeout, HTTPClientError, IncompleteRead)
+S3_RETRYABLE_ERRORS = (socket.timeout, HTTPClientError, IncompleteRead, FSTimeoutError)
 
 if ClientPayloadError is not None:
     S3_RETRYABLE_ERRORS += (ClientPayloadError,)
@@ -83,6 +83,34 @@ key_acls = {
     "bucket-owner-full-control",
 }
 buck_acls = {"private", "public-read", "public-read-write", "authenticated-read"}
+
+
+async def _error_wrapper(func, *, args=(), kwargs=None, retries):
+    if kwargs is None:
+        kwargs = {}
+    for i in range(retries):
+        try:
+            return await func(*args, **kwargs)
+        except S3_RETRYABLE_ERRORS as e:
+            err = e
+            logger.debug("Retryable error: %s", e)
+            await asyncio.sleep(min(1.7**i * 0.1, 15))
+        except Exception as e:
+            logger.debug("Nonretryable error: %s", e)
+            err = e
+            break
+
+    if "'coroutine'" in str(err):
+        # aiobotocore internal error - fetch original botocore error
+        tb = err.__traceback__
+        while tb.tb_next:
+            tb = tb.tb_next
+        try:
+            await tb.tb_frame.f_locals["response"]
+        except Exception as e:
+            err = e
+    err = translate_boto_error(err)
+    raise err
 
 
 def version_id_kw(version_id):
@@ -216,7 +244,7 @@ class S3FileSystem(AsyncFileSystem):
         cache_regions=False,
         asynchronous=False,
         loop=None,
-        **kwargs
+        **kwargs,
     ):
         if key and username:
             raise KeyError("Supply either key or username, not both")
@@ -277,29 +305,9 @@ class S3FileSystem(AsyncFileSystem):
         kw2.pop("Body", None)
         logger.debug("CALL: %s - %s - %s", method.__name__, akwarglist, kw2)
         additional_kwargs = self._get_s3_method_kwargs(method, *akwarglist, **kwargs)
-        for i in range(self.retries):
-            try:
-                out = await method(**additional_kwargs)
-                return out
-            except S3_RETRYABLE_ERRORS as e:
-                logger.debug("Retryable error: %s", e)
-                err = e
-                await asyncio.sleep(min(1.7**i * 0.1, 15))
-            except Exception as e:
-                logger.debug("Nonretryable error: %s", e)
-                err = e
-                break
-        if "'coroutine'" in str(err):
-            # aiobotocore internal error - fetch original botocore error
-            tb = err.__traceback__
-            while tb.tb_next:
-                tb = tb.tb_next
-            try:
-                await tb.tb_frame.f_locals["response"]
-            except Exception as e:
-                err = e
-        err = translate_boto_error(err)
-        raise err
+        return await _error_wrapper(
+            method, kwargs=additional_kwargs, retries=self.retries
+        )
 
     call_s3 = sync_wrapper(_call_s3)
 
@@ -514,7 +522,7 @@ class S3FileSystem(AsyncFileSystem):
         autocommit=True,
         requester_pays=None,
         cache_options=None,
-        **kwargs
+        **kwargs,
     ):
         """Open a file for reading or writing
 
@@ -905,17 +913,22 @@ class S3FileSystem(AsyncFileSystem):
             head = {"Range": await self._process_limits(path, start, end)}
         else:
             head = {}
-        resp = await self._call_s3(
-            "get_object",
-            Bucket=bucket,
-            Key=key,
-            **version_id_kw(version_id or vers),
-            **head,
-            **self.req_kw,
-        )
-        data = await resp["Body"].read()
-        resp["Body"].close()
-        return data
+
+        async def _call_and_read():
+            resp = await self._call_s3(
+                "get_object",
+                Bucket=bucket,
+                Key=key,
+                **version_id_kw(version_id or vers),
+                **head,
+                **self.req_kw,
+            )
+            try:
+                return await resp["Body"].read()
+            finally:
+                resp["Body"].close()
+
+        return await _error_wrapper(_call_and_read, retries=self.retries)
 
     async def _pipe_file(self, path, data, chunksize=50 * 2**20, **kwargs):
         bucket, key, _ = self.split_path(path)
@@ -1019,28 +1032,66 @@ class S3FileSystem(AsyncFileSystem):
     async def _get_file(
         self, rpath, lpath, callback=_DEFAULT_CALLBACK, version_id=None
     ):
-        bucket, key, vers = self.split_path(rpath)
         if os.path.isdir(lpath):
             return
-        resp = await self._call_s3(
-            "get_object",
-            Bucket=bucket,
-            Key=key,
-            **version_id_kw(version_id or vers),
-            **self.req_kw,
-        )
-        body = resp["Body"]
-        callback.set_size(resp.get("ContentLength", None))
+        bucket, key, vers = self.split_path(rpath)
+
+        async def _open_file(range: int):
+            kw = self.req_kw.copy()
+            if range:
+                kw["Range"] = f"bytes={range}-"
+            resp = await self._call_s3(
+                "get_object",
+                Bucket=bucket,
+                Key=key,
+                **version_id_kw(version_id or vers),
+                **self.req_kw,
+            )
+            return resp["Body"], resp.get("ContentLength", None)
+
+        body, content_length = await _open_file(range=0)
+        callback.set_size(content_length)
+
+        failed_reads = 0
+        bytes_read = 0
+
         try:
             with open(lpath, "wb") as f0:
                 while True:
-                    chunk = await body.read(2**16)
+                    try:
+                        chunk = await body.read(2**16)
+                    except S3_RETRYABLE_ERRORS:
+                        failed_reads += 1
+                        if failed_reads >= self.retries:
+                            # Give up if we've failed too many times.
+                            raise
+                        # Closing the body may result in an exception if we've failed to read from it.
+                        try:
+                            body.close()
+                        except Exception:
+                            pass
+
+                        await asyncio.sleep(min(1.7**failed_reads * 0.1, 15))
+                        # Byte ranges are inclusive, which means we need to be careful to not read the same data twice
+                        # in a failure.
+                        # Examples:
+                        # Read 1 byte -> failure, retry with read_range=0, byte range should be 0-
+                        # Read 1 byte, success. Read 1 byte: failure. Retry with read_range=2, byte-range should be 2-
+                        # Read 1 bytes, success. Read 1 bytes: success. Read 1 byte, failure. Retry with read_range=3,
+                        # byte-range should be 3-.
+                        body, _ = await _open_file(bytes_read + 1)
+                        continue
+
                     if not chunk:
                         break
+                    bytes_read += len(chunk)
                     segment_len = f0.write(chunk)
                     callback.relative_update(segment_len)
         finally:
-            body.close()
+            try:
+                body.close()
+            except Exception:
+                pass
 
     async def _info(self, path, bucket=None, key=None, refresh=False, version_id=None):
         path = self._strip_protocol(path)
