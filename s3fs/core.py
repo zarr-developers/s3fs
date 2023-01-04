@@ -1544,7 +1544,7 @@ class S3FileSystem(AsyncFileSystem):
         bucket, key, version_id = self.split_path(path)
         if recursive:
             allfiles = await self._find(path, withdirs=False)
-            await asyncio.gather(*[self._chmod(p, recursive=False) for p in allfiles])
+            await asyncio.gather(*[self._chmod(p, acl, recursive=False) for p in allfiles])
         elif key:
             if acl not in key_acls:
                 raise ValueError("ACL not in %s", key_acls)
