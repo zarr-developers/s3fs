@@ -1841,7 +1841,12 @@ class S3FileSystem(AsyncFileSystem):
         }
         for path in pathlist:
             self.invalidate_cache(self._parent(path))
-        await self._call_s3("delete_objects", kwargs, Bucket=bucket, Delete=delete_keys)
+        out = await self._call_s3(
+            "delete_objects", kwargs, Bucket=bucket, Delete=delete_keys
+        )
+        # TODO: we report on successes but don't raise on any errors, effectively
+        #  on_error="omit"
+        return [f"{bucket}/{_['Key']}" for _ in out.get("Deleted", [])]
 
     async def _rm_file(self, path, **kwargs):
         bucket, key, _ = self.split_path(path)
@@ -1861,7 +1866,7 @@ class S3FileSystem(AsyncFileSystem):
         files = [p for p in paths if self.split_path(p)[1]]
         dirs = [p for p in paths if not self.split_path(p)[1]]
         # TODO: fails if more than one bucket in list
-        await _run_coros_in_chunks(
+        out = await _run_coros_in_chunks(
             [
                 self._bulk_delete(files[i : i + 1000])
                 for i in range(0, len(files), 1000)
@@ -1874,6 +1879,7 @@ class S3FileSystem(AsyncFileSystem):
             (self.invalidate_cache(p), self.invalidate_cache(self._parent(p)))
             for p in paths
         ]
+        return sum(out, [])
 
     async def _is_bucket_versioned(self, bucket):
         return (await self._call_s3("get_bucket_versioning", Bucket=bucket)).get(
