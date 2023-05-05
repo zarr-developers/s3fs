@@ -1107,8 +1107,9 @@ class S3FileSystem(AsyncFileSystem):
 
         with open(lpath, "rb") as f0:
             if size < min(5 * 2**30, 2 * chunksize):
+                chunk = f0.read()
                 await self._call_s3(
-                    "put_object", Bucket=bucket, Key=key, Body=f0, **kwargs
+                    "put_object", Bucket=bucket, Key=key, Body=chunk, **kwargs
                 )
                 callback.relative_update(size)
             else:
