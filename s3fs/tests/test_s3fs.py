@@ -1352,7 +1352,6 @@ def test_append(s3):
         ServerSideEncryption="AES256",
         StorageClass="REDUCED_REDUNDANCY",
         WebsiteRedirectLocation="https://www.example.com/",
-        BucketKeyEnabled=False,
     )
     with s3.open(a, "wb", **head) as f:
         f.write(b"data")
