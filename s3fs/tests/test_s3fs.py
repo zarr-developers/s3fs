@@ -281,7 +281,8 @@ def test_info(s3):
     s3.mkdir(new_parent)
     with pytest.raises(FileNotFoundError):
         s3.info(new_parent)
-    s3.ls(new_parent)
+    with pytest.raises(FileNotFoundError):
+        s3.ls(new_parent)
     with pytest.raises(FileNotFoundError):
         s3.info(new_parent)
 
@@ -2070,9 +2071,13 @@ def test_via_fsspec(s3):
     import fsspec
 
     s3.mkdir("mine")
-    with fsspec.open("mine/oi", "wb") as f:
+    with fsspec.open(
+        "s3://mine/oi", "wb", client_kwargs={"endpoint_url": endpoint_uri}
+    ) as f:
         f.write(b"hello")
-    with fsspec.open("mine/oi", "rb") as f:
+    with fsspec.open(
+        "s3://mine/oi", "rb", client_kwargs={"endpoint_url": endpoint_uri}
+    ) as f:
         assert f.read() == b"hello"
 
 
@@ -2151,11 +2156,11 @@ def test_shallow_find(s3):
     ``maxdepth=1``, the results of ``find`` should be the same as those of
     ``ls``, without returning subdirectories.  See also issue 378.
     """
-
-    assert s3.ls(test_bucket_name) == s3.find(
+    ls_output = s3.ls(test_bucket_name)
+    assert sorted(ls_output + [test_bucket_name]) == s3.find(
         test_bucket_name, maxdepth=1, withdirs=True
     )
-    assert s3.ls(test_bucket_name) == s3.glob(test_bucket_name + "/*")
+    assert ls_output == s3.glob(test_bucket_name + "/*")
 
 
 def test_multi_find(s3):
