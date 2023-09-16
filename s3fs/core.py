@@ -2261,7 +2261,10 @@ class S3File(AbstractBufferedFile):
                 Key=key,
             )
 
-            self.parts.append({"PartNumber": part, "ETag": out["ETag"]})
+            part_header = {"PartNumber": part, "ETag": out["ETag"]}
+            if "ChecksumSHA256" in out:
+                part_header["ChecksumSHA256"] = out["ChecksumSHA256"]
+            self.parts.append(part_header)
 
         if self.autocommit and final:
             self.commit()
