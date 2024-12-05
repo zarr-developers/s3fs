@@ -10,7 +10,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.8"
           - "3.9"
           - "3.10"
           - "3.11"
@@ -39,9 +38,10 @@ jobs:
         shell: bash -l {0}
         run: |
           pip install git+https://github.com/fsspec/filesystem_spec
-          pip install --upgrade "aiobotocore${{ matrix.aiobotocore-version }}" boto3  # boto3 to ensure compatibility
+          pip install --upgrade "aiobotocore${{ matrix.aiobotocore-version }}"
+          pip install --upgrade "botocore" --no-deps
           pip install . --no-deps
-          pip show aiobotocore boto3 botocore
+          pip list
 
       - name: Run Tests
         shell: bash -l {0}

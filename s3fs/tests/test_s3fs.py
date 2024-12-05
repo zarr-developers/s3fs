@@ -1235,15 +1235,15 @@ def test_write_limit(s3):
 
 
 def test_write_small_secure(s3):
-    # Unfortunately moto does not yet support enforcing SSE policies.  It also
-    # does not return the correct objects that can be used to test the results
-    # effectively.
-    # This test is left as a placeholder in case moto eventually supports this.
-    sse_params = SSEParams(server_side_encryption="aws:kms")
-    with s3.open(secure_bucket_name + "/test", "wb", writer_kwargs=sse_params) as f:
+    s3 = S3FileSystem(
+        s3_additional_kwargs={"ServerSideEncryption": "aws:kms"},
+        client_kwargs={"endpoint_url": endpoint_uri},
+    )
+    s3.mkdir("mybucket")
+    with s3.open("mybucket/test", "wb") as f:
         f.write(b"hello")
-    assert s3.cat(secure_bucket_name + "/test") == b"hello"
-    sync(s3.loop, s3.s3.head_object, Bucket=secure_bucket_name, Key="test")
+    assert s3.cat("mybucket/test") == b"hello"
+    sync(s3.loop, s3.s3.head_object, Bucket="mybucket", Key="test")
 
 
 def test_write_large_secure(s3):
@@ -2868,3 +2868,30 @@ async def test_invalidate_cache(s3: s3fs.S3FileSystem) -> None:
     await s3._pipe_file(f"{test_bucket_name}/a/c.txt", data=b"abc")
     after = await s3._ls(f"{test_bucket_name}/a/")
     assert sorted(after) == ["test/a/b.txt", "test/a/c.txt"]
+
+
+@pytest.mark.xfail(reason="moto doesn't support conditional MPU")
+def test_pipe_exclusive_big(s3):
+    chunksize = 5 * 2**20  # minimum allowed
+    data = b"x" * chunksize * 3
+    s3.pipe(f"{test_bucket_name}/afile", data, mode="overwrite", chunksize=chunksize)
+    s3.pipe(f"{test_bucket_name}/afile", data, mode="overwrite", chunksize=chunksize)
+    with pytest.raises(FileExistsError):
+        s3.pipe(f"{test_bucket_name}/afile", data, mode="create", chunksize=chunksize)
+    assert not s3.list_multipart_uploads(test_bucket_name)
+
+
+@pytest.mark.xfail(reason="moto doesn't support conditional MPU")
+def test_put_exclusive_big(s3, tempdir):
+    chunksize = 5 * 2**20  # minimum allowed
+    data = b"x" * chunksize * 3
+    fn = f"{tempdir}/afile"
+    with open(fn, "wb") as f:
+        f.write(fn)
+    s3.put(fn, f"{test_bucket_name}/afile", data, mode="overwrite", chunksize=chunksize)
+    s3.put(fn, f"{test_bucket_name}/afile", data, mode="overwrite", chunksize=chunksize)
+    with pytest.raises(FileExistsError):
+        s3.put(
+            fn, f"{test_bucket_name}/afile", data, mode="create", chunksize=chunksize
+        )
+    assert not s3.list_multipart_uploads(test_bucket_name)
