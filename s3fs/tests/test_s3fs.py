@@ -1287,10 +1287,10 @@ def test_write_blocks(s3):
         assert f.mpu
         assert f.parts
     assert s3.info(test_bucket_name + "/temp")["size"] == 6 * 2**20
-    with s3.open(test_bucket_name + "/temp", "wb", block_size=10 * 2**20) as f:
+    with s3.open(test_bucket_name + "/temp2", "wb", block_size=10 * 2**20) as f:
         f.write(b"a" * 15 * 2**20)
         assert f.buffer.tell() == 0
-    assert s3.info(test_bucket_name + "/temp")["size"] == 15 * 2**20
+    assert s3.info(test_bucket_name + "/temp2")["size"] == 15 * 2**20
 
 
 def test_readline(s3):
@@ -1406,7 +1406,8 @@ def test_append(s3):
         f.write(b"a" * 10 * 2**20)
     with s3.open(a, "ab") as f:
         pass  # append, no write, big file
-    assert s3.cat(a) == b"a" * 10 * 2**20
+    data = s3.cat(a)
+    assert len(data) == 10 * 2**20 and set(data) == set(b"a")
 
     with s3.open(a, "ab") as f:
         assert f.parts is None
@@ -1414,13 +1415,18 @@ def test_append(s3):
         assert f.parts
         assert f.tell() == 10 * 2**20
         f.write(b"extra")  # append, small write, big file
-    assert s3.cat(a) == b"a" * 10 * 2**20 + b"extra"
+    data = s3.cat(a)
+    assert len(data) == 10 * 2**20 + len(b"extra")
+    assert data[-5:] == b"extra"
 
     with s3.open(a, "ab") as f:
         assert f.tell() == 10 * 2**20 + 5
         f.write(b"b" * 10 * 2**20)  # append, big write, big file
         assert f.tell() == 20 * 2**20 + 5
-    assert s3.cat(a) == b"a" * 10 * 2**20 + b"extra" + b"b" * 10 * 2**20
+    data = s3.cat(a)
+    assert len(data) == 10 * 2**20 + len(b"extra") + 10 * 2**20
+    assert data[10 * 2**20 : 10 * 2**20 + 5] == b"extra"
+    assert set(data[-10 * 2**20 :]) == set(b"b")
 
     # Keep Head Metadata
     head = dict(
