@@ -213,7 +213,7 @@ class S3FileSystem(AsyncFileSystem):
         If RequesterPays buckets are supported.
     default_block_size: int (None)
         If given, the default block size value used for ``open()``, if no
-        specific value is given at all time. The built-in default is 5MB.
+        specific value is given at all time. The built-in default is 50MB.
     default_fill_cache : Bool (True)
         Whether to use cache filling with open by default. Refer to
         ``S3File.open``.
@@ -241,9 +241,9 @@ class S3FileSystem(AsyncFileSystem):
     session : aiobotocore AioSession object to be used for all connections.
          This session will be used inplace of creating a new session inside S3FileSystem.
          For example: aiobotocore.session.AioSession(profile='test_user')
-    max_concurrency : int (1)
+    max_concurrency : int (10)
         The maximum number of concurrent transfers to use per file for multipart
-        upload (``put()``) operations. Defaults to 1 (sequential). When used in
+        upload (``put()``) operations. Defaults to 10. When used in
         conjunction with ``S3FileSystem.put(batch_size=...)`` the maximum number of
         simultaneous connections is ``max_concurrency * batch_size``. We may extend
         this parameter to affect ``pipe()``, ``cat()`` and ``get()``. Increasing this
